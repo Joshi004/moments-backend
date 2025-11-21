@@ -1,11 +1,28 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from app.models import Video
+from app.models import Video, Moment
 from app.utils.video_utils import get_video_files
 from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
+from app.utils.moments_service import load_moments, add_moment
 from pathlib import Path
+import cv2
 
 router = APIRouter()
+
+
+def get_video_duration(video_path: Path) -> float:
+    """Get video duration in seconds."""
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            return 0.0
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        duration = frame_count / fps if fps > 0 else 0.0
+        cap.release()
+        return duration
+    except Exception:
+        return 0.0
 
 
 @router.get("/videos", response_model=list[Video])
@@ -167,4 +184,62 @@ async def get_thumbnail(video_id: str):
             "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
         }
     )
+
+
+@router.get("/videos/{video_id}/moments", response_model=list[Moment])
+async def get_moments(video_id: str):
+    """Get all moments for a video."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Load moments from JSON file
+    moments = load_moments(video_file.name)
+    
+    # Convert to Moment models
+    return [Moment(**moment) for moment in moments]
+
+
+@router.post("/videos/{video_id}/moments", response_model=Moment, status_code=201)
+async def create_moment(video_id: str, moment: Moment):
+    """Add a new moment to a video."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Get video duration for validation
+    video_duration = get_video_duration(video_file)
+    if video_duration <= 0:
+        raise HTTPException(status_code=500, detail="Could not determine video duration")
+    
+    # Convert Moment model to dict
+    moment_dict = {
+        "start_time": moment.start_time,
+        "end_time": moment.end_time,
+        "title": moment.title
+    }
+    
+    # Add moment with validation
+    success, error_message, created_moment = add_moment(video_file.name, moment_dict, video_duration)
+    
+    if not success:
+        raise HTTPException(status_code=400, detail=error_message)
+    
+    return Moment(**created_moment)
 

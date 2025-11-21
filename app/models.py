@@ -9,3 +9,10 @@ class Video(BaseModel):
     thumbnail_url: Optional[str] = None
 
 
+class Moment(BaseModel):
+    start_time: float
+    end_time: float
+    title: str
+
+
+
