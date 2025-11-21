@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from app.models import Video
 from app.utils.video_utils import get_video_files
+from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
+from pathlib import Path
 
 router = APIRouter()
 
@@ -25,11 +27,12 @@ async def list_videos():
         
         for video_file in video_files:
             video_id = video_file.stem  # filename without extension
+            thumbnail_url = get_thumbnail_url(video_file.name)
             videos.append(Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
-                thumbnail_url=None  # Placeholder for future thumbnail generation
+                thumbnail_url=thumbnail_url
             ))
         
         return videos
@@ -50,11 +53,12 @@ async def get_video(video_id: str):
     # Find video by matching stem (filename without extension)
     for video_file in video_files:
         if video_file.stem == video_id:
+            thumbnail_url = get_thumbnail_url(video_file.name)
             return Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
-                thumbnail_url=None
+                thumbnail_url=thumbnail_url
             )
     
     raise HTTPException(status_code=404, detail="Video not found")
@@ -130,8 +134,37 @@ async def stream_video(video_id: str, request: Request):
 
 @router.get("/videos/{video_id}/thumbnail")
 async def get_thumbnail(video_id: str):
-    """Placeholder endpoint for video thumbnail (future enhancement)."""
-    # For now, return a 404 or empty response
-    # This endpoint is kept for future thumbnail generation
-    raise HTTPException(status_code=404, detail="Thumbnail not available yet")
+    """Get video thumbnail. Generates thumbnail if it doesn't exist."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Get or generate thumbnail
+    thumbnail_path = get_thumbnail_path(video_file.name)
+    
+    # Generate thumbnail if it doesn't exist
+    if not thumbnail_path.exists():
+        generated_path = generate_thumbnail(video_file)
+        if not generated_path:
+            raise HTTPException(status_code=500, detail="Failed to generate thumbnail")
+        thumbnail_path = generated_path
+    
+    if not thumbnail_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    
+    return FileResponse(
+        thumbnail_path,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
+        }
+    )
 

@@ -8,3 +8,4 @@ class Video(BaseModel):
     title: str
     thumbnail_url: Optional[str] = None
 
+

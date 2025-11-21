@@ -45,3 +45,4 @@ API documentation available at http://localhost:8005/docs
 
 Videos should be placed in `static/videos/` directory. Supported formats: .mp4, .webm, .mov, .avi, .mkv, .ogg
 
+

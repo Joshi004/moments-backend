@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.routes import videos
+from pathlib import Path
 
 app = FastAPI(title="Video Moments API", version="1.0.0")
 
@@ -16,6 +18,11 @@ app.add_middleware(
 # Include routers
 app.include_router(videos.router, prefix="/api", tags=["videos"])
 
+# Mount static files for thumbnails
+thumbnails_dir = Path(__file__).parent.parent / "static" / "thumbnails"
+thumbnails_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
+
 
 @app.get("/")
 async def root():
@@ -25,4 +32,5 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
 

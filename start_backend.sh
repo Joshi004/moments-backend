@@ -34,3 +34,4 @@ echo "API documentation at http://localhost:8005/docs"
 echo ""
 uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
 
+
