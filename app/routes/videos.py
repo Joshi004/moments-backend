@@ -4,6 +4,13 @@ from app.models import Video, Moment
 from app.utils.video_utils import get_video_files
 from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
 from app.utils.moments_service import load_moments, add_moment
+from app.utils.audio_service import (
+    check_audio_exists,
+    start_processing_job,
+    is_processing,
+    process_audio_async,
+    get_processing_jobs
+)
 from pathlib import Path
 import cv2
 
@@ -45,11 +52,13 @@ async def list_videos():
         for video_file in video_files:
             video_id = video_file.stem  # filename without extension
             thumbnail_url = get_thumbnail_url(video_file.name)
+            has_audio = check_audio_exists(video_file.name)
             videos.append(Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
-                thumbnail_url=thumbnail_url
+                thumbnail_url=thumbnail_url,
+                has_audio=has_audio
             ))
         
         return videos
@@ -62,6 +71,12 @@ async def list_videos():
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+@router.get("/videos/processing-status")
+async def get_processing_status():
+    """Get status of all active audio processing jobs."""
+    return get_processing_jobs()
+
+
 @router.get("/videos/{video_id}")
 async def get_video(video_id: str):
     """Get metadata for a specific video."""
@@ -71,11 +86,13 @@ async def get_video(video_id: str):
     for video_file in video_files:
         if video_file.stem == video_id:
             thumbnail_url = get_thumbnail_url(video_file.name)
+            has_audio = check_audio_exists(video_file.name)
             return Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
-                thumbnail_url=thumbnail_url
+                thumbnail_url=thumbnail_url,
+                has_audio=has_audio
             )
     
     raise HTTPException(status_code=404, detail="Video not found")
@@ -242,4 +259,51 @@ async def create_moment(video_id: str, moment: Moment):
         raise HTTPException(status_code=400, detail=error_message)
     
     return Moment(**created_moment)
+
+
+@router.post("/videos/{video_id}/process-audio")
+async def process_audio(video_id: str):
+    """Start audio extraction process for a video."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    video_files = get_video_files()
+    
+    # Debug logging
+    logger.info(f"Processing audio request for video_id: {video_id}")
+    logger.info(f"Available video stems: {[vf.stem for vf in video_files]}")
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        available_ids = [vf.stem for vf in video_files]
+        error_msg = f"Video not found. Requested ID: '{video_id}'. Available IDs: {available_ids}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=404, detail=error_msg)
+    
+    # Check if audio already exists
+    if check_audio_exists(video_file.name):
+        return {"message": "Audio file already exists", "video_id": video_id}
+    
+    # Check if already processing
+    if is_processing(video_id):
+        return {"message": "Audio processing already in progress", "video_id": video_id}
+    
+    # Start processing job
+    if not start_processing_job(video_id, video_file.name):
+        return {"message": "Failed to start processing job", "video_id": video_id}
+    
+    # Start async processing
+    process_audio_async(video_id, video_file)
+    
+    return {
+        "message": "Audio processing started",
+        "video_id": video_id,
+        "status": "processing"
+    }
 

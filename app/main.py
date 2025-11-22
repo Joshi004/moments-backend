@@ -23,6 +23,11 @@ thumbnails_dir = Path(__file__).parent.parent / "static" / "thumbnails"
 thumbnails_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
+# Mount static files for audio
+audio_dir = Path(__file__).parent.parent / "static" / "audio"
+audio_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+
 
 @app.get("/")
 async def root():

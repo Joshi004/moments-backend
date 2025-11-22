@@ -15,7 +15,12 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Ensure videos are in `static/videos/` directory
+3. Install FFmpeg (required for audio extraction):
+   - **macOS**: `brew install ffmpeg`
+   - **Linux**: `sudo apt-get install ffmpeg` (Ubuntu/Debian) or `sudo yum install ffmpeg` (CentOS/RHEL)
+   - **Windows**: Download from [FFmpeg website](https://ffmpeg.org/download.html) and add to PATH
+
+4. Ensure videos are in `static/videos/` directory
 
 ## Running the Server
 
@@ -39,7 +44,11 @@ API documentation available at http://localhost:8005/docs
 - `GET /api/videos` - List all videos
 - `GET /api/videos/{video_id}` - Get video metadata
 - `GET /api/videos/{video_id}/stream` - Stream video file (supports range requests)
-- `GET /api/videos/{video_id}/thumbnail` - Placeholder for thumbnail (returns 404 for now)
+- `GET /api/videos/{video_id}/thumbnail` - Get video thumbnail
+- `GET /api/videos/{video_id}/moments` - Get moments for a video
+- `POST /api/videos/{video_id}/moments` - Add a moment to a video
+- `POST /api/videos/{video_id}/process-audio` - Start audio extraction process
+- `GET /api/videos/processing-status` - Get status of active audio processing jobs
 
 ## Video Storage
 

@@ -7,6 +7,7 @@ class Video(BaseModel):
     filename: str
     title: str
     thumbnail_url: Optional[str] = None
+    has_audio: Optional[bool] = None
 
 
 class Moment(BaseModel):
