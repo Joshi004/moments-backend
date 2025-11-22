@@ -9,7 +9,15 @@ from app.utils.audio_service import (
     start_processing_job,
     is_processing,
     process_audio_async,
-    get_processing_jobs
+    get_processing_jobs,
+    get_audio_path
+)
+from app.utils.transcript_service import (
+    check_transcript_exists,
+    start_transcription_job,
+    is_transcribing,
+    process_transcription_async,
+    get_transcription_jobs
 )
 from pathlib import Path
 import cv2
@@ -53,12 +61,16 @@ async def list_videos():
             video_id = video_file.stem  # filename without extension
             thumbnail_url = get_thumbnail_url(video_file.name)
             has_audio = check_audio_exists(video_file.name)
+            # Check if transcript exists (need audio filename)
+            audio_filename = get_audio_path(video_file.name).name if has_audio else None
+            has_transcript = check_transcript_exists(audio_filename) if audio_filename else False
             videos.append(Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
                 thumbnail_url=thumbnail_url,
-                has_audio=has_audio
+                has_audio=has_audio,
+                has_transcript=has_transcript
             ))
         
         return videos
@@ -77,6 +89,12 @@ async def get_processing_status():
     return get_processing_jobs()
 
 
+@router.get("/videos/transcription-status")
+async def get_transcription_status():
+    """Get status of all active transcription jobs."""
+    return get_transcription_jobs()
+
+
 @router.get("/videos/{video_id}")
 async def get_video(video_id: str):
     """Get metadata for a specific video."""
@@ -87,12 +105,16 @@ async def get_video(video_id: str):
         if video_file.stem == video_id:
             thumbnail_url = get_thumbnail_url(video_file.name)
             has_audio = check_audio_exists(video_file.name)
+            # Check if transcript exists (need audio filename)
+            audio_filename = get_audio_path(video_file.name).name if has_audio else None
+            has_transcript = check_transcript_exists(audio_filename) if audio_filename else False
             return Video(
                 id=video_id,
                 filename=video_file.name,
                 title=video_file.stem.replace("-", " ").replace("_", " ").title(),
                 thumbnail_url=thumbnail_url,
-                has_audio=has_audio
+                has_audio=has_audio,
+                has_transcript=has_transcript
             )
     
     raise HTTPException(status_code=404, detail="Video not found")
@@ -303,6 +325,63 @@ async def process_audio(video_id: str):
     
     return {
         "message": "Audio processing started",
+        "video_id": video_id,
+        "status": "processing"
+    }
+
+
+@router.post("/videos/{video_id}/process-transcript")
+async def process_transcript(video_id: str):
+    """Start transcription process for a video's audio file."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    video_files = get_video_files()
+    
+    # Debug logging
+    logger.info(f"Processing transcript request for video_id: {video_id}")
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        available_ids = [vf.stem for vf in video_files]
+        error_msg = f"Video not found. Requested ID: '{video_id}'. Available IDs: {available_ids}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=404, detail=error_msg)
+    
+    # Check if audio exists (prerequisite)
+    if not check_audio_exists(video_file.name):
+        raise HTTPException(
+            status_code=400, 
+            detail="Audio file does not exist. Please extract audio first."
+        )
+    
+    # Get audio filename
+    audio_path = get_audio_path(video_file.name)
+    audio_filename = audio_path.name
+    
+    # Check if transcript already exists
+    if check_transcript_exists(audio_filename):
+        return {"message": "Transcript file already exists", "video_id": video_id}
+    
+    # Check if already processing
+    if is_transcribing(video_id):
+        return {"message": "Transcription already in progress", "video_id": video_id}
+    
+    # Start transcription job
+    if not start_transcription_job(video_id, audio_filename):
+        return {"message": "Failed to start transcription job", "video_id": video_id}
+    
+    # Start async processing
+    process_transcription_async(video_id, audio_filename)
+    
+    return {
+        "message": "Transcription processing started",
         "video_id": video_id,
         "status": "processing"
     }

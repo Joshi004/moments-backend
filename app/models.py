@@ -8,6 +8,7 @@ class Video(BaseModel):
     title: str
     thumbnail_url: Optional[str] = None
     has_audio: Optional[bool] = None
+    has_transcript: Optional[bool] = None
 
 
 class Moment(BaseModel):

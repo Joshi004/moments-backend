@@ -32,12 +32,12 @@ pip install -r requirements.txt
 ### Option 2: Manual start
 ```bash
 source venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 7005 --reload
 ```
 
-The server will start on http://localhost:8005
+The server will start on http://localhost:7005
 
-API documentation available at http://localhost:8005/docs
+API documentation available at http://localhost:7005/docs
 
 ## API Endpoints
 

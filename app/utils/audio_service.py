@@ -17,7 +17,7 @@ def get_audio_directory() -> Path:
     """Get the path to the audio directory."""
     current_file = Path(__file__).resolve()
     backend_dir = current_file.parent.parent.parent
-    audio_dir = backend_dir / "static" / "audio"
+    audio_dir = backend_dir / "static" / "audios"
     audio_dir = audio_dir.resolve()
     
     # Create directory if it doesn't exist
@@ -53,7 +53,7 @@ def get_audio_url(video_filename: str) -> Optional[str]:
     audio_path = get_audio_path(video_filename)
     if audio_path.exists():
         # Return relative URL path
-        return f"/static/audio/{audio_path.name}"
+        return f"/static/audios/{audio_path.name}"
     return None
 
 

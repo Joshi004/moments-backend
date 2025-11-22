@@ -24,9 +24,14 @@ thumbnails_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
 
 # Mount static files for audio
-audio_dir = Path(__file__).parent.parent / "static" / "audio"
+audio_dir = Path(__file__).parent.parent / "static" / "audios"
 audio_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+app.mount("/static/audios", StaticFiles(directory=str(audio_dir)), name="audios")
+
+# Mount static files for transcripts
+transcripts_dir = Path(__file__).parent.parent / "static" / "transcripts"
+transcripts_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/transcripts", StaticFiles(directory=str(transcripts_dir)), name="transcripts")
 
 
 @app.get("/")

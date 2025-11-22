@@ -28,11 +28,11 @@ if [ ! -d "static/videos" ]; then
 fi
 
 # Start the server
-echo "Starting FastAPI server on port 8005..."
-echo "Server will be available at http://localhost:8005"
-echo "API documentation at http://localhost:8005/docs"
+echo "Starting FastAPI server on port 7005..."
+echo "Server will be available at http://localhost:7005"
+echo "API documentation at http://localhost:7005/docs"
 echo ""
-uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 7005 --reload
 
 
 
