@@ -75,15 +75,15 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         # FFmpeg command to extract audio as WAV
         # -vn: disable video
         # -acodec pcm_s16le: PCM 16-bit little-endian (WAV format)
-        # -ar 44100: sample rate 44.1 kHz
-        # -ac 2: stereo (2 channels)
+        # -ar 16000: sample rate 16 kHz (optimized for speech transcription)
+        # -ac 1: mono (1 channel, optimized for speech)
         cmd = [
             'ffmpeg',
             '-i', str(video_path),
             '-vn',  # No video
             '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian
-            '-ar', '44100',  # Sample rate
-            '-ac', '2',  # Stereo
+            '-ar', '16000',  # Sample rate 16 kHz
+            '-ac', '1',  # Mono
             '-y',  # Overwrite output file if it exists
             str(output_path)
         ]

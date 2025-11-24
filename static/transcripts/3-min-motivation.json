@@ -1,0 +1,39 @@
+{
+  "transcription": "Pro thing people die.",
+  "processing_time": 3.17,
+  "word_timestamps": [
+    {
+      "word": "Pro",
+      "start": 123.36,
+      "end": 123.52
+    },
+    {
+      "word": "thing",
+      "start": 123.68,
+      "end": 123.84
+    },
+    {
+      "word": "people",
+      "start": 124.0,
+      "end": 124.08
+    },
+    {
+      "word": "die.",
+      "start": 124.48,
+      "end": 124.72
+    }
+  ],
+  "segment_timestamps": [
+    {
+      "text": "Pro thing people die.",
+      "start": 123.36,
+      "end": 124.72,
+      "word_count": 4
+    }
+  ],
+  "metadata": {
+    "total_segments": 1,
+    "total_words": 4,
+    "duration": 124.72
+  }
+}

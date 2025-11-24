@@ -21,7 +21,7 @@ SSH_HOST = "naresh@85.234.64.44"
 SSH_REMOTE_HOST = "worker-9"
 SSH_LOCAL_PORT = 8006
 SSH_REMOTE_PORT = 8006
-TRANSCRIPTION_SERVICE_URL = f"http://localhost:{SSH_LOCAL_PORT}/transcribe/url"
+TRANSCRIPTION_SERVICE_URL = f"http://localhost:{SSH_LOCAL_PORT}/transcribe"
 AUDIO_BASE_URL = "http://localhost:8080/audios"
 
 
@@ -52,6 +52,39 @@ def check_transcript_exists(audio_filename: str) -> bool:
         return False
     transcript_path = get_transcript_path(audio_filename)
     return transcript_path.exists() and transcript_path.is_file()
+
+
+def load_transcript(audio_filename: str) -> Optional[dict]:
+    """
+    Load transcript data from JSON file.
+    
+    Args:
+        audio_filename: Name of the audio file (e.g., "motivation.wav")
+    
+    Returns:
+        Dictionary containing transcript data or None if file doesn't exist
+    """
+    if not audio_filename:
+        return None
+    
+    try:
+        transcript_path = get_transcript_path(audio_filename)
+        
+        if not transcript_path.exists() or not transcript_path.is_file():
+            return None
+        
+        with open(transcript_path, 'r', encoding='utf-8') as f:
+            transcript_data = json.load(f)
+        
+        logger.info(f"Successfully loaded transcript from {transcript_path}")
+        return transcript_data
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing transcript JSON for {audio_filename}: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading transcript for {audio_filename}: {str(e)}")
+        return None
 
 
 def save_transcript(audio_filename: str, transcription_data: dict) -> bool:

@@ -1,0 +1,71 @@
+{
+  "transcription": "Oh, there we go. Wow, one million. Okay.",
+  "processing_time": 2.82,
+  "word_timestamps": [
+    {
+      "word": "Oh,",
+      "start": 5.76,
+      "end": 5.92
+    },
+    {
+      "word": "there",
+      "start": 6.24,
+      "end": 6.32
+    },
+    {
+      "word": "we",
+      "start": 6.48,
+      "end": 6.72
+    },
+    {
+      "word": "go.",
+      "start": 6.72,
+      "end": 6.88
+    },
+    {
+      "word": "Wow,",
+      "start": 12.96,
+      "end": 13.36
+    },
+    {
+      "word": "one",
+      "start": 13.6,
+      "end": 13.76
+    },
+    {
+      "word": "million.",
+      "start": 14.0,
+      "end": 14.48
+    },
+    {
+      "word": "Okay.",
+      "start": 14.64,
+      "end": 14.96
+    }
+  ],
+  "segment_timestamps": [
+    {
+      "text": "Oh, there we go.",
+      "start": 5.76,
+      "end": 6.88,
+      "word_count": 4
+    },
+    {
+      "text": "Wow, one million.",
+      "start": 12.96,
+      "end": 14.48,
+      "word_count": 3
+    },
+    {
+      "text": "Okay.",
+      "start": 14.64,
+      "end": 14.96,
+      "word_count": 1
+    }
+  ],
+  "metadata": {
+    "total_segments": 3,
+    "total_words": 8,
+    "duration": 14.96
+  }
+}

@@ -17,7 +17,8 @@ from app.utils.transcript_service import (
     start_transcription_job,
     is_transcribing,
     process_transcription_async,
-    get_transcription_jobs
+    get_transcription_jobs,
+    load_transcript
 )
 from pathlib import Path
 import cv2
@@ -385,4 +386,45 @@ async def process_transcript(video_id: str):
         "video_id": video_id,
         "status": "processing"
     }
+
+
+@router.get("/videos/{video_id}/transcript")
+async def get_transcript(video_id: str):
+    """Get transcript data for a video."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check if audio exists (prerequisite for transcript)
+    if not check_audio_exists(video_file.name):
+        raise HTTPException(
+            status_code=404,
+            detail="Audio file does not exist. Transcript requires audio file."
+        )
+    
+    # Get audio filename
+    audio_path = get_audio_path(video_file.name)
+    audio_filename = audio_path.name
+    
+    # Load transcript
+    transcript_data = load_transcript(audio_filename)
+    
+    if transcript_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Transcript not found for this video"
+        )
+    
+    return transcript_data
 
