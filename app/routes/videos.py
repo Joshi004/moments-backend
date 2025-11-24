@@ -6,6 +6,14 @@ from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, 
 from app.utils.moments_service import load_moments, add_moment
 from app.utils.audio_service import check_audio_exists, start_processing_job, is_processing, process_audio_async
 from app.utils.transcript_service import check_transcript_exists, start_transcription_job, is_transcribing, process_transcription_async, load_transcript
+from app.utils.moments_generation_service import (
+    start_generation_job,
+    is_generating,
+    process_moments_generation_async,
+    get_generation_status
+)
+from pydantic import BaseModel
+from typing import Optional
 from pathlib import Path
 import cv2
 
@@ -356,4 +364,109 @@ async def get_transcript(video_id: str):
         raise HTTPException(status_code=404, detail="Transcript not found for this video")
     
     return transcript_data
+
+
+class GenerateMomentsRequest(BaseModel):
+    """Request model for moment generation."""
+    user_prompt: Optional[str] = None
+    min_moment_length: float = 60.0
+    max_moment_length: float = 600.0
+    min_moments: int = 1
+    max_moments: int = 10
+
+
+@router.post("/videos/{video_id}/generate-moments")
+async def generate_moments(video_id: str, request: GenerateMomentsRequest):
+    """Start moment generation process for a video."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check if transcript exists (required for generation)
+    audio_filename = video_file.stem + ".wav"
+    if not check_audio_exists(video_file.name):
+        raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
+    
+    if not check_transcript_exists(audio_filename):
+        raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
+    
+    # Check if already processing
+    if is_generating(video_id):
+        raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
+    
+    # Validate parameters
+    if request.min_moment_length <= 0 or request.max_moment_length <= 0:
+        raise HTTPException(status_code=400, detail="Moment length must be greater than 0")
+    
+    if request.min_moment_length > request.max_moment_length:
+        raise HTTPException(status_code=400, detail="min_moment_length must be <= max_moment_length")
+    
+    if request.min_moments <= 0 or request.max_moments <= 0:
+        raise HTTPException(status_code=400, detail="Number of moments must be greater than 0")
+    
+    if request.min_moments > request.max_moments:
+        raise HTTPException(status_code=400, detail="min_moments must be <= max_moments")
+    
+    # Default prompt if not provided
+    default_prompt = """Analyze the following video transcript and identify the most important, engaging, or valuable moments. Each moment should represent a distinct topic, insight, or highlight that would be meaningful to viewers.
+
+Generate moments that:
+- Capture key insights, turning points, or memorable segments
+- Have clear, descriptive titles (5-15 words)
+- Represent complete thoughts or concepts
+- Are non-overlapping and well-spaced throughout the video"""
+    
+    user_prompt = request.user_prompt if request.user_prompt else default_prompt
+    
+    if not user_prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    
+    # Start generation job
+    if not start_generation_job(video_id):
+        raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
+    
+    # Start async processing
+    process_moments_generation_async(
+        video_id=video_id,
+        video_filename=video_file.name,
+        user_prompt=user_prompt,
+        min_moment_length=request.min_moment_length,
+        max_moment_length=request.max_moment_length,
+        min_moments=request.min_moments,
+        max_moments=request.max_moments
+    )
+    
+    return {"message": "Moment generation started", "video_id": video_id}
+
+
+@router.get("/videos/{video_id}/generation-status")
+async def get_generation_status_endpoint(video_id: str):
+    """Get moment generation status for a video."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Get generation status
+    status = get_generation_status(video_id)
+    
+    if status is None:
+        return {"status": "not_started", "started_at": None}
+    
+    return status
 

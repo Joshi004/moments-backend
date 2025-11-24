@@ -559,32 +559,91 @@ def extract_segment_data(transcript: Dict) -> List[Dict]:
     return extracted
 
 
-def build_prompt(user_prompt: str, segments: List[Dict]) -> str:
+def build_prompt(
+    user_prompt: str,
+    segments: List[Dict],
+    video_duration: float,
+    min_moment_length: float,
+    max_moment_length: float,
+    min_moments: int,
+    max_moments: int
+) -> str:
     """
     Build the complete prompt for the AI model.
     
     Args:
-        user_prompt: User-provided prompt (fully editable, includes response format requirements)
-        segments: List of segment dictionaries with 'start' and 'text'
+        user_prompt: User-provided prompt (editable, visible in UI)
+        segments: List of segment dictionaries with 'start' (float) and 'text' (string)
+        video_duration: Total duration of the video in seconds
+        min_moment_length: Minimum moment length in seconds
+        max_moment_length: Maximum moment length in seconds
+        min_moments: Minimum number of moments to generate
+        max_moments: Maximum number of moments to generate
     
     Returns:
-        Complete prompt string with segments inserted
+        Complete prompt string with all sections assembled
     """
-    # Format segments for inclusion in prompt
+    # Format segments as [timestamp] text (only start timestamp and text)
     segments_text = "\n".join([
-        f"[{seg['start']:.2f}s] {seg['text']}"
+        f"[{seg['start']:.2f}] {seg['text']}"
         for seg in segments
     ])
     
-    # Insert segments into the user prompt where {segments} placeholder is, or append if no placeholder
-    if '{segments}' in user_prompt:
-        complete_prompt = user_prompt.replace('{segments}', segments_text)
-    else:
-        # If no placeholder, append segments after the prompt
-        complete_prompt = f"""{user_prompt}
+    # Input format explanation (backend-only, not editable)
+    input_format_explanation = """INPUT FORMAT:
+The transcript is provided as a series of segments. Each segment has:
+- A timestamp (in seconds) indicating when that segment starts in the video
+- The text content spoken during that segment
 
-Transcript segments with timestamps:
-{segments_text}"""
+Format: [timestamp_in_seconds] text_content
+
+Example:
+[0.24] You know, rather than be scared by a jobless future
+[2.56] I started to rethink it and I said
+[5.12] I could really be excited by a jobless future"""
+    
+    # Response format specification (backend-only, not editable)
+    response_format_specification = """OUTPUT FORMAT:
+You must respond with a valid JSON array. Each object in the array represents one moment and must have exactly these fields:
+- start_time: (float) The start time in seconds (must match or be close to a segment timestamp)
+- end_time: (float) The end time in seconds (must be greater than start_time)
+- title: (string) A clear, descriptive title for this moment (5-15 words)
+
+Example response:
+[
+  {
+    "start_time": 0.24,
+    "end_time": 15.5,
+    "title": "Introduction to jobless future concept"
+  },
+  {
+    "start_time": 45.2,
+    "end_time": 78.8,
+    "title": "Discussion about human potential and creativity"
+  }
+]"""
+    
+    # Constraints section (backend-only, dynamically generated)
+    constraints = f"""CONSTRAINTS:
+- Video duration: {video_duration:.2f} seconds
+- Moment length: Between {min_moment_length:.2f} and {max_moment_length:.2f} seconds
+- Number of moments: Between {min_moments} and {max_moments}
+- All moments must be non-overlapping
+- All start_time values must be >= 0
+- All end_time values must be <= {video_duration:.2f}
+- Each moment's end_time must be > start_time"""
+    
+    # Assemble complete prompt
+    complete_prompt = f"""{user_prompt}
+
+{input_format_explanation}
+
+Transcript segments:
+{segments_text}
+
+{response_format_specification}
+
+{constraints}"""
     
     return complete_prompt
 
@@ -772,3 +831,198 @@ def get_generation_jobs() -> Dict[str, List[Dict]]:
             "jobs": active_jobs
         }
 
+
+def get_generation_status(video_id: str) -> Optional[Dict]:
+    """
+    Get generation status for a specific video.
+    
+    Args:
+        video_id: ID of the video
+    
+    Returns:
+        Dictionary with 'status' and 'started_at', or None if no job exists
+    """
+    with _generation_lock:
+        if video_id not in _generation_jobs:
+            return None
+        
+        job_info = _generation_jobs[video_id]
+        return {
+            "status": job_info.get("status", "unknown"),
+            "started_at": job_info.get("started_at", 0)
+        }
+
+
+def process_moments_generation_async(
+    video_id: str,
+    video_filename: str,
+    user_prompt: str,
+    min_moment_length: float,
+    max_moment_length: float,
+    min_moments: int,
+    max_moments: int
+) -> None:
+    """
+    Process moment generation asynchronously in a background thread.
+    
+    Args:
+        video_id: ID of the video (filename stem)
+        video_filename: Name of the video file (e.g., "motivation.mp4")
+        user_prompt: User-provided prompt (editable, visible in UI)
+        min_moment_length: Minimum moment length in seconds
+        max_moment_length: Maximum moment length in seconds
+        min_moments: Minimum number of moments to generate
+        max_moments: Maximum number of moments to generate
+    """
+    def generate():
+        tunnel_process = None
+        try:
+            # Import here to avoid circular imports
+            from app.utils.transcript_service import load_transcript
+            from app.utils.moments_service import save_moments, load_moments
+            from app.utils.video_utils import get_video_by_filename
+            import cv2
+            
+            logger.info(f"Starting moment generation for {video_id}")
+            
+            # Load transcript
+            audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
+            transcript_data = load_transcript(audio_filename)
+            
+            if transcript_data is None:
+                raise Exception(f"Transcript not found for {audio_filename}")
+            
+            # Extract segments (only start timestamp and text)
+            segments = extract_segment_data(transcript_data)
+            
+            if not segments:
+                raise Exception("No segments found in transcript")
+            
+            # Get video duration
+            video_file = get_video_by_filename(video_filename)
+            if not video_file:
+                raise Exception(f"Video file not found: {video_filename}")
+            
+            cap = cv2.VideoCapture(str(video_file))
+            if not cap.isOpened():
+                raise Exception(f"Could not open video file: {video_filename}")
+            
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            video_duration = frame_count / fps if fps > 0 else 0.0
+            cap.release()
+            
+            if video_duration <= 0:
+                raise Exception(f"Could not determine video duration for {video_filename}")
+            
+            logger.info(f"Video duration: {video_duration:.2f} seconds, Segments: {len(segments)}")
+            
+            # Build complete prompt
+            complete_prompt = build_prompt(
+                user_prompt=user_prompt,
+                segments=segments,
+                video_duration=video_duration,
+                min_moment_length=min_moment_length,
+                max_moment_length=max_moment_length,
+                min_moments=min_moments,
+                max_moments=max_moments
+            )
+            
+            logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
+            
+            # Create SSH tunnel and call AI model
+            with ssh_tunnel():
+                # Prepare messages for AI model
+                messages = [{
+                    "role": "user",
+                    "content": complete_prompt
+                }]
+                
+                # Call AI model
+                logger.info("Calling AI model for moment generation...")
+                ai_response = call_ai_model(messages)
+                
+                if ai_response is None:
+                    raise Exception("AI model call failed or returned no response")
+                
+                # Parse response to extract moments
+                logger.info("Parsing AI model response...")
+                moments = parse_moments_response(ai_response)
+                
+                if not moments:
+                    raise Exception("No moments found in AI model response")
+                
+                logger.info(f"Parsed {len(moments)} moments from AI response")
+                
+                # Validate moments against constraints
+                validated_moments = []
+                for i, moment in enumerate(moments):
+                    # Check moment duration
+                    duration = moment['end_time'] - moment['start_time']
+                    if duration < min_moment_length or duration > max_moment_length:
+                        logger.warning(f"Moment {i} duration {duration:.2f}s outside range [{min_moment_length:.2f}, {max_moment_length:.2f}], skipping")
+                        continue
+                    
+                    # Check bounds
+                    if moment['start_time'] < 0 or moment['end_time'] > video_duration:
+                        logger.warning(f"Moment {i} outside video bounds, skipping")
+                        continue
+                    
+                    # Check start < end
+                    if moment['end_time'] <= moment['start_time']:
+                        logger.warning(f"Moment {i} has invalid time range, skipping")
+                        continue
+                    
+                    validated_moments.append(moment)
+                
+                # Check number of moments constraint
+                if len(validated_moments) < min_moments:
+                    logger.warning(f"Only {len(validated_moments)} valid moments found, but minimum is {min_moments}")
+                elif len(validated_moments) > max_moments:
+                    logger.warning(f"{len(validated_moments)} valid moments found, but maximum is {max_moments}. Truncating to {max_moments}")
+                    validated_moments = validated_moments[:max_moments]
+                
+                # Check for overlaps
+                validated_moments.sort(key=lambda x: x['start_time'])
+                non_overlapping = []
+                for moment in validated_moments:
+                    overlaps = False
+                    for existing in non_overlapping:
+                        if (moment['start_time'] < existing['end_time'] and 
+                            moment['end_time'] > existing['start_time']):
+                            overlaps = True
+                            logger.warning(f"Moment '{moment['title']}' overlaps with '{existing['title']}', skipping")
+                            break
+                    if not overlaps:
+                        non_overlapping.append(moment)
+                
+                validated_moments = non_overlapping
+                
+                if not validated_moments:
+                    raise Exception("No valid moments after validation")
+                
+                logger.info(f"Saving {len(validated_moments)} validated moments")
+                
+                # Save moments (replaces existing)
+                success = save_moments(video_filename, validated_moments)
+                
+                if not success:
+                    raise Exception("Failed to save moments to file")
+                
+                # Mark job as complete
+                complete_generation_job(video_id, success=True)
+                
+                logger.info(f"Moment generation completed successfully for {video_id}: {len(validated_moments)} moments saved")
+                
+        except Exception as e:
+            logger.error(f"Error in async moment generation for {video_id}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            complete_generation_job(video_id, success=False)
+        finally:
+            # Tunnel is closed by context manager
+            pass
+    
+    # Start processing in background thread
+    thread = threading.Thread(target=generate, daemon=True)
+    thread.start()
