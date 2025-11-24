@@ -17,4 +17,9 @@ class Moment(BaseModel):
     title: str
 
 
+class GenerateMomentsRequest(BaseModel):
+    prompt: str
+    num_moments: int
+
+
 
