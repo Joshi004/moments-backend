@@ -5,7 +5,7 @@ from app.utils.video_utils import get_video_files
 from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
 from app.utils.moments_service import load_moments, add_moment
 from app.utils.audio_service import check_audio_exists, start_processing_job, is_processing, process_audio_async
-from app.utils.transcript_service import check_transcript_exists, start_transcription_job, is_transcribing, process_transcription_async
+from app.utils.transcript_service import check_transcript_exists, start_transcription_job, is_transcribing, process_transcription_async, load_transcript
 from pathlib import Path
 import cv2
 
@@ -327,4 +327,33 @@ async def process_transcript(video_id: str):
     process_transcription_async(video_id, audio_filename)
     
     return {"message": "Transcript generation started", "video_id": video_id}
+
+
+@router.get("/videos/{video_id}/transcript")
+async def get_transcript(video_id: str):
+    """Get transcript for a video."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check if audio exists (required for transcript)
+    audio_filename = video_file.stem + ".wav"
+    if not check_audio_exists(video_file.name):
+        raise HTTPException(status_code=400, detail="Audio file not found for this video")
+    
+    # Load transcript
+    transcript_data = load_transcript(audio_filename)
+    
+    if transcript_data is None:
+        raise HTTPException(status_code=404, detail="Transcript not found for this video")
+    
+    return transcript_data
 
