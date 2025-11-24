@@ -140,7 +140,7 @@ static/videos/*.mov
 static/videos/*.avi
 static/videos/*.mkv
 static/videos/*.ogg
-static/audios/*
+static/*
 
 # Keep videos directory structure
 !static/videos/.gitkeep
