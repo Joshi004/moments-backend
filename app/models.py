@@ -12,9 +12,12 @@ class Video(BaseModel):
 
 
 class Moment(BaseModel):
+    id: Optional[str] = None           # Unique identifier (generated from timestamp hash)
     start_time: float
     end_time: float
     title: str
+    is_refined: bool = False           # True if this is a refined moment
+    parent_id: Optional[str] = None    # ID of original moment (for refined moments)
 
 
 

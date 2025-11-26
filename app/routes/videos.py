@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from app.models import Video, Moment
 from app.utils.video_utils import get_video_files
 from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
-from app.utils.moments_service import load_moments, add_moment
+from app.utils.moments_service import load_moments, add_moment, get_moment_by_id
 from app.utils.audio_service import check_audio_exists, start_processing_job, is_processing, process_audio_async
 from app.utils.transcript_service import check_transcript_exists, start_transcription_job, is_transcribing, process_transcription_async, load_transcript
 from app.utils.moments_generation_service import (
@@ -11,6 +11,12 @@ from app.utils.moments_generation_service import (
     is_generating,
     process_moments_generation_async,
     get_generation_status
+)
+from app.utils.refine_moment_service import (
+    start_refinement_job,
+    is_refining,
+    process_moment_refinement_async,
+    get_refinement_status
 )
 from pydantic import BaseModel
 from typing import Optional
@@ -464,6 +470,104 @@ async def get_generation_status_endpoint(video_id: str):
     
     # Get generation status
     status = get_generation_status(video_id)
+    
+    if status is None:
+        return {"status": "not_started", "started_at": None}
+    
+    return status
+
+
+class RefineMomentRequest(BaseModel):
+    """Request model for moment refinement."""
+    user_prompt: Optional[str] = None
+    left_padding: float = 30.0
+    right_padding: float = 30.0
+
+
+@router.post("/videos/{video_id}/moments/{moment_id}/refine")
+async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequest):
+    """Start moment refinement process."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check if moment exists
+    moment = get_moment_by_id(video_file.name, moment_id)
+    if moment is None:
+        raise HTTPException(status_code=404, detail="Moment not found")
+    
+    # Check if transcript exists (required for refinement)
+    audio_filename = video_file.stem + ".wav"
+    if not check_audio_exists(video_file.name):
+        raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
+    
+    if not check_transcript_exists(audio_filename):
+        raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
+    
+    # Check if already processing
+    if is_refining(video_id, moment_id):
+        raise HTTPException(status_code=409, detail="Moment refinement already in progress")
+    
+    # Validate parameters
+    if request.left_padding < 0 or request.right_padding < 0:
+        raise HTTPException(status_code=400, detail="Padding values must be >= 0")
+    
+    # Default prompt if not provided
+    default_prompt = """Analyze the word-level transcript and identify the precise start and end timestamps for this moment. The current timestamps may be slightly off. Find the exact point where this topic/segment naturally begins and ends.
+
+Guidelines:
+- Start the moment at the first word that introduces the topic
+- End the moment at the last word that concludes the thought
+- Be precise with word boundaries
+- Ensure the moment captures complete sentences or phrases"""
+    
+    user_prompt = request.user_prompt if request.user_prompt else default_prompt
+    
+    if not user_prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    
+    # Start refinement job
+    if not start_refinement_job(video_id, moment_id):
+        raise HTTPException(status_code=409, detail="Moment refinement already in progress")
+    
+    # Start async processing
+    process_moment_refinement_async(
+        video_id=video_id,
+        moment_id=moment_id,
+        video_filename=video_file.name,
+        user_prompt=user_prompt,
+        left_padding=request.left_padding,
+        right_padding=request.right_padding
+    )
+    
+    return {"message": "Moment refinement started", "video_id": video_id, "moment_id": moment_id}
+
+
+@router.get("/videos/{video_id}/refinement-status/{moment_id}")
+async def get_refinement_status_endpoint(video_id: str, moment_id: str):
+    """Get moment refinement status."""
+    video_files = get_video_files()
+    
+    # Find video by matching stem
+    video_file = None
+    for vf in video_files:
+        if vf.stem == video_id:
+            video_file = vf
+            break
+    
+    if not video_file or not video_file.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Get refinement status
+    status = get_refinement_status(video_id, moment_id)
     
     if status is None:
         return {"status": "not_started", "started_at": None}
