@@ -18,6 +18,8 @@ class Moment(BaseModel):
     title: str
     is_refined: bool = False           # True if this is a refined moment
     parent_id: Optional[str] = None    # ID of original moment (for refined moments)
+    model_name: Optional[str] = None   # AI model name used to generate/refine this moment
+    prompt: Optional[str] = None       # Full prompt used to generate/refine this moment
 
 
 

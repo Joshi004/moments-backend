@@ -18,6 +18,26 @@ def get_refinement_job_key(video_id: str, moment_id: str) -> str:
     return f"{video_id}:{moment_id}"
 
 
+def extract_model_name(response: Dict) -> str:
+    """
+    Extract model name from AI API response.
+    
+    Args:
+        response: Dictionary containing AI model response
+    
+    Returns:
+        Model name string, or "Unknown Model" if not available
+    """
+    if not isinstance(response, dict):
+        return "Unknown Model"
+    
+    model_name = response.get('model', 'Unknown Model')
+    if not model_name or model_name == '':
+        return "Unknown Model"
+    
+    return str(model_name)
+
+
 def extract_word_timestamps_for_range(
     transcript: Dict,
     start: float,
@@ -524,6 +544,10 @@ def process_moment_refinement_async(
                     logger.error(f"AI response has empty or invalid 'choices'. Choices: {ai_response.get('choices', 'N/A')}")
                     raise Exception("AI model response has no choices")
                 
+                # Extract model name from response
+                model_name = extract_model_name(ai_response)
+                logger.info(f"Using AI model: {model_name}")
+                
                 # Parse response to extract refined timestamps
                 logger.info("Parsing AI model response...")
                 refined_start, refined_end = parse_refinement_response(ai_response)
@@ -540,7 +564,9 @@ def process_moment_refinement_async(
                     'end_time': refined_end,
                     'title': moment['title'],  # Keep same title as original
                     'is_refined': True,
-                    'parent_id': moment_id
+                    'parent_id': moment_id,
+                    'model_name': model_name,
+                    'prompt': complete_prompt
                 }
                 
                 # Add refined moment

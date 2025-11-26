@@ -528,6 +528,26 @@ def call_ai_model(messages: List[Dict]) -> Optional[Dict]:
         return None
 
 
+def extract_model_name(response: Dict) -> str:
+    """
+    Extract model name from AI API response.
+    
+    Args:
+        response: Dictionary containing AI model response
+    
+    Returns:
+        Model name string, or "Unknown Model" if not available
+    """
+    if not isinstance(response, dict):
+        return "Unknown Model"
+    
+    model_name = response.get('model', 'Unknown Model')
+    if not model_name or model_name == '':
+        return "Unknown Model"
+    
+    return str(model_name)
+
+
 def extract_segment_data(transcript: Dict) -> List[Dict]:
     """
     Extract segment timestamps from transcript, returning only start time and text.
@@ -945,6 +965,10 @@ def process_moments_generation_async(
                 if ai_response is None:
                     raise Exception("AI model call failed or returned no response")
                 
+                # Extract model name from response
+                model_name = extract_model_name(ai_response)
+                logger.info(f"Using AI model: {model_name}")
+                
                 # Parse response to extract moments
                 logger.info("Parsing AI model response...")
                 moments = parse_moments_response(ai_response)
@@ -953,6 +977,11 @@ def process_moments_generation_async(
                     raise Exception("No moments found in AI model response")
                 
                 logger.info(f"Parsed {len(moments)} moments from AI response")
+                
+                # Add model_name and prompt to each moment
+                for moment in moments:
+                    moment['model_name'] = model_name
+                    moment['prompt'] = complete_prompt
                 
                 # Validate moments against constraints
                 validated_moments = []

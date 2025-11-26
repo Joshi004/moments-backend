@@ -82,6 +82,13 @@ def load_moments(video_filename: str) -> List[Dict]:
                 if 'parent_id' not in moment:
                     moment['parent_id'] = None
                     modified = True
+                # Ensure model_name and prompt fields exist (backward compatibility)
+                if 'model_name' not in moment:
+                    moment['model_name'] = None
+                    modified = True
+                if 'prompt' not in moment:
+                    moment['prompt'] = None
+                    modified = True
             
             # Save if we modified any moments
             if modified:
@@ -234,6 +241,11 @@ def add_moment(video_filename: str, moment: Dict, video_duration: float) -> Tupl
         moment['is_refined'] = False
     if 'parent_id' not in moment:
         moment['parent_id'] = None
+    # Ensure model_name and prompt fields exist (backward compatibility)
+    if 'model_name' not in moment:
+        moment['model_name'] = None
+    if 'prompt' not in moment:
+        moment['prompt'] = None
     
     # Add the moment to the list
     existing_moments.append(moment)
