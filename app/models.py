@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class Video(BaseModel):
@@ -20,6 +20,7 @@ class Moment(BaseModel):
     parent_id: Optional[str] = None    # ID of original moment (for refined moments)
     model_name: Optional[str] = None   # AI model name used to generate/refine this moment
     prompt: Optional[str] = None       # Full prompt used to generate/refine this moment
+    generation_config: Optional[Dict[str, Any]] = None  # Configuration used to generate/refine this moment
 
 
 

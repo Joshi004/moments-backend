@@ -18,7 +18,7 @@ _generation_jobs: Dict[str, Dict] = {}
 _generation_lock = threading.Lock()
 
 # Hardcoded max_tokens for all models
-MAX_TOKENS = 1000
+MAX_TOKENS = 2000
 
 
 @contextmanager
@@ -1047,10 +1047,24 @@ def process_moments_generation_async(
                 
                 logger.info(f"Parsed {len(moments)} moments from AI response")
                 
-                # Add model_name and prompt to each moment
+                # Create generation_config dictionary with all parameters
+                generation_config = {
+                    "model": model,
+                    "temperature": temperature,
+                    "user_prompt": user_prompt,
+                    "complete_prompt": complete_prompt,
+                    "min_moment_length": min_moment_length,
+                    "max_moment_length": max_moment_length,
+                    "min_moments": min_moments,
+                    "max_moments": max_moments,
+                    "operation_type": "generation"
+                }
+                
+                # Add model_name, prompt, and generation_config to each moment
                 for moment in moments:
                     moment['model_name'] = model_name
                     moment['prompt'] = complete_prompt
+                    moment['generation_config'] = generation_config
                 
                 # Validate moments against constraints
                 validated_moments = []

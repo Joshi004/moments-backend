@@ -89,6 +89,10 @@ def load_moments(video_filename: str) -> List[Dict]:
                 if 'prompt' not in moment:
                     moment['prompt'] = None
                     modified = True
+                # Ensure generation_config field exists (backward compatibility)
+                if 'generation_config' not in moment:
+                    moment['generation_config'] = None
+                    modified = True
             
             # Save if we modified any moments
             if modified:
@@ -246,6 +250,9 @@ def add_moment(video_filename: str, moment: Dict, video_duration: float) -> Tupl
         moment['model_name'] = None
     if 'prompt' not in moment:
         moment['prompt'] = None
+    # Ensure generation_config field exists (backward compatibility)
+    if 'generation_config' not in moment:
+        moment['generation_config'] = None
     
     # Add the moment to the list
     existing_moments.append(moment)

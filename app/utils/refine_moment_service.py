@@ -567,6 +567,17 @@ def process_moment_refinement_async(
                 if refined_start < 0 or refined_end > video_duration:
                     raise Exception(f"Refined timestamps outside video bounds [0, {video_duration:.2f}]")
                 
+                # Create generation_config dictionary with all refinement parameters
+                generation_config = {
+                    "model": model,
+                    "temperature": temperature,
+                    "user_prompt": user_prompt,
+                    "complete_prompt": complete_prompt,
+                    "left_padding": left_padding,
+                    "right_padding": right_padding,
+                    "operation_type": "refinement"
+                }
+                
                 # Create refined moment
                 refined_moment = {
                     'start_time': refined_start,
@@ -575,7 +586,8 @@ def process_moment_refinement_async(
                     'is_refined': True,
                     'parent_id': moment_id,
                     'model_name': model_name,
-                    'prompt': complete_prompt
+                    'prompt': complete_prompt,
+                    'generation_config': generation_config
                 }
                 
                 # Add refined moment
