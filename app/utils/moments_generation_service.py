@@ -8,6 +8,7 @@ import re
 from typing import Optional, Dict, List
 from contextlib import contextmanager
 import logging
+from app.utils.model_config import get_model_config, get_model_url
 
 logger = logging.getLogger(__name__)
 
@@ -16,27 +17,24 @@ logger = logging.getLogger(__name__)
 _generation_jobs: Dict[str, Dict] = {}
 _generation_lock = threading.Lock()
 
-# SSH tunnel configuration for AI model
-# Note: Using port 8007 to avoid conflicts with Cursor IDE which uses ports 7004, 7104, 8005, etc.
-# The model service runs on worker-9, not on the login node
-SSH_HOST = "naresh@85.234.64.44"
-SSH_REMOTE_HOST = "worker-9"  # The compute node where the model service is running
-SSH_LOCAL_PORT = 8007
-SSH_REMOTE_PORT = 7104  # Remote server port (where your model is actually running)
-AI_MODEL_URL = f"http://localhost:{SSH_LOCAL_PORT}/v1/chat/completions"
+# Hardcoded max_tokens for all models
+MAX_TOKENS = 1000
 
 
 @contextmanager
-def ssh_tunnel():
+def ssh_tunnel(model_key: str = "minimax"):
     """
     Context manager for SSH tunnel lifecycle.
     Creates tunnel on entry and closes it on exit.
+    
+    Args:
+        model_key: Model identifier ("minimax" or "qwen")
     """
     tunnel_process = None
     try:
         # Create SSH tunnel
-        logger.info("Creating SSH tunnel...")
-        tunnel_process = create_ssh_tunnel()
+        logger.info(f"Creating SSH tunnel for model: {model_key}...")
+        tunnel_process = create_ssh_tunnel(model_key)
         if tunnel_process is None:
             raise Exception("Failed to create SSH tunnel - process exited immediately")
         
@@ -51,22 +49,31 @@ def ssh_tunnel():
         # Always close tunnel
         if tunnel_process is not None:
             logger.info("Closing SSH tunnel...")
-            close_ssh_tunnel(tunnel_process)
+            close_ssh_tunnel(tunnel_process, model_key)
 
 
-def check_existing_tunnel() -> bool:
+def check_existing_tunnel(model_key: str = "minimax") -> bool:
     """
     Check if there's already an active SSH tunnel on the configured port.
+    
+    Args:
+        model_key: Model identifier ("minimax" or "qwen")
     
     Returns:
         True if tunnel exists and port is accessible, False otherwise
     """
     import socket
     try:
+        config = get_model_config(model_key)
+        ssh_host = config['ssh_host']
+        ssh_remote_host = config['ssh_remote_host']
+        ssh_local_port = config['ssh_local_port']
+        ssh_remote_port = config['ssh_remote_port']
+        
         # Check if port is accessible
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
-        result = sock.connect_ex(('localhost', SSH_LOCAL_PORT))
+        result = sock.connect_ex(('localhost', ssh_local_port))
         sock.close()
         
         if result == 0:
@@ -76,13 +83,13 @@ def check_existing_tunnel() -> bool:
                     cmdline = proc.info.get('cmdline', [])
                     if cmdline and 'ssh' in cmdline:
                         cmd_str = ' '.join(cmdline)
-                        if f':{SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}' in cmd_str and SSH_HOST in cmd_str:
+                        if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
                             logger.info(f"Found existing SSH tunnel (PID: {proc.info['pid']})")
                             return True
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             # Port is accessible but not our tunnel - might be another service
-            logger.warning(f"Port {SSH_LOCAL_PORT} is in use but not by our SSH tunnel")
+            logger.warning(f"Port {ssh_local_port} is in use but not by our SSH tunnel")
             return False
         return False
     except Exception as e:
@@ -90,16 +97,25 @@ def check_existing_tunnel() -> bool:
         return False
 
 
-def create_ssh_tunnel() -> Optional[subprocess.Popen]:
+def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
     """
     Create SSH tunnel to AI model service.
+    
+    Args:
+        model_key: Model identifier ("minimax" or "qwen")
     
     Returns:
         subprocess.Popen object if successful, None otherwise
     """
     try:
+        config = get_model_config(model_key)
+        ssh_host = config['ssh_host']
+        ssh_remote_host = config['ssh_remote_host']
+        ssh_local_port = config['ssh_local_port']
+        ssh_remote_port = config['ssh_remote_port']
+        
         # First, check if there's already an active tunnel we can reuse
-        if check_existing_tunnel():
+        if check_existing_tunnel(model_key):
             logger.info("Reusing existing SSH tunnel")
             # Return a dummy process - the tunnel is already running
             return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
@@ -108,23 +124,23 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
-        result = sock.connect_ex(('localhost', SSH_LOCAL_PORT))
+        result = sock.connect_ex(('localhost', ssh_local_port))
         sock.close()
         
         if result == 0:
             # Port is in use - try to kill any SSH tunnels on this port
-            logger.warning(f"Port {SSH_LOCAL_PORT} is in use, attempting to close existing tunnels...")
-            close_ssh_tunnel(None)
+            logger.warning(f"Port {ssh_local_port} is in use, attempting to close existing tunnels...")
+            close_ssh_tunnel(None, model_key)
             time.sleep(1.0)
             
             # Check again
             sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock2.settimeout(1)
-            result2 = sock2.connect_ex(('localhost', SSH_LOCAL_PORT))
+            result2 = sock2.connect_ex(('localhost', ssh_local_port))
             sock2.close()
             
             if result2 == 0:
-                logger.error(f"Port {SSH_LOCAL_PORT} is still in use after cleanup. Another service may be using it.")
+                logger.error(f"Port {ssh_local_port} is still in use after cleanup. Another service may be using it.")
                 return None
         
         cmd = [
@@ -133,12 +149,12 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
             '-o', 'ExitOnForwardFailure=yes',
             '-o', 'StrictHostKeyChecking=no',  # Skip host key checking
             '-o', 'ConnectTimeout=10',  # Connection timeout
-            '-L', f'{SSH_LOCAL_PORT}:{SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}',
-            SSH_HOST
+            '-L', f'{ssh_local_port}:{ssh_remote_host}:{ssh_remote_port}',
+            ssh_host
         ]
         
         logger.info(f"Creating SSH tunnel: {' '.join(cmd)}")
-        logger.info(f"Tunnel config: localhost:{SSH_LOCAL_PORT} -> {SSH_REMOTE_HOST}:{SSH_REMOTE_PORT} via {SSH_HOST}")
+        logger.info(f"Tunnel config: localhost:{ssh_local_port} -> {ssh_remote_host}:{ssh_remote_port} via {ssh_host}")
         
         process = subprocess.Popen(
             cmd,
@@ -160,7 +176,7 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
             import socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
-            result = sock.connect_ex(('localhost', SSH_LOCAL_PORT))
+            result = sock.connect_ex(('localhost', ssh_local_port))
             sock.close()
             
             if result == 0:
@@ -168,12 +184,12 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
                 return process  # Return process even though it "failed" - tunnel exists
             else:
                 logger.warning("Port in use but tunnel not accessible, attempting cleanup...")
-                close_ssh_tunnel(None)
+                close_ssh_tunnel(None, model_key)
                 time.sleep(1.0)
                 # Try to verify again after cleanup
                 sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock2.settimeout(2)
-                result2 = sock2.connect_ex(('localhost', SSH_LOCAL_PORT))
+                result2 = sock2.connect_ex(('localhost', ssh_local_port))
                 sock2.close()
                 if result2 == 0:
                     logger.info("Tunnel accessible after cleanup")
@@ -201,7 +217,7 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
                 cmdline = proc.info.get('cmdline', [])
                 if cmdline and 'ssh' in cmdline:
                     cmd_str = ' '.join(cmdline)
-                    if f':{SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}' in cmd_str and SSH_HOST in cmd_str:
+                    if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
                         logger.info(f"Found SSH tunnel process (PID: {proc.info['pid']})")
                         tunnel_running = True
                         break
@@ -216,16 +232,16 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(3)
-            result = sock.connect_ex(('localhost', SSH_LOCAL_PORT))
+            result = sock.connect_ex(('localhost', ssh_local_port))
             sock.close()
             
             if result == 0:
-                logger.info(f"SSH tunnel verified: port {SSH_LOCAL_PORT} is listening and accessible")
+                logger.info(f"SSH tunnel verified: port {ssh_local_port} is listening and accessible")
                 # Return the process object (even though it exited, we have its PID for cleanup)
                 # The actual tunnel runs in a background SSH process
                 return process
             else:
-                logger.error(f"SSH tunnel port {SSH_LOCAL_PORT} is not accessible (connection test failed with code {result})")
+                logger.error(f"SSH tunnel port {ssh_local_port} is not accessible (connection test failed with code {result})")
                 if not tunnel_running:
                     logger.error("SSH tunnel process is not running. Check SSH configuration and remote service status.")
                 else:
@@ -242,17 +258,23 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
         return None
 
 
-def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None) -> bool:
+def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, model_key: str = "minimax") -> bool:
     """
     Close SSH tunnel by killing the SSH process.
     
     Args:
         tunnel_process: Optional subprocess.Popen object. If None, finds process by port.
+        model_key: Model identifier ("minimax" or "qwen")
     
     Returns:
         True if successful, False otherwise
     """
     try:
+        config = get_model_config(model_key)
+        ssh_host = config['ssh_host']
+        ssh_remote_host = config['ssh_remote_host']
+        ssh_remote_port = config['ssh_remote_port']
+        
         if tunnel_process is not None:
             # Kill the specific process
             try:
@@ -273,7 +295,7 @@ def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None) -> bool:
                     if cmdline and 'ssh' in cmdline:
                         # Check if this is our tunnel command
                         cmd_str = ' '.join(cmdline)
-                        if f':{SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}' in cmd_str and SSH_HOST in cmd_str:
+                        if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
                             proc.terminate()
                             try:
                                 proc.wait(timeout=5)
@@ -291,20 +313,26 @@ def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None) -> bool:
         return False
 
 
-def test_ssh_connection() -> bool:
+def test_ssh_connection(model_key: str = "minimax") -> bool:
     """
     Test basic SSH connectivity to the remote host.
+    
+    Args:
+        model_key: Model identifier ("minimax" or "qwen")
     
     Returns:
         True if SSH connection works, False otherwise
     """
     try:
-        logger.info(f"Testing SSH connection to {SSH_HOST}...")
+        config = get_model_config(model_key)
+        ssh_host = config['ssh_host']
+        
+        logger.info(f"Testing SSH connection to {ssh_host}...")
         cmd = [
             'ssh',
             '-o', 'ConnectTimeout=5',
             '-o', 'StrictHostKeyChecking=no',
-            SSH_HOST,
+            ssh_host,
             'echo "SSH connection test successful"'
         ]
         
@@ -326,22 +354,30 @@ def test_ssh_connection() -> bool:
         return False
 
 
-def check_remote_service() -> bool:
+def check_remote_service(model_key: str = "minimax") -> bool:
     """
     Check if the AI model service is running on the remote server.
+    
+    Args:
+        model_key: Model identifier ("minimax" or "qwen")
     
     Returns:
         True if service is accessible, False otherwise
     """
     try:
-        logger.info(f"Checking if AI model service is running on {SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}...")
+        config = get_model_config(model_key)
+        ssh_host = config['ssh_host']
+        ssh_remote_host = config['ssh_remote_host']
+        ssh_remote_port = config['ssh_remote_port']
+        
+        logger.info(f"Checking if AI model service is running on {ssh_remote_host}:{ssh_remote_port}...")
         # Try to curl the service via SSH
         cmd = [
             'ssh',
             '-o', 'ConnectTimeout=5',
             '-o', 'StrictHostKeyChecking=no',
-            SSH_HOST,
-            f'curl -s -o /dev/null -w "%{{http_code}}" --connect-timeout 5 http://{SSH_REMOTE_HOST}:{SSH_REMOTE_PORT}/v1/chat/completions || echo "FAILED"'
+            ssh_host,
+            f'curl -s -o /dev/null -w "%{{http_code}}" --connect-timeout 5 http://{ssh_remote_host}:{ssh_remote_port}/v1/chat/completions || echo "FAILED"'
         ]
         
         result = subprocess.run(
@@ -366,30 +402,35 @@ def check_remote_service() -> bool:
         return False
 
 
-def verify_tunnel_active(max_retries: int = 3, retry_delay: float = 1.0) -> bool:
+def verify_tunnel_active(model_key: str = "minimax", max_retries: int = 3, retry_delay: float = 1.0) -> bool:
     """
     Verify that the SSH tunnel is active and the AI model endpoint is accessible.
     
     Args:
+        model_key: Model identifier ("minimax" or "qwen")
         max_retries: Maximum number of retry attempts
         retry_delay: Delay between retries in seconds
     
     Returns:
         True if tunnel is active and endpoint is accessible, False otherwise
     """
+    config = get_model_config(model_key)
+    ssh_local_port = config['ssh_local_port']
+    model_url = get_model_url(model_key)
+    
     # First, verify port is listening (basic connectivity check)
     import socket
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
-        result = sock.connect_ex(('localhost', SSH_LOCAL_PORT))
+        result = sock.connect_ex(('localhost', ssh_local_port))
         sock.close()
         
         if result != 0:
-            logger.error(f"Port {SSH_LOCAL_PORT} is not accessible")
+            logger.error(f"Port {ssh_local_port} is not accessible")
             return False
         
-        logger.info(f"Port {SSH_LOCAL_PORT} is accessible")
+        logger.info(f"Port {ssh_local_port} is accessible")
     except Exception as e:
         logger.error(f"Port connectivity check failed: {str(e)}")
         return False
@@ -409,7 +450,7 @@ def verify_tunnel_active(max_retries: int = 3, retry_delay: float = 1.0) -> bool
             logger.info(f"Verifying tunnel connectivity to AI model (attempt {attempt + 1}/{max_retries})")
             
             response = requests.post(
-                AI_MODEL_URL,
+                model_url,
                 json=test_payload,
                 headers={"Content-Type": "application/json"},
                 timeout=15  # Longer timeout for verification
@@ -455,26 +496,42 @@ def verify_tunnel_active(max_retries: int = 3, retry_delay: float = 1.0) -> bool
     return False
 
 
-def call_ai_model(messages: List[Dict]) -> Optional[Dict]:
+def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Optional[str] = None, temperature: float = 0.7) -> Optional[Dict]:
     """
     Call the AI model via tunnel.
     
     Args:
         messages: List of message dictionaries with 'role' and 'content'
+        model_key: Model identifier ("minimax" or "qwen")
+        model_id: Optional model ID to use in the request (if None, uses config default)
+        temperature: Temperature parameter for the model (default: 0.7)
     
     Returns:
         Dictionary with AI model response or None if failed
     """
     try:
+        model_url = get_model_url(model_key)
+        config = get_model_config(model_key)
+        
+        # Use provided model_id or get from config
+        if model_id is None:
+            model_id = config.get('model_id')
+        
         payload = {
-            "messages": messages
+            "messages": messages,
+            "max_tokens": MAX_TOKENS,
+            "temperature": temperature
         }
         
-        logger.info(f"Calling AI model at {AI_MODEL_URL} with {len(messages)} messages")
+        # Only add model_id if it's specified (Qwen needs it, MiniMax might not)
+        if model_id:
+            payload["model"] = model_id
+        
+        logger.info(f"Calling AI model at {model_url} with {len(messages)} messages, model={model_id}, temperature={temperature}")
         logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
         
         response = requests.post(
-            AI_MODEL_URL,
+            model_url,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=300,  # 5 minute timeout
@@ -503,10 +560,14 @@ def call_ai_model(messages: List[Dict]) -> Optional[Dict]:
         logger.error(f"Connection error calling AI model: {error_str}")
         
         # Check if it's a connection reset - might indicate service issue
+        config = get_model_config(model_key)
+        ssh_remote_host = config['ssh_remote_host']
+        ssh_remote_port = config['ssh_remote_port']
+        
         if 'Connection reset' in error_str or 'Connection aborted' in error_str:
             logger.error("Connection reset by peer - this usually means:")
             logger.error("  1. The tunnel is working but the remote service is not responding")
-            logger.error(f"  2. The service on {SSH_REMOTE_HOST}:{SSH_REMOTE_PORT} might not be running")
+            logger.error(f"  2. The service on {ssh_remote_host}:{ssh_remote_port} might not be running")
             logger.error("  3. The service might be rejecting the connection")
         
         return None
@@ -880,7 +941,9 @@ def process_moments_generation_async(
     min_moment_length: float,
     max_moment_length: float,
     min_moments: int,
-    max_moments: int
+    max_moments: int,
+    model: str = "minimax",
+    temperature: float = 0.7
 ) -> None:
     """
     Process moment generation asynchronously in a background thread.
@@ -893,6 +956,8 @@ def process_moments_generation_async(
         max_moment_length: Maximum moment length in seconds
         min_moments: Minimum number of moments to generate
         max_moments: Maximum number of moments to generate
+        model: Model identifier ("minimax" or "qwen"), default: "minimax"
+        temperature: Temperature parameter for the model, default: 0.7
     """
     def generate():
         tunnel_process = None
@@ -950,8 +1015,12 @@ def process_moments_generation_async(
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
             
+            # Get model configuration
+            model_config = get_model_config(model)
+            model_id = model_config.get('model_id')
+            
             # Create SSH tunnel and call AI model
-            with ssh_tunnel():
+            with ssh_tunnel(model):
                 # Prepare messages for AI model
                 messages = [{
                     "role": "user",
@@ -959,8 +1028,8 @@ def process_moments_generation_async(
                 }]
                 
                 # Call AI model
-                logger.info("Calling AI model for moment generation...")
-                ai_response = call_ai_model(messages)
+                logger.info(f"Calling AI model ({model}) for moment generation...")
+                ai_response = call_ai_model(messages, model_key=model, model_id=model_id, temperature=temperature)
                 
                 if ai_response is None:
                     raise Exception("AI model call failed or returned no response")

@@ -379,6 +379,8 @@ class GenerateMomentsRequest(BaseModel):
     max_moment_length: float = 600.0
     min_moments: int = 1
     max_moments: int = 10
+    model: str = "minimax"
+    temperature: float = 0.7
 
 
 @router.post("/videos/{video_id}/generate-moments")
@@ -439,6 +441,14 @@ Generate moments that:
     if not start_generation_job(video_id):
         raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
     
+    # Validate model
+    if request.model not in ["minimax", "qwen"]:
+        raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax' or 'qwen'")
+    
+    # Validate temperature
+    if request.temperature < 0.0 or request.temperature > 2.0:
+        raise HTTPException(status_code=400, detail="Temperature must be between 0.0 and 2.0")
+    
     # Start async processing
     process_moments_generation_async(
         video_id=video_id,
@@ -447,7 +457,9 @@ Generate moments that:
         min_moment_length=request.min_moment_length,
         max_moment_length=request.max_moment_length,
         min_moments=request.min_moments,
-        max_moments=request.max_moments
+        max_moments=request.max_moments,
+        model=request.model,
+        temperature=request.temperature
     )
     
     return {"message": "Moment generation started", "video_id": video_id}
@@ -482,6 +494,8 @@ class RefineMomentRequest(BaseModel):
     user_prompt: Optional[str] = None
     left_padding: float = 30.0
     right_padding: float = 30.0
+    model: str = "minimax"
+    temperature: float = 0.7
 
 
 @router.post("/videos/{video_id}/moments/{moment_id}/refine")
@@ -537,6 +551,14 @@ Guidelines:
     if not user_prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
     
+    # Validate model
+    if request.model not in ["minimax", "qwen"]:
+        raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax' or 'qwen'")
+    
+    # Validate temperature
+    if request.temperature < 0.0 or request.temperature > 2.0:
+        raise HTTPException(status_code=400, detail="Temperature must be between 0.0 and 2.0")
+    
     # Start refinement job
     if not start_refinement_job(video_id, moment_id):
         raise HTTPException(status_code=409, detail="Moment refinement already in progress")
@@ -548,7 +570,9 @@ Guidelines:
         video_filename=video_file.name,
         user_prompt=user_prompt,
         left_padding=request.left_padding,
-        right_padding=request.right_padding
+        right_padding=request.right_padding,
+        model=request.model,
+        temperature=request.temperature
     )
     
     return {"message": "Moment refinement started", "video_id": video_id, "moment_id": moment_id}

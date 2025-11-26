@@ -424,7 +424,9 @@ def process_moment_refinement_async(
     video_filename: str,
     user_prompt: str,
     left_padding: float,
-    right_padding: float
+    right_padding: float,
+    model: str = "minimax",
+    temperature: float = 0.7
 ) -> None:
     """
     Process moment refinement asynchronously in a background thread.
@@ -436,6 +438,8 @@ def process_moment_refinement_async(
         user_prompt: User-provided prompt (editable, visible in UI)
         left_padding: Seconds to pad before moment start
         right_padding: Seconds to pad after moment end
+        model: Model identifier ("minimax" or "qwen"), default: "minimax"
+        temperature: Temperature parameter for the model, default: 0.7
     """
     def refine():
         try:
@@ -443,6 +447,7 @@ def process_moment_refinement_async(
             from app.utils.transcript_service import load_transcript
             from app.utils.moments_service import load_moments, add_moment, get_moment_by_id
             from app.utils.moments_generation_service import ssh_tunnel, call_ai_model
+            from app.utils.model_config import get_model_config
             from app.utils.video_utils import get_video_by_filename
             import cv2
             
@@ -504,8 +509,12 @@ def process_moment_refinement_async(
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
             
+            # Get model configuration
+            model_config = get_model_config(model)
+            model_id = model_config.get('model_id')
+            
             # Create SSH tunnel and call AI model
-            with ssh_tunnel():
+            with ssh_tunnel(model):
                 # Prepare messages for AI model
                 messages = [{
                     "role": "user",
@@ -513,8 +522,8 @@ def process_moment_refinement_async(
                 }]
                 
                 # Call AI model
-                logger.info("Calling AI model for moment refinement...")
-                ai_response = call_ai_model(messages)
+                logger.info(f"Calling AI model ({model}) for moment refinement...")
+                ai_response = call_ai_model(messages, model_key=model, model_id=model_id, temperature=temperature)
                 
                 if ai_response is None:
                     raise Exception("AI model call failed or returned no response")
