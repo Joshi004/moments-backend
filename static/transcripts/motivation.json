@@ -1,0 +1,1350 @@
+{
+  "transcription": "If you only have 24 hours in a day, your success is dependent upon how you use the 24. You gotta hear me. People talk about Oprah Winfrey, you know, Ted Turner, Warren Buffett. Listen to me. I don't care how much money you make, you only get 24 hours in a day. And the difference between Oprah and the person that's broke is Oprah uses her 24 hours wisely. That's it. Listen to me. That's it. You get 24. I don't care. You broke, you grew up broke. I don't care if you grew up rich. I don't care if you're in college, you're not in college, you only get 24 hours. And I blew up literally. I went from being a high school dropout to selling 6,000 books in less than six months. What happened? My 24 hours. I was like, okay, Eric, you gotta get a grip on your 24 hours because you're about to be broke for the rest of your life. And this is all I need you to do for me. I can tell you all about your life if you just write down your 24 hour schedule for me and you let me look at it. I can tell you where you're gonna be in five years, I can tell you where you're gonna be in 10 years, I can tell you where you're gonna be in 20 years if you keep that schedule.",
+  "processing_time": 0.48,
+  "word_timestamps": [
+    {
+      "word": "If",
+      "start": 0.16,
+      "end": 0.48
+    },
+    {
+      "word": "you",
+      "start": 0.48,
+      "end": 0.72
+    },
+    {
+      "word": "only",
+      "start": 0.72,
+      "end": 1.04
+    },
+    {
+      "word": "have",
+      "start": 1.04,
+      "end": 1.36
+    },
+    {
+      "word": "24",
+      "start": 1.36,
+      "end": 2.08
+    },
+    {
+      "word": "hours",
+      "start": 2.08,
+      "end": 2.48
+    },
+    {
+      "word": "in",
+      "start": 2.48,
+      "end": 2.64
+    },
+    {
+      "word": "a",
+      "start": 2.64,
+      "end": 2.88
+    },
+    {
+      "word": "day,",
+      "start": 2.88,
+      "end": 3.2800000000000002
+    },
+    {
+      "word": "your",
+      "start": 3.52,
+      "end": 3.68
+    },
+    {
+      "word": "success",
+      "start": 3.92,
+      "end": 4.48
+    },
+    {
+      "word": "is",
+      "start": 4.48,
+      "end": 4.72
+    },
+    {
+      "word": "dependent",
+      "start": 4.72,
+      "end": 5.36
+    },
+    {
+      "word": "upon",
+      "start": 5.36,
+      "end": 5.84
+    },
+    {
+      "word": "how",
+      "start": 5.84,
+      "end": 6.0
+    },
+    {
+      "word": "you",
+      "start": 6.0,
+      "end": 6.24
+    },
+    {
+      "word": "use",
+      "start": 6.24,
+      "end": 6.48
+    },
+    {
+      "word": "the",
+      "start": 6.48,
+      "end": 6.640000000000001
+    },
+    {
+      "word": "24.",
+      "start": 6.640000000000001,
+      "end": 7.44
+    },
+    {
+      "word": "You",
+      "start": 8.08,
+      "end": 8.32
+    },
+    {
+      "word": "gotta",
+      "start": 8.32,
+      "end": 8.56
+    },
+    {
+      "word": "hear",
+      "start": 8.64,
+      "end": 8.8
+    },
+    {
+      "word": "me.",
+      "start": 8.8,
+      "end": 8.96
+    },
+    {
+      "word": "People",
+      "start": 9.040000000000001,
+      "end": 9.200000000000001
+    },
+    {
+      "word": "talk",
+      "start": 9.200000000000001,
+      "end": 9.36
+    },
+    {
+      "word": "about",
+      "start": 9.36,
+      "end": 9.6
+    },
+    {
+      "word": "Oprah",
+      "start": 9.6,
+      "end": 9.92
+    },
+    {
+      "word": "Winfrey,",
+      "start": 10.0,
+      "end": 10.48
+    },
+    {
+      "word": "you",
+      "start": 10.64,
+      "end": 10.72
+    },
+    {
+      "word": "know,",
+      "start": 10.72,
+      "end": 10.8
+    },
+    {
+      "word": "Ted",
+      "start": 10.96,
+      "end": 11.28
+    },
+    {
+      "word": "Turner,",
+      "start": 11.36,
+      "end": 11.76
+    },
+    {
+      "word": "Warren",
+      "start": 11.84,
+      "end": 12.24
+    },
+    {
+      "word": "Buffett.",
+      "start": 12.24,
+      "end": 12.8
+    },
+    {
+      "word": "Listen",
+      "start": 12.88,
+      "end": 13.120000000000001
+    },
+    {
+      "word": "to",
+      "start": 13.120000000000001,
+      "end": 13.200000000000001
+    },
+    {
+      "word": "me.",
+      "start": 13.200000000000001,
+      "end": 13.36
+    },
+    {
+      "word": "I",
+      "start": 13.44,
+      "end": 13.52
+    },
+    {
+      "word": "don't",
+      "start": 13.52,
+      "end": 13.76
+    },
+    {
+      "word": "care",
+      "start": 13.76,
+      "end": 13.92
+    },
+    {
+      "word": "how",
+      "start": 13.92,
+      "end": 14.08
+    },
+    {
+      "word": "much",
+      "start": 14.08,
+      "end": 14.24
+    },
+    {
+      "word": "money",
+      "start": 14.24,
+      "end": 14.48
+    },
+    {
+      "word": "you",
+      "start": 14.48,
+      "end": 14.72
+    },
+    {
+      "word": "make,",
+      "start": 14.72,
+      "end": 14.88
+    },
+    {
+      "word": "you",
+      "start": 15.040000000000001,
+      "end": 15.280000000000001
+    },
+    {
+      "word": "only",
+      "start": 15.280000000000001,
+      "end": 15.44
+    },
+    {
+      "word": "get",
+      "start": 15.44,
+      "end": 15.6
+    },
+    {
+      "word": "24",
+      "start": 15.6,
+      "end": 16.080000000000002
+    },
+    {
+      "word": "hours",
+      "start": 16.080000000000002,
+      "end": 16.4
+    },
+    {
+      "word": "in",
+      "start": 16.4,
+      "end": 16.48
+    },
+    {
+      "word": "a",
+      "start": 16.48,
+      "end": 16.56
+    },
+    {
+      "word": "day.",
+      "start": 16.56,
+      "end": 16.8
+    },
+    {
+      "word": "And",
+      "start": 16.88,
+      "end": 17.12
+    },
+    {
+      "word": "the",
+      "start": 17.12,
+      "end": 17.28
+    },
+    {
+      "word": "difference",
+      "start": 17.28,
+      "end": 17.6
+    },
+    {
+      "word": "between",
+      "start": 17.6,
+      "end": 17.92
+    },
+    {
+      "word": "Oprah",
+      "start": 17.92,
+      "end": 18.48
+    },
+    {
+      "word": "and",
+      "start": 18.56,
+      "end": 18.72
+    },
+    {
+      "word": "the",
+      "start": 18.72,
+      "end": 18.96
+    },
+    {
+      "word": "person",
+      "start": 18.96,
+      "end": 19.2
+    },
+    {
+      "word": "that's",
+      "start": 19.2,
+      "end": 19.52
+    },
+    {
+      "word": "broke",
+      "start": 19.52,
+      "end": 20.0
+    },
+    {
+      "word": "is",
+      "start": 20.16,
+      "end": 20.32
+    },
+    {
+      "word": "Oprah",
+      "start": 20.56,
+      "end": 20.96
+    },
+    {
+      "word": "uses",
+      "start": 21.12,
+      "end": 21.52
+    },
+    {
+      "word": "her",
+      "start": 21.52,
+      "end": 21.76
+    },
+    {
+      "word": "24",
+      "start": 21.76,
+      "end": 22.400000000000002
+    },
+    {
+      "word": "hours",
+      "start": 22.400000000000002,
+      "end": 23.04
+    },
+    {
+      "word": "wisely.",
+      "start": 23.04,
+      "end": 23.92
+    },
+    {
+      "word": "That's",
+      "start": 24.72,
+      "end": 25.12
+    },
+    {
+      "word": "it.",
+      "start": 25.12,
+      "end": 25.28
+    },
+    {
+      "word": "Listen",
+      "start": 25.44,
+      "end": 25.76
+    },
+    {
+      "word": "to",
+      "start": 25.76,
+      "end": 25.92
+    },
+    {
+      "word": "me.",
+      "start": 25.92,
+      "end": 26.080000000000002
+    },
+    {
+      "word": "That's",
+      "start": 26.16,
+      "end": 26.400000000000002
+    },
+    {
+      "word": "it.",
+      "start": 26.400000000000002,
+      "end": 26.560000000000002
+    },
+    {
+      "word": "You",
+      "start": 26.72,
+      "end": 26.96
+    },
+    {
+      "word": "get",
+      "start": 26.96,
+      "end": 27.12
+    },
+    {
+      "word": "24.",
+      "start": 27.12,
+      "end": 27.84
+    },
+    {
+      "word": "I",
+      "start": 28.0,
+      "end": 28.080000000000002
+    },
+    {
+      "word": "don't",
+      "start": 28.080000000000002,
+      "end": 28.400000000000002
+    },
+    {
+      "word": "care.",
+      "start": 28.400000000000002,
+      "end": 28.560000000000002
+    },
+    {
+      "word": "You",
+      "start": 28.72,
+      "end": 28.8
+    },
+    {
+      "word": "broke,",
+      "start": 28.96,
+      "end": 29.28
+    },
+    {
+      "word": "you",
+      "start": 29.36,
+      "end": 29.52
+    },
+    {
+      "word": "grew",
+      "start": 29.52,
+      "end": 29.76
+    },
+    {
+      "word": "up",
+      "start": 29.76,
+      "end": 29.92
+    },
+    {
+      "word": "broke.",
+      "start": 29.92,
+      "end": 30.240000000000002
+    },
+    {
+      "word": "I",
+      "start": 30.400000000000002,
+      "end": 30.48
+    },
+    {
+      "word": "don't",
+      "start": 30.48,
+      "end": 30.64
+    },
+    {
+      "word": "care",
+      "start": 30.64,
+      "end": 30.88
+    },
+    {
+      "word": "if",
+      "start": 30.88,
+      "end": 30.96
+    },
+    {
+      "word": "you",
+      "start": 30.96,
+      "end": 31.12
+    },
+    {
+      "word": "grew",
+      "start": 31.12,
+      "end": 31.36
+    },
+    {
+      "word": "up",
+      "start": 31.36,
+      "end": 31.52
+    },
+    {
+      "word": "rich.",
+      "start": 31.52,
+      "end": 31.92
+    },
+    {
+      "word": "I",
+      "start": 32.0,
+      "end": 32.160000000000004
+    },
+    {
+      "word": "don't",
+      "start": 32.160000000000004,
+      "end": 32.32
+    },
+    {
+      "word": "care",
+      "start": 32.32,
+      "end": 32.480000000000004
+    },
+    {
+      "word": "if",
+      "start": 32.480000000000004,
+      "end": 32.64
+    },
+    {
+      "word": "you're",
+      "start": 32.64,
+      "end": 32.96
+    },
+    {
+      "word": "in",
+      "start": 32.96,
+      "end": 33.12
+    },
+    {
+      "word": "college,",
+      "start": 33.12,
+      "end": 33.44
+    },
+    {
+      "word": "you're",
+      "start": 33.6,
+      "end": 33.84
+    },
+    {
+      "word": "not",
+      "start": 33.84,
+      "end": 34.0
+    },
+    {
+      "word": "in",
+      "start": 34.0,
+      "end": 34.160000000000004
+    },
+    {
+      "word": "college,",
+      "start": 34.160000000000004,
+      "end": 34.480000000000004
+    },
+    {
+      "word": "you",
+      "start": 34.64,
+      "end": 34.800000000000004
+    },
+    {
+      "word": "only",
+      "start": 34.800000000000004,
+      "end": 35.04
+    },
+    {
+      "word": "get",
+      "start": 35.04,
+      "end": 35.28
+    },
+    {
+      "word": "24",
+      "start": 35.28,
+      "end": 35.92
+    },
+    {
+      "word": "hours.",
+      "start": 35.92,
+      "end": 36.32
+    },
+    {
+      "word": "And",
+      "start": 36.480000000000004,
+      "end": 36.800000000000004
+    },
+    {
+      "word": "I",
+      "start": 36.800000000000004,
+      "end": 37.04
+    },
+    {
+      "word": "blew",
+      "start": 37.04,
+      "end": 37.6
+    },
+    {
+      "word": "up",
+      "start": 37.6,
+      "end": 37.76
+    },
+    {
+      "word": "literally.",
+      "start": 37.92,
+      "end": 38.64
+    },
+    {
+      "word": "I",
+      "start": 38.800000000000004,
+      "end": 39.04
+    },
+    {
+      "word": "went",
+      "start": 39.04,
+      "end": 39.28
+    },
+    {
+      "word": "from",
+      "start": 39.28,
+      "end": 39.44
+    },
+    {
+      "word": "being",
+      "start": 39.44,
+      "end": 39.76
+    },
+    {
+      "word": "a",
+      "start": 39.76,
+      "end": 39.84
+    },
+    {
+      "word": "high",
+      "start": 39.84,
+      "end": 40.08
+    },
+    {
+      "word": "school",
+      "start": 40.08,
+      "end": 40.4
+    },
+    {
+      "word": "dropout",
+      "start": 40.4,
+      "end": 41.12
+    },
+    {
+      "word": "to",
+      "start": 41.44,
+      "end": 41.76
+    },
+    {
+      "word": "selling",
+      "start": 41.76,
+      "end": 42.160000000000004
+    },
+    {
+      "word": "6,000",
+      "start": 42.160000000000004,
+      "end": 42.800000000000004
+    },
+    {
+      "word": "books",
+      "start": 42.800000000000004,
+      "end": 43.12
+    },
+    {
+      "word": "in",
+      "start": 43.12,
+      "end": 43.28
+    },
+    {
+      "word": "less",
+      "start": 43.28,
+      "end": 43.44
+    },
+    {
+      "word": "than",
+      "start": 43.44,
+      "end": 43.6
+    },
+    {
+      "word": "six",
+      "start": 43.6,
+      "end": 43.76
+    },
+    {
+      "word": "months.",
+      "start": 43.76,
+      "end": 44.0
+    },
+    {
+      "word": "What",
+      "start": 44.08,
+      "end": 44.32
+    },
+    {
+      "word": "happened?",
+      "start": 44.32,
+      "end": 44.64
+    },
+    {
+      "word": "My",
+      "start": 44.88,
+      "end": 45.12
+    },
+    {
+      "word": "24",
+      "start": 45.12,
+      "end": 45.68
+    },
+    {
+      "word": "hours.",
+      "start": 45.68,
+      "end": 46.160000000000004
+    },
+    {
+      "word": "I",
+      "start": 46.4,
+      "end": 46.64
+    },
+    {
+      "word": "was",
+      "start": 46.64,
+      "end": 46.800000000000004
+    },
+    {
+      "word": "like,",
+      "start": 46.800000000000004,
+      "end": 46.88
+    },
+    {
+      "word": "okay,",
+      "start": 46.96,
+      "end": 47.12
+    },
+    {
+      "word": "Eric,",
+      "start": 47.2,
+      "end": 47.44
+    },
+    {
+      "word": "you",
+      "start": 47.52,
+      "end": 47.68
+    },
+    {
+      "word": "gotta",
+      "start": 47.68,
+      "end": 47.84
+    },
+    {
+      "word": "get",
+      "start": 47.84,
+      "end": 47.92
+    },
+    {
+      "word": "a",
+      "start": 47.92,
+      "end": 48.0
+    },
+    {
+      "word": "grip",
+      "start": 48.0,
+      "end": 48.160000000000004
+    },
+    {
+      "word": "on",
+      "start": 48.160000000000004,
+      "end": 48.24
+    },
+    {
+      "word": "your",
+      "start": 48.24,
+      "end": 48.4
+    },
+    {
+      "word": "24",
+      "start": 48.4,
+      "end": 48.800000000000004
+    },
+    {
+      "word": "hours",
+      "start": 48.800000000000004,
+      "end": 48.96
+    },
+    {
+      "word": "because",
+      "start": 49.04,
+      "end": 49.120000000000005
+    },
+    {
+      "word": "you're",
+      "start": 49.120000000000005,
+      "end": 49.36
+    },
+    {
+      "word": "about",
+      "start": 49.36,
+      "end": 49.44
+    },
+    {
+      "word": "to",
+      "start": 49.52,
+      "end": 49.6
+    },
+    {
+      "word": "be",
+      "start": 49.6,
+      "end": 49.76
+    },
+    {
+      "word": "broke",
+      "start": 49.76,
+      "end": 50.08
+    },
+    {
+      "word": "for",
+      "start": 50.08,
+      "end": 50.24
+    },
+    {
+      "word": "the",
+      "start": 50.24,
+      "end": 50.32
+    },
+    {
+      "word": "rest",
+      "start": 50.32,
+      "end": 50.480000000000004
+    },
+    {
+      "word": "of",
+      "start": 50.480000000000004,
+      "end": 50.56
+    },
+    {
+      "word": "your",
+      "start": 50.56,
+      "end": 50.72
+    },
+    {
+      "word": "life.",
+      "start": 50.72,
+      "end": 50.96
+    },
+    {
+      "word": "And",
+      "start": 51.120000000000005,
+      "end": 51.28
+    },
+    {
+      "word": "this",
+      "start": 51.44,
+      "end": 51.52
+    },
+    {
+      "word": "is",
+      "start": 51.52,
+      "end": 51.6
+    },
+    {
+      "word": "all",
+      "start": 51.68,
+      "end": 51.84
+    },
+    {
+      "word": "I",
+      "start": 51.84,
+      "end": 51.92
+    },
+    {
+      "word": "need",
+      "start": 51.92,
+      "end": 52.08
+    },
+    {
+      "word": "you",
+      "start": 52.08,
+      "end": 52.160000000000004
+    },
+    {
+      "word": "to",
+      "start": 52.160000000000004,
+      "end": 52.24
+    },
+    {
+      "word": "do",
+      "start": 52.24,
+      "end": 52.4
+    },
+    {
+      "word": "for",
+      "start": 52.4,
+      "end": 52.56
+    },
+    {
+      "word": "me.",
+      "start": 52.56,
+      "end": 52.72
+    },
+    {
+      "word": "I",
+      "start": 52.800000000000004,
+      "end": 52.96
+    },
+    {
+      "word": "can",
+      "start": 52.96,
+      "end": 53.120000000000005
+    },
+    {
+      "word": "tell",
+      "start": 53.120000000000005,
+      "end": 53.28
+    },
+    {
+      "word": "you",
+      "start": 53.28,
+      "end": 53.52
+    },
+    {
+      "word": "all",
+      "start": 53.52,
+      "end": 53.76
+    },
+    {
+      "word": "about",
+      "start": 53.76,
+      "end": 53.92
+    },
+    {
+      "word": "your",
+      "start": 53.92,
+      "end": 54.160000000000004
+    },
+    {
+      "word": "life",
+      "start": 54.160000000000004,
+      "end": 54.480000000000004
+    },
+    {
+      "word": "if",
+      "start": 54.64,
+      "end": 54.800000000000004
+    },
+    {
+      "word": "you",
+      "start": 54.800000000000004,
+      "end": 54.96
+    },
+    {
+      "word": "just",
+      "start": 54.96,
+      "end": 55.120000000000005
+    },
+    {
+      "word": "write",
+      "start": 55.120000000000005,
+      "end": 55.44
+    },
+    {
+      "word": "down",
+      "start": 55.44,
+      "end": 55.68
+    },
+    {
+      "word": "your",
+      "start": 55.68,
+      "end": 55.84
+    },
+    {
+      "word": "24",
+      "start": 55.84,
+      "end": 56.24
+    },
+    {
+      "word": "hour",
+      "start": 56.32,
+      "end": 56.480000000000004
+    },
+    {
+      "word": "schedule",
+      "start": 56.480000000000004,
+      "end": 56.800000000000004
+    },
+    {
+      "word": "for",
+      "start": 56.800000000000004,
+      "end": 56.88
+    },
+    {
+      "word": "me",
+      "start": 56.88,
+      "end": 56.96
+    },
+    {
+      "word": "and",
+      "start": 57.04,
+      "end": 57.120000000000005
+    },
+    {
+      "word": "you",
+      "start": 57.120000000000005,
+      "end": 57.28
+    },
+    {
+      "word": "let",
+      "start": 57.28,
+      "end": 57.44
+    },
+    {
+      "word": "me",
+      "start": 57.44,
+      "end": 57.52
+    },
+    {
+      "word": "look",
+      "start": 57.52,
+      "end": 57.6
+    },
+    {
+      "word": "at",
+      "start": 57.6,
+      "end": 57.68
+    },
+    {
+      "word": "it.",
+      "start": 57.68,
+      "end": 57.84
+    },
+    {
+      "word": "I",
+      "start": 57.92,
+      "end": 58.0
+    },
+    {
+      "word": "can",
+      "start": 58.0,
+      "end": 58.160000000000004
+    },
+    {
+      "word": "tell",
+      "start": 58.160000000000004,
+      "end": 58.24
+    },
+    {
+      "word": "you",
+      "start": 58.24,
+      "end": 58.32
+    },
+    {
+      "word": "where",
+      "start": 58.32,
+      "end": 58.480000000000004
+    },
+    {
+      "word": "you're",
+      "start": 58.480000000000004,
+      "end": 58.64
+    },
+    {
+      "word": "gonna",
+      "start": 58.64,
+      "end": 58.800000000000004
+    },
+    {
+      "word": "be",
+      "start": 58.800000000000004,
+      "end": 58.96
+    },
+    {
+      "word": "in",
+      "start": 58.96,
+      "end": 59.04
+    },
+    {
+      "word": "five",
+      "start": 59.04,
+      "end": 59.2
+    },
+    {
+      "word": "years,",
+      "start": 59.2,
+      "end": 59.44
+    },
+    {
+      "word": "I",
+      "start": 59.52,
+      "end": 59.6
+    },
+    {
+      "word": "can",
+      "start": 59.6,
+      "end": 59.68
+    },
+    {
+      "word": "tell",
+      "start": 59.68,
+      "end": 59.76
+    },
+    {
+      "word": "you",
+      "start": 59.76,
+      "end": 59.92
+    },
+    {
+      "word": "where",
+      "start": 59.92,
+      "end": 60.0
+    },
+    {
+      "word": "you're",
+      "start": 60.0,
+      "end": 60.160000000000004
+    },
+    {
+      "word": "gonna",
+      "start": 60.160000000000004,
+      "end": 60.32
+    },
+    {
+      "word": "be",
+      "start": 60.32,
+      "end": 60.4
+    },
+    {
+      "word": "in",
+      "start": 60.4,
+      "end": 60.480000000000004
+    },
+    {
+      "word": "10",
+      "start": 60.480000000000004,
+      "end": 60.72
+    },
+    {
+      "word": "years,",
+      "start": 60.72,
+      "end": 60.88
+    },
+    {
+      "word": "I",
+      "start": 60.96,
+      "end": 61.04
+    },
+    {
+      "word": "can",
+      "start": 61.04,
+      "end": 61.120000000000005
+    },
+    {
+      "word": "tell",
+      "start": 61.120000000000005,
+      "end": 61.2
+    },
+    {
+      "word": "you",
+      "start": 61.2,
+      "end": 61.28
+    },
+    {
+      "word": "where",
+      "start": 61.28,
+      "end": 61.44
+    },
+    {
+      "word": "you're",
+      "start": 61.44,
+      "end": 61.6
+    },
+    {
+      "word": "gonna",
+      "start": 61.6,
+      "end": 61.76
+    },
+    {
+      "word": "be",
+      "start": 61.76,
+      "end": 61.84
+    },
+    {
+      "word": "in",
+      "start": 61.84,
+      "end": 61.92
+    },
+    {
+      "word": "20",
+      "start": 61.92,
+      "end": 62.160000000000004
+    },
+    {
+      "word": "years",
+      "start": 62.160000000000004,
+      "end": 62.24
+    },
+    {
+      "word": "if",
+      "start": 62.32,
+      "end": 62.4
+    },
+    {
+      "word": "you",
+      "start": 62.4,
+      "end": 62.56
+    },
+    {
+      "word": "keep",
+      "start": 62.56,
+      "end": 62.72
+    },
+    {
+      "word": "that",
+      "start": 62.72,
+      "end": 62.96
+    },
+    {
+      "word": "schedule.",
+      "start": 62.96,
+      "end": 63.68
+    }
+  ],
+  "segment_timestamps": [
+    {
+      "text": "If you only have 24 hours in a day, your success is dependent upon how you use the 24.",
+      "start": 0.16,
+      "end": 7.44,
+      "word_count": 19
+    },
+    {
+      "text": "You gotta hear me.",
+      "start": 8.08,
+      "end": 8.96,
+      "word_count": 4
+    },
+    {
+      "text": "People talk about Oprah Winfrey, you know, Ted Turner, Warren Buffett.",
+      "start": 9.040000000000001,
+      "end": 12.8,
+      "word_count": 11
+    },
+    {
+      "text": "Listen to me.",
+      "start": 12.88,
+      "end": 13.36,
+      "word_count": 3
+    },
+    {
+      "text": "I don't care how much money you make, you only get 24 hours in a day.",
+      "start": 13.44,
+      "end": 16.8,
+      "word_count": 16
+    },
+    {
+      "text": "And the difference between Oprah and the person that's broke is Oprah uses her 24 hours wisely.",
+      "start": 16.88,
+      "end": 23.92,
+      "word_count": 17
+    },
+    {
+      "text": "That's it.",
+      "start": 24.72,
+      "end": 25.28,
+      "word_count": 2
+    },
+    {
+      "text": "Listen to me.",
+      "start": 25.44,
+      "end": 26.080000000000002,
+      "word_count": 3
+    },
+    {
+      "text": "That's it.",
+      "start": 26.16,
+      "end": 26.560000000000002,
+      "word_count": 2
+    },
+    {
+      "text": "You get 24.",
+      "start": 26.72,
+      "end": 27.84,
+      "word_count": 3
+    },
+    {
+      "text": "I don't care.",
+      "start": 28.0,
+      "end": 28.560000000000002,
+      "word_count": 3
+    },
+    {
+      "text": "You broke, you grew up broke.",
+      "start": 28.72,
+      "end": 30.240000000000002,
+      "word_count": 6
+    },
+    {
+      "text": "I don't care if you grew up rich.",
+      "start": 30.400000000000002,
+      "end": 31.92,
+      "word_count": 8
+    },
+    {
+      "text": "I don't care if you're in college, you're not in college, you only get 24 hours.",
+      "start": 32.0,
+      "end": 36.32,
+      "word_count": 16
+    },
+    {
+      "text": "And I blew up literally.",
+      "start": 36.480000000000004,
+      "end": 38.64,
+      "word_count": 5
+    },
+    {
+      "text": "I went from being a high school dropout to selling 6,000 books in less than six months.",
+      "start": 38.800000000000004,
+      "end": 44.0,
+      "word_count": 17
+    },
+    {
+      "text": "What happened?",
+      "start": 44.08,
+      "end": 44.64,
+      "word_count": 2
+    },
+    {
+      "text": "My 24 hours.",
+      "start": 44.88,
+      "end": 46.160000000000004,
+      "word_count": 3
+    },
+    {
+      "text": "I was like, okay, Eric, you gotta get a grip on your 24 hours because you're about to be broke for the rest of your life.",
+      "start": 46.4,
+      "end": 50.96,
+      "word_count": 26
+    },
+    {
+      "text": "And this is all I need you to do for me.",
+      "start": 51.120000000000005,
+      "end": 52.72,
+      "word_count": 11
+    },
+    {
+      "text": "I can tell you all about your life if you just write down your 24 hour schedule for me and you let me look at it.",
+      "start": 52.800000000000004,
+      "end": 57.84,
+      "word_count": 26
+    },
+    {
+      "text": "I can tell you where you're gonna be in five years, I can tell you where you're gonna be in 10 years, I can tell you where you're gonna be in 20 years if you keep that schedule.",
+      "start": 57.92,
+      "end": 63.68,
+      "word_count": 38
+    }
+  ],
+  "metadata": {
+    "total_segments": 22,
+    "total_words": 241,
+    "duration": 63.68
+  }
+}
