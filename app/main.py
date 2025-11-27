@@ -6,10 +6,10 @@ from pathlib import Path
 
 app = FastAPI(title="Video Moments API", version="1.0.0")
 
-# Configure CORS
+# Configure CORS - Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3005"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

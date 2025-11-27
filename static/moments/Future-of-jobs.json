@@ -2,11 +2,23 @@
   {
     "start_time": 0.24,
     "end_time": 26.64,
-    "title": "Excited about jobless future and human potential for creativity"
+    "title": "Excited about jobless future and human potential for creativity",
+    "id": "476ccc7fb3bad2f1",
+    "is_refined": false,
+    "parent_id": null,
+    "model_name": null,
+    "prompt": null,
+    "generation_config": null
   },
   {
     "start_time": 26.64,
     "end_time": 48.16,
-    "title": "Renaissance vision with challenges and call to cooperation"
+    "title": "Renaissance vision with challenges and call to cooperation",
+    "id": "4051943585ce20c2",
+    "is_refined": false,
+    "parent_id": null,
+    "model_name": null,
+    "prompt": null,
+    "generation_config": null
   }
 ]
