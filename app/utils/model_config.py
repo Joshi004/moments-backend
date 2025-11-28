@@ -29,6 +29,13 @@ MODELS = {
         "supports_video": False,  # Text-only model
         "top_p": 0.95,
         "top_k": 20,
+    },
+    "parakeet": {
+        "name": "Parakeet",
+        "ssh_host": "naresh@85.234.64.44",
+        "ssh_remote_host": "worker-9",
+        "ssh_local_port": 6106,
+        "ssh_remote_port": 8006,
     }
 }
 
@@ -64,6 +71,17 @@ def get_model_url(model_key: str) -> str:
     """
     config = get_model_config(model_key)
     return f"http://localhost:{config['ssh_local_port']}/v1/chat/completions"
+
+
+def get_transcription_service_url() -> str:
+    """
+    Get the local URL for the transcription service endpoint.
+    
+    Returns:
+        URL string for the transcription service API endpoint
+    """
+    config = get_model_config("parakeet")
+    return f"http://localhost:{config['ssh_local_port']}/transcribe"
 
 
 
