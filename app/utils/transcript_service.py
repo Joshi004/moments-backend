@@ -201,7 +201,6 @@ def create_ssh_tunnel() -> Optional[subprocess.Popen]:
         logger="app.utils.transcript_service",
         function="create_ssh_tunnel",
         operation=operation,
-        event="ssh_tunnel_start",
         message="Creating SSH tunnel to transcription service",
         context={
             "ssh_host": SSH_HOST,
@@ -354,7 +353,6 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
         logger="app.utils.transcript_service",
         function="call_transcription_service",
         operation=operation,
-        event="external_call_start",
         message="Calling transcription service",
         context={
             "audio_url": audio_url,

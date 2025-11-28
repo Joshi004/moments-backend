@@ -263,7 +263,6 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         logger="app.utils.refine_moment_service",
         function="parse_refinement_response",
         operation=operation,
-        event="parse_start",
         message="Parsing refinement response",
         context={
             "response_keys": list(response.keys()) if isinstance(response, dict) else None,
@@ -325,6 +324,25 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         
         logger.info(f"Extracted content from response (length: {len(content)} chars)")
         logger.debug(f"Content preview: {content[:500]}")
+        
+        # Log the FULL extracted content string for debugging
+        logger.info(f"=== FULL EXTRACTED CONTENT STRING (length: {len(content)} chars) ===")
+        logger.info(content)
+        logger.info("=== END OF FULL EXTRACTED CONTENT STRING ===")
+        
+        # Also log to structured JSON log
+        log_event(
+            level="INFO",
+            logger="app.utils.refine_moment_service",
+            function="parse_refinement_response",
+            operation="parse_refinement_response",
+            event="content_extracted",
+            message="Full extracted content string from AI response",
+            context={
+                "content_length": len(content),
+                "full_content": content
+            }
+        )
         
         # Validate content is a string
         if not isinstance(content, str):
@@ -410,13 +428,12 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
             logger="app.utils.refine_moment_service",
             function="parse_refinement_response",
             operation=operation,
-            event="parse_complete",
             message="Successfully parsed refinement timestamps",
             context={
                 "start_time": start_time,
-                "end_time": end_time,
-                "duration_seconds": duration
-            }
+                "end_time": end_time
+            },
+            duration=duration
         )
         
         return start_time, end_time
@@ -664,6 +681,31 @@ def process_moment_refinement_async(
                 
                 if ai_response is None:
                     raise Exception("AI model call failed or returned no response")
+                
+                # Log the full raw response for debugging
+                try:
+                    response_json = json.dumps(ai_response, indent=2, ensure_ascii=False)
+                    logger.info(f"=== FULL RAW AI RESPONSE (length: {len(response_json)} chars) ===")
+                    logger.info(response_json)
+                    logger.info("=== END OF FULL RAW AI RESPONSE ===")
+                    
+                    # Also log to structured JSON log
+                    log_event(
+                        level="INFO",
+                        logger="app.utils.refine_moment_service",
+                        function="refine",
+                        operation="ai_model_response",
+                        event="raw_response_received",
+                        message="Full raw AI model response received",
+                        context={
+                            "response_length": len(response_json),
+                            "response_keys": list(ai_response.keys()) if isinstance(ai_response, dict) else None,
+                            "full_response": response_json
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to serialize full response for logging: {e}")
+                    logger.info(f"Raw response (string representation, first 2000 chars): {str(ai_response)[:2000]}")
                 
                 # Validate response structure before parsing
                 if not isinstance(ai_response, dict):

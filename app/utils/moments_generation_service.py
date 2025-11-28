@@ -1090,12 +1090,11 @@ def parse_moments_response(response: Dict) -> List[Dict]:
             logger="app.utils.moments_generation_service",
             function="parse_moments_response",
             operation=operation,
-            event="parse_complete",
             message="Successfully parsed moments from response",
             context={
-                "moment_count": len(validated_moments),
-                "duration_seconds": duration
-            }
+                "moment_count": len(validated_moments)
+            },
+            duration=duration
         )
         
         return validated_moments

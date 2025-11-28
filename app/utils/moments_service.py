@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 import logging
 import hashlib
+import time
 from app.utils.logging_config import (
     log_event,
     log_operation_start,
@@ -132,7 +133,6 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
         logger="app.utils.moments_service",
         function="save_moments",
         operation=operation,
-        event="file_operation_start",
         message="Saving moments to file",
         context={
             "video_filename": video_filename,
@@ -158,15 +158,14 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
             logger="app.utils.moments_service",
             function="save_moments",
             operation=operation,
-            event="file_operation_complete",
             message="Successfully saved moments",
             context={
                 "video_filename": video_filename,
                 "moments_file": str(moments_file),
                 "moment_count": len(moments),
-                "file_size_bytes": file_size,
-                "duration_seconds": duration
-            }
+                "file_size_bytes": file_size
+            },
+            duration=duration
         )
         return True
     except Exception as e:
