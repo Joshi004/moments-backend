@@ -16,7 +16,7 @@ MODELS = {
         "model_id": "qwen3-vl-235b-thinking",
         "ssh_host": "naresh@85.234.64.44",  # Update if Qwen uses different SSH host
         "ssh_remote_host": "worker-9",  # Update if Qwen runs on different remote host
-        "ssh_local_port": 7001,
+        "ssh_local_port": 6101,
         "ssh_remote_port": 7001,  # Update with actual remote port for Qwen service
     },
     "qwen3_omni": {

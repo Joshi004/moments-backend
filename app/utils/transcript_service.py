@@ -26,7 +26,7 @@ _transcription_lock = threading.Lock()
 # SSH tunnel configuration
 SSH_HOST = "naresh@85.234.64.44"
 SSH_REMOTE_HOST = "worker-9"
-SSH_LOCAL_PORT = 8006
+SSH_LOCAL_PORT = 6106
 SSH_REMOTE_PORT = 8006
 TRANSCRIPTION_SERVICE_URL = f"http://localhost:{SSH_LOCAL_PORT}/transcribe"
 AUDIO_BASE_URL = "http://localhost:8080/audios"
