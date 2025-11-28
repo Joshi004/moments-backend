@@ -418,3 +418,25 @@ def operation_logger(operation_name: str):
         return wrapper
     return decorator
 
+
+def log_status_check(
+    endpoint_type: str,  # "refinement" or "generation"
+    video_id: str,
+    moment_id: Optional[str],
+    status: str,  # "processing", "completed", "failed", etc.
+    status_code: int,
+    duration: float
+) -> None:
+    """Log a compact one-line status check."""
+    logger = logging.getLogger("app.routes.videos")
+    
+    if moment_id:
+        path = f"/{endpoint_type}-status/{moment_id}"
+    else:
+        path = f"/{endpoint_type}-status"
+    
+    # Single compact line: GET /refinement-status/abc123 -> 200 OK (failed) [0.001s]
+    logger.info(
+        f"GET {path} -> {status_code} OK ({status}) [{duration:.3f}s]"
+    )
+

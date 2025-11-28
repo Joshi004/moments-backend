@@ -23,7 +23,8 @@ from app.utils.logging_config import (
     log_operation_start,
     log_operation_complete,
     log_operation_error,
-    get_request_id
+    get_request_id,
+    log_status_check
 )
 from pydantic import BaseModel
 from typing import Optional
@@ -1410,15 +1411,6 @@ Generate moments that:
 async def get_generation_status_endpoint(video_id: str):
     """Get moment generation status for a video."""
     start_time = time.time()
-    operation = "get_generation_status"
-    
-    log_operation_start(
-        logger="app.routes.videos",
-        function="get_generation_status_endpoint",
-        operation=operation,
-        message=f"Getting generation status for {video_id}",
-        context={"video_id": video_id, "request_id": get_request_id()}
-    )
     
     try:
         video_files = get_video_files()
@@ -1431,14 +1423,14 @@ async def get_generation_status_endpoint(video_id: str):
                 break
         
         if not video_file or not video_file.exists():
-            log_event(
-                level="WARNING",
-                logger="app.routes.videos",
-                function="get_generation_status_endpoint",
-                operation=operation,
-                event="validation_error",
-                message="Video not found",
-                context={"video_id": video_id}
+            duration = time.time() - start_time
+            log_status_check(
+                endpoint_type="generation",
+                video_id=video_id,
+                moment_id=None,
+                status="error",
+                status_code=404,
+                duration=duration
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
@@ -1446,33 +1438,41 @@ async def get_generation_status_endpoint(video_id: str):
         status = get_generation_status(video_id)
         
         duration = time.time() - start_time
-        log_operation_complete(
-            logger="app.routes.videos",
-            function="get_generation_status_endpoint",
-            operation=operation,
-            message="Successfully retrieved generation status",
-            context={
-                "video_id": video_id,
-                "status": status.get("status") if status else "not_started",
-                "duration_seconds": duration
-            }
+        status_value = status.get("status") if status else "not_started"
+        
+        log_status_check(
+            endpoint_type="generation",
+            video_id=video_id,
+            moment_id=None,
+            status=status_value,
+            status_code=200,
+            duration=duration
         )
         
         if status is None:
             return {"status": "not_started", "started_at": None}
         
         return status
-    except HTTPException:
+    except HTTPException as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="generation",
+            video_id=video_id,
+            moment_id=None,
+            status="error",
+            status_code=e.status_code,
+            duration=duration
+        )
         raise
     except Exception as e:
         duration = time.time() - start_time
-        log_operation_error(
-            logger="app.routes.videos",
-            function="get_generation_status_endpoint",
-            operation=operation,
-            error=e,
-            message="Error getting generation status",
-            context={"video_id": video_id, "duration_seconds": duration}
+        log_status_check(
+            endpoint_type="generation",
+            video_id=video_id,
+            moment_id=None,
+            status="error",
+            status_code=500,
+            duration=duration
         )
         raise
 
@@ -1758,15 +1758,6 @@ Guidelines:
 async def get_refinement_status_endpoint(video_id: str, moment_id: str):
     """Get moment refinement status."""
     start_time = time.time()
-    operation = "get_refinement_status"
-    
-    log_operation_start(
-        logger="app.routes.videos",
-        function="get_refinement_status_endpoint",
-        operation=operation,
-        message=f"Getting refinement status for {video_id}/{moment_id}",
-        context={"video_id": video_id, "moment_id": moment_id, "request_id": get_request_id()}
-    )
     
     try:
         video_files = get_video_files()
@@ -1779,14 +1770,14 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
                 break
         
         if not video_file or not video_file.exists():
-            log_event(
-                level="WARNING",
-                logger="app.routes.videos",
-                function="get_refinement_status_endpoint",
-                operation=operation,
-                event="validation_error",
-                message="Video not found",
-                context={"video_id": video_id}
+            duration = time.time() - start_time
+            log_status_check(
+                endpoint_type="refinement",
+                video_id=video_id,
+                moment_id=moment_id,
+                status="error",
+                status_code=404,
+                duration=duration
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
@@ -1794,34 +1785,41 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
         status = get_refinement_status(video_id, moment_id)
         
         duration = time.time() - start_time
-        log_operation_complete(
-            logger="app.routes.videos",
-            function="get_refinement_status_endpoint",
-            operation=operation,
-            message="Successfully retrieved refinement status",
-            context={
-                "video_id": video_id,
-                "moment_id": moment_id,
-                "status": status.get("status") if status else "not_started",
-                "duration_seconds": duration
-            }
+        status_value = status.get("status") if status else "not_started"
+        
+        log_status_check(
+            endpoint_type="refinement",
+            video_id=video_id,
+            moment_id=moment_id,
+            status=status_value,
+            status_code=200,
+            duration=duration
         )
         
         if status is None:
             return {"status": "not_started", "started_at": None}
         
         return status
-    except HTTPException:
+    except HTTPException as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="refinement",
+            video_id=video_id,
+            moment_id=moment_id,
+            status="error",
+            status_code=e.status_code,
+            duration=duration
+        )
         raise
     except Exception as e:
         duration = time.time() - start_time
-        log_operation_error(
-            logger="app.routes.videos",
-            function="get_refinement_status_endpoint",
-            operation=operation,
-            error=e,
-            message="Error getting refinement status",
-            context={"video_id": video_id, "moment_id": moment_id, "duration_seconds": duration}
+        log_status_check(
+            endpoint_type="refinement",
+            video_id=video_id,
+            moment_id=moment_id,
+            status="error",
+            status_code=500,
+            duration=duration
         )
         raise
 
