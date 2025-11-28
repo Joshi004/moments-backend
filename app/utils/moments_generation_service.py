@@ -26,7 +26,7 @@ _generation_jobs: Dict[str, Dict] = {}
 _generation_lock = threading.Lock()
 
 # Hardcoded max_tokens for all models
-MAX_TOKENS = 10000
+MAX_TOKENS = 15000
 
 
 @contextmanager
