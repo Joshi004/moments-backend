@@ -26,7 +26,7 @@ _generation_jobs: Dict[str, Dict] = {}
 _generation_lock = threading.Lock()
 
 # Hardcoded max_tokens for all models
-MAX_TOKENS = 2000
+MAX_TOKENS = 6000
 
 
 @contextmanager
@@ -593,7 +593,7 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
             model_url,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=300,  # 5 minute timeout
+            timeout=600,  # 10 minute timeout
             allow_redirects=True
         )
         
