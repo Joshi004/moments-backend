@@ -10,6 +10,13 @@ from contextlib import contextmanager
 import logging
 from app.utils.model_config import get_model_config, get_model_url
 from app.utils.refine_moment_service import strip_think_tags
+from app.utils.logging_config import (
+    log_event,
+    log_operation_start,
+    log_operation_complete,
+    log_operation_error,
+    get_request_id
+)
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +531,9 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
     Returns:
         Dictionary with AI model response or None if failed
     """
+    operation = "ai_model_call"
+    start_time = time.time()
+    
     try:
         model_url = get_model_url(model_key)
         config = get_model_config(model_key)
@@ -548,8 +558,36 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
         if 'top_k' in config:
             payload["top_k"] = config['top_k']
         
-        logger.info(f"Calling AI model at {model_url} with {len(messages)} messages, model={model_id}, temperature={temperature}")
-        logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+        # Log prompt being sent (first message content, truncated)
+        prompt_preview = messages[0].get('content', '')[:500] if messages else 'N/A'
+        
+        log_operation_start(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            message="Calling AI model",
+            context={
+                "model_key": model_key,
+                "model_id": model_id,
+                "model_url": model_url,
+                "temperature": temperature,
+                "max_tokens": MAX_TOKENS,
+                "message_count": len(messages),
+                "prompt_preview": prompt_preview,
+                "prompt_length": len(messages[0].get('content', '')) if messages else 0,
+                "request_id": get_request_id()
+            }
+        )
+        
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            event="model_call_start",
+            message="Full request payload",
+            context={"payload": payload}
+        )
         
         response = requests.post(
             model_url,
@@ -559,54 +597,167 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
             allow_redirects=True
         )
         
-        logger.info(f"AI model response status: {response.status_code}")
+        duration = time.time() - start_time
+        
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            event="model_call_complete",
+            message="Received response from AI model",
+            context={
+                "status_code": response.status_code,
+                "response_size_bytes": len(response.content) if response.content else 0,
+                "duration_seconds": duration
+            }
+        )
+        
         response.raise_for_status()
         
         # Log response text for debugging (first 1000 chars)
         response_text = response.text[:1000] if hasattr(response, 'text') else 'N/A'
-        logger.debug(f"AI model response text preview: {response_text}")
+        
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            event="model_response_raw",
+            message="Raw AI model response preview",
+            context={
+                "response_preview": response_text,
+                "response_length": len(response.text) if hasattr(response, 'text') else 0
+            }
+        )
         
         try:
             result = response.json()
-            logger.info("AI model call completed successfully")
-            logger.debug(f"AI model response keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            
+            log_operation_complete(
+                logger="app.utils.moments_generation_service",
+                function="call_ai_model",
+                operation=operation,
+                message="AI model call completed successfully",
+                context={
+                    "model_key": model_key,
+                    "model_id": model_id,
+                    "response_keys": list(result.keys()) if isinstance(result, dict) else None,
+                    "has_choices": "choices" in result if isinstance(result, dict) else False,
+                    "duration_seconds": duration
+                }
+            )
             return result
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse AI model response as JSON: {str(e)}")
-            logger.error(f"Response text: {response.text[:2000]}")
+            log_event(
+                level="ERROR",
+                logger="app.utils.moments_generation_service",
+                function="call_ai_model",
+                operation=operation,
+                event="parse_error",
+                message="Failed to parse AI model response as JSON",
+                context={
+                    "error": str(e),
+                    "response_preview": response.text[:2000] if hasattr(response, 'text') else None,
+                    "duration_seconds": duration
+                }
+            )
             raise
         
     except requests.exceptions.ConnectionError as e:
+        duration = time.time() - start_time
         error_str = str(e)
-        logger.error(f"Connection error calling AI model: {error_str}")
         
         # Check if it's a connection reset - might indicate service issue
         config = get_model_config(model_key)
         ssh_remote_host = config['ssh_remote_host']
         ssh_remote_port = config['ssh_remote_port']
         
-        if 'Connection reset' in error_str or 'Connection aborted' in error_str:
-            logger.error("Connection reset by peer - this usually means:")
-            logger.error("  1. The tunnel is working but the remote service is not responding")
-            logger.error(f"  2. The service on {ssh_remote_host}:{ssh_remote_port} might not be running")
-            logger.error("  3. The service might be rejecting the connection")
+        context = {
+            "model_key": model_key,
+            "model_url": model_url,
+            "error": error_str,
+            "duration_seconds": duration
+        }
         
+        if 'Connection reset' in error_str or 'Connection aborted' in error_str:
+            context.update({
+                "ssh_remote_host": ssh_remote_host,
+                "ssh_remote_port": ssh_remote_port,
+                "diagnosis": "Connection reset - tunnel may be working but service not responding"
+            })
+        
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            error=e,
+            message="Connection error calling AI model",
+            context=context
+        )
         return None
     except requests.exceptions.Timeout as e:
-        logger.error(f"Timeout calling AI model: {str(e)}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            error=e,
+            message="Timeout calling AI model",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "timeout_seconds": 300,
+                "duration_seconds": duration
+            }
+        )
         return None
     except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP error calling AI model: {str(e)}")
-        logger.error(f"Response status: {e.response.status_code if e.response else 'Unknown'}")
-        logger.error(f"Response text: {e.response.text[:500] if e.response else 'No response'}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            error=e,
+            message="HTTP error calling AI model",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "status_code": e.response.status_code if e.response else None,
+                "response_preview": e.response.text[:500] if e.response and e.response.text else None,
+                "duration_seconds": duration
+            }
+        )
         return None
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error calling AI model: {str(e)}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            error=e,
+            message="Request error calling AI model",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "duration_seconds": duration
+            }
+        )
         return None
     except Exception as e:
-        logger.error(f"Unexpected error in AI model call: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="call_ai_model",
+            operation=operation,
+            error=e,
+            message="Unexpected error in AI model call",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "duration_seconds": duration
+            }
+        )
         return None
 
 
@@ -685,6 +836,25 @@ def build_prompt(
     Returns:
         Complete prompt string with all sections assembled
     """
+    operation = "prompt_generation"
+    
+    log_event(
+        level="DEBUG",
+        logger="app.utils.moments_generation_service",
+        function="build_prompt",
+        operation=operation,
+        event="prompt_generation",
+        message="Building complete prompt for AI model",
+        context={
+            "user_prompt_length": len(user_prompt),
+            "segment_count": len(segments),
+            "video_duration": video_duration,
+            "min_moment_length": min_moment_length,
+            "max_moment_length": max_moment_length,
+            "min_moments": min_moments,
+            "max_moments": max_moments
+        }
+    )
     # Format segments as [timestamp] text (only start timestamp and text)
     segments_text = "\n".join([
         f"[{seg['start']:.2f}] {seg['text']}"
@@ -747,6 +917,21 @@ Transcript segments:
 
 {constraints}"""
     
+    log_event(
+        level="INFO",
+        logger="app.utils.moments_generation_service",
+        function="build_prompt",
+        operation=operation,
+        event="prompt_generation",
+        message="Complete prompt generated",
+        context={
+            "complete_prompt_length": len(complete_prompt),
+            "complete_prompt": complete_prompt,  # Log the full prompt for LLM analysis
+            "segment_count": len(segments),
+            "video_duration": video_duration
+        }
+    )
+    
     return complete_prompt
 
 
@@ -760,28 +945,95 @@ def parse_moments_response(response: Dict) -> List[Dict]:
     Returns:
         List of moment dictionaries with start_time, end_time, and title
     """
+    operation = "parse_moments_response"
+    start_time = time.time()
+    
+    log_operation_start(
+        logger="app.utils.moments_generation_service",
+        function="parse_moments_response",
+        operation=operation,
+        message="Parsing AI model response to extract moments",
+        context={
+            "response_keys": list(response.keys()) if isinstance(response, dict) else None,
+            "request_id": get_request_id()
+        }
+    )
+    
     try:
         # Log the full response structure for debugging
-        logger.debug(f"Full AI response structure: {json.dumps(response, indent=2)[:1000]}")
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_start",
+            message="Full AI response structure",
+            context={"response_preview": json.dumps(response, indent=2)[:2000]}
+        )
         
         # Extract content from response
         if 'choices' not in response or len(response['choices']) == 0:
-            logger.error(f"No choices in response. Response keys: {list(response.keys())}")
+            log_event(
+                level="ERROR",
+                logger="app.utils.moments_generation_service",
+                function="parse_moments_response",
+                operation=operation,
+                event="parse_error",
+                message="No choices in response",
+                context={"response_keys": list(response.keys())}
+            )
             raise ValueError("No choices in response")
         
         content = response['choices'][0].get('message', {}).get('content', '')
         if not content:
-            logger.error(f"No content in response. Choices structure: {response['choices'][0]}")
+            log_event(
+                level="ERROR",
+                logger="app.utils.moments_generation_service",
+                function="parse_moments_response",
+                operation=operation,
+                event="parse_error",
+                message="No content in response",
+                context={"choices_structure": response['choices'][0]}
+            )
             raise ValueError("No content in response")
         
-        logger.info(f"Extracted content from response (length: {len(content)} chars)")
-        logger.debug(f"Content preview: {content[:500]}")
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_start",
+            message="Extracted content from response",
+            context={
+                "content_length": len(content),
+                "content_preview": content[:500]
+            }
+        )
         
         # Strip think tags before processing
-        logger.info("parse_moments_response: About to call strip_think_tags")
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_start",
+            message="Stripping think tags",
+            context={"content_length_before": len(content)}
+        )
         content = strip_think_tags(content)
-        logger.info(f"parse_moments_response: After strip_think_tags, content length: {len(content)} chars")
-        logger.debug(f"parse_moments_response: Content after strip_think_tags (first 300 chars): {content[:300]}")
+        
+        log_event(
+            level="DEBUG",
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_start",
+            message="Think tags stripped",
+            context={
+                "content_length_after": len(content),
+                "content_preview": content[:300]
+            }
+        )
         
         # Try to extract JSON from content (handle markdown code blocks)
         json_str = content.strip()
@@ -832,17 +1084,49 @@ def parse_moments_response(response: Dict) -> List[Dict]:
                 logger.warning(f"Moment {i} has invalid types: {e}, skipping")
                 continue
         
-        logger.info(f"Parsed {len(validated_moments)} valid moments from response")
+        duration = time.time() - start_time
+        
+        log_operation_complete(
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_complete",
+            message="Successfully parsed moments from response",
+            context={
+                "moment_count": len(validated_moments),
+                "duration_seconds": duration
+            }
+        )
+        
         return validated_moments
         
     except json.JSONDecodeError as e:
-        logger.error(f"Error parsing JSON from response: {str(e)}")
-        logger.error(f"JSON string that failed to parse: {json_str[:1000] if 'json_str' in locals() else 'N/A'}")
+        duration = time.time() - start_time
+        json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
+        log_event(
+            level="ERROR",
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            event="parse_error",
+            message="Error parsing JSON from response",
+            context={
+                "error": str(e),
+                "json_string_preview": json_str_preview,
+                "duration_seconds": duration
+            }
+        )
         raise ValueError(f"Invalid JSON in response: {str(e)}")
     except Exception as e:
-        logger.error(f"Error parsing moments response: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_generation_service",
+            function="parse_moments_response",
+            operation=operation,
+            error=e,
+            message="Error parsing moments response",
+            context={"duration_seconds": duration}
+        )
         raise ValueError(f"Error parsing response: {str(e)}")
 
 
@@ -988,6 +1272,9 @@ def process_moments_generation_async(
     """
     def generate():
         tunnel_process = None
+        operation = "moment_generation_async"
+        start_time = time.time()
+        
         try:
             # Import here to avoid circular imports
             from app.utils.transcript_service import load_transcript
@@ -995,19 +1282,73 @@ def process_moments_generation_async(
             from app.utils.video_utils import get_video_by_filename
             import cv2
             
-            logger.info(f"Starting moment generation for {video_id}")
+            log_operation_start(
+                logger="app.utils.moments_generation_service",
+                function="process_moments_generation_async",
+                operation=operation,
+                message=f"Starting moment generation for {video_id}",
+                context={
+                    "video_id": video_id,
+                    "video_filename": video_filename,
+                    "model": model,
+                    "temperature": temperature,
+                    "min_moment_length": min_moment_length,
+                    "max_moment_length": max_moment_length,
+                    "min_moments": min_moments,
+                    "max_moments": max_moments,
+                    "request_id": get_request_id()
+                }
+            )
             
             # Load transcript
             audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
+            
+            log_event(
+                level="DEBUG",
+                logger="app.utils.moments_generation_service",
+                function="process_moments_generation_async",
+                operation=operation,
+                event="file_operation_start",
+                message="Loading transcript",
+                context={"audio_filename": audio_filename}
+            )
+            
             transcript_data = load_transcript(audio_filename)
             
             if transcript_data is None:
+                log_event(
+                    level="ERROR",
+                    logger="app.utils.moments_generation_service",
+                    function="process_moments_generation_async",
+                    operation=operation,
+                    event="file_operation_error",
+                    message="Transcript not found",
+                    context={"audio_filename": audio_filename}
+                )
                 raise Exception(f"Transcript not found for {audio_filename}")
             
             # Extract segments (only start timestamp and text)
             segments = extract_segment_data(transcript_data)
             
+            log_event(
+                level="DEBUG",
+                logger="app.utils.moments_generation_service",
+                function="process_moments_generation_async",
+                operation=operation,
+                event="operation_start",
+                message="Extracted segments from transcript",
+                context={"segment_count": len(segments)}
+            )
+            
             if not segments:
+                log_event(
+                    level="ERROR",
+                    logger="app.utils.moments_generation_service",
+                    function="process_moments_generation_async",
+                    operation=operation,
+                    event="validation_error",
+                    message="No segments found in transcript",
+                )
                 raise Exception("No segments found in transcript")
             
             # Get video duration
@@ -1140,23 +1481,60 @@ def process_moments_generation_async(
                 if not validated_moments:
                     raise Exception("No valid moments after validation")
                 
-                logger.info(f"Saving {len(validated_moments)} validated moments")
+                log_event(
+                    level="INFO",
+                    logger="app.utils.moments_generation_service",
+                    function="process_moments_generation_async",
+                    operation=operation,
+                    event="file_operation_start",
+                    message="Saving validated moments",
+                    context={"moment_count": len(validated_moments)}
+                )
                 
                 # Save moments (replaces existing)
                 success = save_moments(video_filename, validated_moments)
                 
                 if not success:
+                    log_event(
+                        level="ERROR",
+                        logger="app.utils.moments_generation_service",
+                        function="process_moments_generation_async",
+                        operation=operation,
+                        event="file_operation_error",
+                        message="Failed to save moments to file",
+                        context={"video_filename": video_filename}
+                    )
                     raise Exception("Failed to save moments to file")
                 
                 # Mark job as complete
                 complete_generation_job(video_id, success=True)
                 
-                logger.info(f"Moment generation completed successfully for {video_id}: {len(validated_moments)} moments saved")
+                duration = time.time() - start_time
+                log_operation_complete(
+                    logger="app.utils.moments_generation_service",
+                    function="process_moments_generation_async",
+                    operation=operation,
+                    message="Moment generation completed successfully",
+                    context={
+                        "video_id": video_id,
+                        "moment_count": len(validated_moments),
+                        "duration_seconds": duration
+                    }
+                )
                 
         except Exception as e:
-            logger.error(f"Error in async moment generation for {video_id}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+            duration = time.time() - start_time
+            log_operation_error(
+                logger="app.utils.moments_generation_service",
+                function="process_moments_generation_async",
+                operation=operation,
+                error=e,
+                message="Error in async moment generation",
+                context={
+                    "video_id": video_id,
+                    "duration_seconds": duration
+                }
+            )
             complete_generation_job(video_id, success=False)
         finally:
             # Tunnel is closed by context manager

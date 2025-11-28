@@ -4,6 +4,13 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, List
 import logging
+from app.utils.logging_config import (
+    log_event,
+    log_operation_start,
+    log_operation_complete,
+    log_operation_error,
+    get_request_id
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +75,32 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    operation = "audio_extraction"
+    start_time = time.time()
+    
+    log_operation_start(
+        logger="app.utils.audio_service",
+        function="extract_audio_from_video",
+        operation=operation,
+        message="Starting audio extraction",
+        context={
+            "video_path": str(video_path),
+            "output_path": str(output_path),
+            "request_id": get_request_id()
+        }
+    )
+    
     try:
         # Ensure output directory exists
+        log_event(
+            level="DEBUG",
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            event="file_operation_start",
+            message="Ensuring output directory exists",
+            context={"output_dir": str(output_path.parent)}
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # FFmpeg command to extract audio as WAV
@@ -88,7 +119,19 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
             str(output_path)
         ]
         
-        logger.info(f"Extracting audio from {video_path} to {output_path}")
+        log_event(
+            level="INFO",
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            event="external_call_start",
+            message="Executing FFmpeg command",
+            context={
+                "command": " ".join(cmd),
+                "video_path": str(video_path),
+                "output_path": str(output_path)
+            }
+        )
         
         # Run FFmpeg command
         result = subprocess.run(
@@ -98,26 +141,108 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
             timeout=3600  # 1 hour timeout for very long videos
         )
         
+        duration = time.time() - start_time
+        
         if result.returncode != 0:
-            logger.error(f"FFmpeg failed with return code {result.returncode}")
-            logger.error(f"FFmpeg stderr: {result.stderr}")
+            log_event(
+                level="ERROR",
+                logger="app.utils.audio_service",
+                function="extract_audio_from_video",
+                operation=operation,
+                event="external_call_error",
+                message="FFmpeg command failed",
+                context={
+                    "return_code": result.returncode,
+                    "stderr": result.stderr[:1000] if result.stderr else None,
+                    "duration_seconds": duration
+                }
+            )
             return False
+        
+        log_event(
+            level="DEBUG",
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            event="external_call_complete",
+            message="FFmpeg command completed",
+            context={
+                "return_code": result.returncode,
+                "stdout_length": len(result.stdout) if result.stdout else 0,
+                "duration_seconds": duration
+            }
+        )
         
         if not output_path.exists():
-            logger.error(f"Audio file was not created at {output_path}")
+            log_event(
+                level="ERROR",
+                logger="app.utils.audio_service",
+                function="extract_audio_from_video",
+                operation=operation,
+                event="file_operation_error",
+                message="Audio file was not created",
+                context={"output_path": str(output_path)}
+            )
             return False
         
-        logger.info(f"Successfully extracted audio to {output_path}")
+        # Get file size
+        file_size = output_path.stat().st_size
+        
+        log_operation_complete(
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            message="Successfully extracted audio",
+            context={
+                "video_path": str(video_path),
+                "output_path": str(output_path),
+                "file_size_bytes": file_size,
+                "duration_seconds": duration
+            }
+        )
+        
         return True
         
     except subprocess.TimeoutExpired:
-        logger.error(f"Audio extraction timed out for {video_path}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            error=Exception("Audio extraction timed out"),
+            message="Audio extraction timed out",
+            context={
+                "video_path": str(video_path),
+                "timeout_seconds": 3600,
+                "duration_seconds": duration
+            }
+        )
         return False
     except FileNotFoundError:
-        logger.error("FFmpeg not found. Please install FFmpeg.")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            error=FileNotFoundError("FFmpeg not found"),
+            message="FFmpeg not found",
+            context={"duration_seconds": duration}
+        )
         return False
     except Exception as e:
-        logger.error(f"Error extracting audio from {video_path}: {str(e)}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.audio_service",
+            function="extract_audio_from_video",
+            operation=operation,
+            error=e,
+            message="Error extracting audio",
+            context={
+                "video_path": str(video_path),
+                "output_path": str(output_path),
+                "duration_seconds": duration
+            }
+        )
         return False
 
 
@@ -132,8 +257,33 @@ def start_processing_job(video_id: str, video_filename: str) -> bool:
     Returns:
         True if job was registered, False if already processing
     """
+    operation = "audio_processing_job"
+    
+    log_event(
+        level="DEBUG",
+        logger="app.utils.audio_service",
+        function="start_processing_job",
+        operation=operation,
+        event="operation_start",
+        message="Registering audio processing job",
+        context={
+            "video_id": video_id,
+            "video_filename": video_filename,
+            "request_id": get_request_id()
+        }
+    )
+    
     with _job_lock:
         if video_id in _processing_jobs:
+            log_event(
+                level="WARNING",
+                logger="app.utils.audio_service",
+                function="start_processing_job",
+                operation=operation,
+                event="validation_error",
+                message="Job already exists",
+                context={"video_id": video_id}
+            )
             return False
         
         _processing_jobs[video_id] = {
@@ -141,6 +291,16 @@ def start_processing_job(video_id: str, video_filename: str) -> bool:
             "started_at": time.time(),
             "video_filename": video_filename
         }
+        
+        log_event(
+            level="INFO",
+            logger="app.utils.audio_service",
+            function="start_processing_job",
+            operation=operation,
+            event="operation_complete",
+            message="Job registered successfully",
+            context={"video_id": video_id}
+        )
         return True
 
 
@@ -152,9 +312,27 @@ def complete_processing_job(video_id: str, success: bool = True) -> None:
         video_id: ID of the video
         success: True if processing succeeded, False otherwise
     """
+    operation = "audio_processing_job"
+    
     with _job_lock:
         if video_id in _processing_jobs:
+            job_started_at = _processing_jobs[video_id].get("started_at", time.time())
+            duration = time.time() - job_started_at
             _processing_jobs[video_id]["status"] = "completed" if success else "failed"
+            
+            log_event(
+                level="INFO",
+                logger="app.utils.audio_service",
+                function="complete_processing_job",
+                operation=operation,
+                event="operation_complete" if success else "operation_error",
+                message=f"Job {'completed' if success else 'failed'}",
+                context={
+                    "video_id": video_id,
+                    "success": success,
+                    "duration_seconds": duration
+                }
+            )
             # Keep job in dict for a short time, then remove it
             # This allows frontend to detect completion
             # Jobs will be cleaned up after a delay
@@ -223,9 +401,38 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
         video_id: ID of the video (filename stem)
         video_path: Path to the video file
     """
+    operation = "audio_processing_async"
+    
+    log_event(
+        level="INFO",
+        logger="app.utils.audio_service",
+        function="process_audio_async",
+        operation=operation,
+        event="operation_start",
+        message="Starting async audio processing thread",
+        context={
+            "video_id": video_id,
+            "video_path": str(video_path),
+            "request_id": get_request_id()
+        }
+    )
+    
     def extract():
         try:
             output_path = get_audio_path(video_path.name)
+            
+            log_event(
+                level="DEBUG",
+                logger="app.utils.audio_service",
+                function="process_audio_async",
+                operation=operation,
+                event="operation_start",
+                message="Starting audio extraction in background thread",
+                context={
+                    "video_id": video_id,
+                    "output_path": str(output_path)
+                }
+            )
             
             # Extract audio
             success = extract_audio_from_video(video_path, output_path)
@@ -233,14 +440,39 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             # Mark job as complete
             complete_processing_job(video_id, success)
             
-            logger.info(f"Audio processing completed for {video_id}: {'success' if success else 'failed'}")
+            log_event(
+                level="INFO",
+                logger="app.utils.audio_service",
+                function="process_audio_async",
+                operation=operation,
+                event="operation_complete",
+                message=f"Audio processing {'completed successfully' if success else 'failed'}",
+                context={"video_id": video_id, "success": success}
+            )
             
         except Exception as e:
-            logger.error(f"Error in async audio processing for {video_id}: {str(e)}")
+            log_operation_error(
+                logger="app.utils.audio_service",
+                function="process_audio_async",
+                operation=operation,
+                error=e,
+                message="Error in async audio processing",
+                context={"video_id": video_id}
+            )
             complete_processing_job(video_id, success=False)
     
     # Start processing in background thread
     thread = threading.Thread(target=extract, daemon=True)
     thread.start()
+    
+    log_event(
+        level="DEBUG",
+        logger="app.utils.audio_service",
+        function="process_audio_async",
+        operation=operation,
+        event="operation_complete",
+        message="Background thread started",
+        context={"video_id": video_id, "thread_name": thread.name}
+    )
 
 

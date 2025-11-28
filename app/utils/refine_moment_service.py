@@ -4,6 +4,13 @@ import json
 import re
 from typing import Optional, Dict, List, Tuple
 import logging
+from app.utils.logging_config import (
+    log_event,
+    log_operation_start,
+    log_operation_complete,
+    log_operation_error,
+    get_request_id
+)
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +256,21 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
     Returns:
         Tuple of (start_time, end_time)
     """
+    operation = "parse_refinement_response"
+    start_time = time.time()
+    
+    log_operation_start(
+        logger="app.utils.refine_moment_service",
+        function="parse_refinement_response",
+        operation=operation,
+        event="parse_start",
+        message="Parsing refinement response",
+        context={
+            "response_keys": list(response.keys()) if isinstance(response, dict) else None,
+            "request_id": get_request_id()
+        }
+    )
+    
     try:
         # Validate response is not None and is a dictionary
         if response is None:
@@ -382,26 +404,69 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         if end_time <= start_time:
             raise ValueError(f"Invalid times: end_time ({end_time}) must be > start_time ({start_time})")
         
-        logger.info(f"Successfully parsed refinement: [{start_time:.2f}s - {end_time:.2f}s]")
+        duration = time.time() - start_time
+        
+        log_operation_complete(
+            logger="app.utils.refine_moment_service",
+            function="parse_refinement_response",
+            operation=operation,
+            event="parse_complete",
+            message="Successfully parsed refinement timestamps",
+            context={
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_seconds": duration
+            }
+        )
+        
         return start_time, end_time
         
     except ValueError as e:
-        # Re-raise ValueError as-is (these are our validation errors)
-        logger.error(f"Validation error parsing refinement response: {str(e)}")
+        duration = time.time() - start_time
+        log_event(
+            level="ERROR",
+            logger="app.utils.refine_moment_service",
+            function="parse_refinement_response",
+            operation=operation,
+            event="parse_error",
+            message="Validation error parsing refinement response",
+            context={
+                "error": str(e),
+                "duration_seconds": duration
+            }
+        )
         raise
     except json.JSONDecodeError as e:
-        # This should not happen now since we catch it above, but keep for safety
-        logger.error(f"JSON decode error parsing refinement response: {str(e)}")
+        duration = time.time() - start_time
         json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
-        logger.error(f"JSON string that failed to parse: {json_str_preview}")
+        log_event(
+            level="ERROR",
+            logger="app.utils.refine_moment_service",
+            function="parse_refinement_response",
+            operation=operation,
+            event="parse_error",
+            message="JSON decode error parsing refinement response",
+            context={
+                "error": str(e),
+                "json_string_preview": json_str_preview,
+                "duration_seconds": duration
+            }
+        )
         raise ValueError(f"Invalid JSON in response: {str(e)}")
     except Exception as e:
-        logger.error(f"Unexpected error parsing refinement response: {str(e)}")
-        logger.error(f"Response type: {type(response).__name__ if 'response' in locals() else 'N/A'}")
-        if 'response' in locals() and isinstance(response, dict):
-            logger.error(f"Response keys: {list(response.keys())}")
-        import traceback
-        logger.error(traceback.format_exc())
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.refine_moment_service",
+            function="parse_refinement_response",
+            operation=operation,
+            error=e,
+            message="Unexpected error parsing refinement response",
+            context={
+                "response_type": type(response).__name__ if 'response' in locals() else 'N/A',
+                "response_keys": list(response.keys()) if 'response' in locals() and isinstance(response, dict) else None,
+                "duration_seconds": duration
+            }
+        )
         raise ValueError(f"Error parsing response: {str(e)}")
 
 

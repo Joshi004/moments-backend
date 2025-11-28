@@ -3,6 +3,13 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 import logging
 import hashlib
+from app.utils.logging_config import (
+    log_event,
+    log_operation_start,
+    log_operation_complete,
+    log_operation_error,
+    get_request_id
+)
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +125,22 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    operation = "save_moments"
+    start_time = time.time()
+    
+    log_operation_start(
+        logger="app.utils.moments_service",
+        function="save_moments",
+        operation=operation,
+        event="file_operation_start",
+        message="Saving moments to file",
+        context={
+            "video_filename": video_filename,
+            "moment_count": len(moments),
+            "request_id": get_request_id()
+        }
+    )
+    
     moments_file = get_moments_file_path(video_filename)
     
     try:
@@ -128,10 +151,38 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
         with open(moments_file, 'w', encoding='utf-8') as f:
             json.dump(moments, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"Successfully saved moments to {moments_file}")
+        file_size = moments_file.stat().st_size
+        duration = time.time() - start_time
+        
+        log_operation_complete(
+            logger="app.utils.moments_service",
+            function="save_moments",
+            operation=operation,
+            event="file_operation_complete",
+            message="Successfully saved moments",
+            context={
+                "video_filename": video_filename,
+                "moments_file": str(moments_file),
+                "moment_count": len(moments),
+                "file_size_bytes": file_size,
+                "duration_seconds": duration
+            }
+        )
         return True
     except Exception as e:
-        logger.error(f"Error saving moments to {moments_file}: {str(e)}")
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.utils.moments_service",
+            function="save_moments",
+            operation=operation,
+            error=e,
+            message="Error saving moments",
+            context={
+                "video_filename": video_filename,
+                "moments_file": str(moments_file),
+                "duration_seconds": duration
+            }
+        )
         return False
 
 
@@ -147,6 +198,25 @@ def validate_moment(moment: Dict, existing_moments: List[Dict], video_duration: 
     Returns:
         Tuple of (is_valid, error_message)
     """
+    operation = "validate_moment"
+    
+    log_event(
+        level="DEBUG",
+        logger="app.utils.moments_service",
+        function="validate_moment",
+        operation=operation,
+        event="validation_start",
+        message="Validating moment",
+        context={
+            "moment": {
+                "start_time": moment.get("start_time"),
+                "end_time": moment.get("end_time"),
+                "title": moment.get("title", "")[:50]
+            },
+            "video_duration": video_duration,
+            "existing_moments_count": len(existing_moments)
+        }
+    )
     # Check required fields
     if 'start_time' not in moment or 'end_time' not in moment or 'title' not in moment:
         return False, "Missing required fields: start_time, end_time, and title are required"
@@ -192,7 +262,36 @@ def validate_moment(moment: Dict, existing_moments: List[Dict], video_duration: 
             # Check if new moment overlaps with existing moment
             # Overlap occurs if: new_start < existing_end AND new_end > existing_start
             if start_time < existing_end and end_time > existing_start:
+                log_event(
+                    level="DEBUG",
+                    logger="app.utils.moments_service",
+                    function="validate_moment",
+                    operation=operation,
+                    event="validation_error",
+                    message="Moment overlaps with existing moment",
+                    context={
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "existing_start": existing_start,
+                        "existing_end": existing_end,
+                        "existing_title": existing.get('title', 'Untitled')
+                    }
+                )
                 return False, f"Moment overlaps with existing moment '{existing.get('title', 'Untitled')}' ({existing_start}s - {existing_end}s)"
+    
+    log_event(
+        level="DEBUG",
+        logger="app.utils.moments_service",
+        function="validate_moment",
+        operation=operation,
+        event="validation_complete",
+        message="Moment validation passed",
+        context={
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration": end_time - start_time
+        }
+    )
     
     return True, None
 
