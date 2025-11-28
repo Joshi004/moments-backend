@@ -38,6 +38,72 @@ def extract_model_name(response: Dict) -> str:
     return str(model_name)
 
 
+def strip_think_tags(content: str) -> str:
+    """
+    Remove <think>...</think> tags and their content from AI model responses.
+    
+    Some AI models wrap their reasoning process in <think> tags, which need to be
+    stripped before parsing JSON responses.
+    
+    Args:
+        content: Raw content string from AI model response
+        
+    Returns:
+        Content with think tags removed and stripped
+    """
+    logger.debug(f"strip_think_tags called with content length: {len(content) if isinstance(content, str) else 'N/A'}")
+    
+    if not isinstance(content, str):
+        logger.warning(f"strip_think_tags: content is not a string, type: {type(content)}")
+        return content
+    
+    # Log content preview before processing
+    content_preview = content[:300] if len(content) > 300 else content
+    logger.debug(f"strip_think_tags: Content before processing (first 300 chars): {content_preview}")
+    
+    # Pattern to match <think>...</think> tags (non-greedy, handles multiline with DOTALL)
+    # Also handle variations like <think>, <thinking>, etc.
+    # Note: Matching <think> tags as that's what the AI models actually return
+    think_pattern = r'<think[^>]*>.*?</think>'
+    logger.debug(f"strip_think_tags: Using pattern: {think_pattern}")
+    
+    # Count occurrences before removal for logging
+    matches = re.findall(think_pattern, content, re.DOTALL | re.IGNORECASE)
+    logger.info(f"strip_think_tags: Found {len(matches)} think tag block(s) using pattern")
+    
+    if matches:
+        # Log what was matched
+        for i, match in enumerate(matches[:3]):  # Log first 3 matches
+            match_preview = match[:200] if len(match) > 200 else match
+            logger.debug(f"strip_think_tags: Match {i+1} preview (first 200 chars): {match_preview}")
+        
+        if len(matches) > 3:
+            logger.debug(f"strip_think_tags: ... and {len(matches) - 3} more matches")
+        
+        logger.info(f"strip_think_tags: Stripping {len(matches)} think tag block(s) from content")
+        content_length_before = len(content)
+        content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE)
+        # Strip extra whitespace that may have been left behind
+        content = content.strip()
+        
+        # Log result after stripping
+        content_after_preview = content[:300] if len(content) > 300 else content
+        logger.info(f"strip_think_tags: Content after stripping (first 300 chars): {content_after_preview}")
+        logger.debug(f"strip_think_tags: Content length changed from {content_length_before} to {len(content)} chars")
+    else:
+        logger.warning(f"strip_think_tags: No think tags found with pattern '{think_pattern}'")
+        # Try to find what tags ARE in the content
+        opening_tags = re.findall(r'<([^/>\s]+)[^>]*>', content)
+        closing_tags = re.findall(r'</([^/>\s]+)>', content)
+        if opening_tags or closing_tags:
+            logger.debug(f"strip_think_tags: Found opening tags: {set(opening_tags)}")
+            logger.debug(f"strip_think_tags: Found closing tags: {set(closing_tags)}")
+        else:
+            logger.debug(f"strip_think_tags: No XML/HTML-like tags found in content")
+    
+    return content
+
+
 def extract_word_timestamps_for_range(
     transcript: Dict,
     start: float,
@@ -243,6 +309,12 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
             logger.error(f"Content is not a string. Type: {type(content)}, Value: {str(content)[:200]}")
             raise ValueError(f"Content is not a string, got {type(content).__name__}")
         
+        # Strip think tags before processing
+        logger.info("parse_refinement_response: About to call strip_think_tags")
+        content = strip_think_tags(content)
+        logger.info(f"parse_refinement_response: After strip_think_tags, content length: {len(content)} chars")
+        logger.debug(f"parse_refinement_response: Content after strip_think_tags (first 300 chars): {content[:300]}")
+        
         # Try to extract JSON from content (handle markdown code blocks)
         json_str = content.strip()
         
@@ -438,7 +510,7 @@ def process_moment_refinement_async(
         user_prompt: User-provided prompt (editable, visible in UI)
         left_padding: Seconds to pad before moment start
         right_padding: Seconds to pad after moment end
-        model: Model identifier ("minimax" or "qwen"), default: "minimax"
+        model: Model identifier ("minimax", "qwen", or "qwen3_omni"), default: "minimax"
         temperature: Temperature parameter for the model, default: 0.7
     """
     def refine():

@@ -12,12 +12,23 @@ MODELS = {
         "ssh_remote_port": 7104,
     },
     "qwen": {
-        "name": "Qwen",
+        "name": "Qwen3-VL",
         "model_id": "qwen3-vl-235b-thinking",
         "ssh_host": "naresh@85.234.64.44",  # Update if Qwen uses different SSH host
         "ssh_remote_host": "worker-9",  # Update if Qwen runs on different remote host
         "ssh_local_port": 7001,
         "ssh_remote_port": 7001,  # Update with actual remote port for Qwen service
+    },
+    "qwen3_omni": {
+        "name": "Qwen3-Omini",
+        "model_id": None,  # Qwen3-Omini doesn't require explicit model_id in the request
+        "ssh_host": "naresh@85.234.64.44",
+        "ssh_remote_host": "worker-9",
+        "ssh_local_port": 7101,
+        "ssh_remote_port": 8002,  # Update with actual remote port for Qwen3-Omini service
+        "supports_video": False,  # Text-only model
+        "top_p": 0.95,
+        "top_k": 20,
     }
 }
 
@@ -27,7 +38,7 @@ def get_model_config(model_key: str) -> dict:
     Get configuration for a specific model.
     
     Args:
-        model_key: Model identifier ("minimax" or "qwen")
+        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
     
     Returns:
         Dictionary with model configuration
@@ -46,11 +57,13 @@ def get_model_url(model_key: str) -> str:
     Get the local URL for a model API endpoint.
     
     Args:
-        model_key: Model identifier ("minimax" or "qwen")
+        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
     
     Returns:
         URL string for the model API endpoint
     """
     config = get_model_config(model_key)
     return f"http://localhost:{config['ssh_local_port']}/v1/chat/completions"
+
+
 

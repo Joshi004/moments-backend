@@ -9,6 +9,7 @@ from typing import Optional, Dict, List
 from contextlib import contextmanager
 import logging
 from app.utils.model_config import get_model_config, get_model_url
+from app.utils.refine_moment_service import strip_think_tags
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ def ssh_tunnel(model_key: str = "minimax"):
 def check_existing_tunnel(model_key: str = "minimax") -> bool:
     """
     Check if there's already an active SSH tunnel on the configured port.
+    Less restrictive: if port is accessible, assume tunnel exists and allow reuse.
     
     Args:
         model_key: Model identifier ("minimax" or "qwen")
@@ -77,20 +79,32 @@ def check_existing_tunnel(model_key: str = "minimax") -> bool:
         sock.close()
         
         if result == 0:
-            # Port is accessible, check if it's our SSH tunnel
+            # Port is accessible - check if we can find our SSH tunnel process
+            found_matching_tunnel = False
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     cmdline = proc.info.get('cmdline', [])
                     if cmdline and 'ssh' in cmdline:
                         cmd_str = ' '.join(cmdline)
-                        if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
+                        # More flexible matching: check for port forwarding patterns
+                        port_pattern = f'{ssh_local_port}:{ssh_remote_host}:{ssh_remote_port}'
+                        remote_pattern = f':{ssh_remote_host}:{ssh_remote_port}'
+                        
+                        if (port_pattern in cmd_str or remote_pattern in cmd_str) and ssh_host in cmd_str:
                             logger.info(f"Found existing SSH tunnel (PID: {proc.info['pid']})")
-                            return True
+                            found_matching_tunnel = True
+                            break
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
-            # Port is accessible but not our tunnel - might be another service
-            logger.warning(f"Port {ssh_local_port} is in use but not by our SSH tunnel")
-            return False
+            
+            # If port is accessible, assume it's a working tunnel (less restrictive)
+            # This allows reuse of tunnels created manually or by other processes
+            if found_matching_tunnel:
+                logger.info(f"Port {ssh_local_port} is accessible and matches our tunnel configuration")
+            else:
+                logger.info(f"Port {ssh_local_port} is accessible - assuming existing tunnel (may be created manually)")
+            return True  # Port is accessible, allow reuse
+        
         return False
     except Exception as e:
         logger.debug(f"Error checking existing tunnel: {str(e)}")
@@ -120,7 +134,7 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
             # Return a dummy process - the tunnel is already running
             return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
         
-        # No existing tunnel, check if port is in use by something else
+        # No existing tunnel found by check_existing_tunnel, check if port is in use by something else
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(1)
@@ -128,20 +142,29 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
         sock.close()
         
         if result == 0:
-            # Port is in use - try to kill any SSH tunnels on this port
-            logger.warning(f"Port {ssh_local_port} is in use, attempting to close existing tunnels...")
-            close_ssh_tunnel(None, model_key)
-            time.sleep(1.0)
+            # Port is accessible - less restrictive: verify it works and reuse it
+            logger.info(f"Port {ssh_local_port} is accessible. Verifying it's working and reusing existing connection...")
             
-            # Check again
-            sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock2.settimeout(1)
-            result2 = sock2.connect_ex(('localhost', ssh_local_port))
-            sock2.close()
+            # Try to verify the port is actually forwarding correctly
+            # If port is accessible, assume it's a working tunnel and reuse it
+            try:
+                # Quick connectivity test
+                test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_sock.settimeout(2)
+                test_result = test_sock.connect_ex(('localhost', ssh_local_port))
+                test_sock.close()
+                
+                if test_result == 0:
+                    logger.info(f"Port {ssh_local_port} is accessible and appears to be working. Reusing existing tunnel.")
+                    # Return a dummy process - the tunnel is already running
+                    return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
+            except Exception as e:
+                logger.debug(f"Port connectivity test failed: {str(e)}")
             
-            if result2 == 0:
-                logger.error(f"Port {ssh_local_port} is still in use after cleanup. Another service may be using it.")
-                return None
+            # If we get here, port is accessible but we couldn't verify it
+            # Still be lenient and try to reuse it
+            logger.info(f"Port {ssh_local_port} is accessible. Attempting to reuse (less restrictive mode).")
+            return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
         
         cmd = [
             'ssh',
@@ -181,22 +204,14 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
             
             if result == 0:
                 logger.info("Existing tunnel is working, reusing it")
-                return process  # Return process even though it "failed" - tunnel exists
+                # Return a dummy process - the tunnel is already running
+                return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
             else:
-                logger.warning("Port in use but tunnel not accessible, attempting cleanup...")
-                close_ssh_tunnel(None, model_key)
-                time.sleep(1.0)
-                # Try to verify again after cleanup
-                sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock2.settimeout(2)
-                result2 = sock2.connect_ex(('localhost', ssh_local_port))
-                sock2.close()
-                if result2 == 0:
-                    logger.info("Tunnel accessible after cleanup")
-                    return process
-                else:
-                    logger.error("Tunnel not accessible even after cleanup")
-                    return None
+                # Port was reported as in use but not accessible - this is unusual
+                # Still be lenient and log a warning but don't fail
+                logger.warning("Port reported as in use but not immediately accessible. Will attempt to use anyway.")
+                # Return dummy process - let the actual API call determine if it works
+                return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
         
         # With -fN, SSH forks into background and parent exits immediately
         # Exit code 0 usually means success, non-zero means failure
@@ -502,7 +517,7 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
     
     Args:
         messages: List of message dictionaries with 'role' and 'content'
-        model_key: Model identifier ("minimax" or "qwen")
+        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
         model_id: Optional model ID to use in the request (if None, uses config default)
         temperature: Temperature parameter for the model (default: 0.7)
     
@@ -526,6 +541,12 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
         # Only add model_id if it's specified (Qwen needs it, MiniMax might not)
         if model_id:
             payload["model"] = model_id
+        
+        # Add top_p and top_k if they're specified in the model config
+        if 'top_p' in config:
+            payload["top_p"] = config['top_p']
+        if 'top_k' in config:
+            payload["top_k"] = config['top_k']
         
         logger.info(f"Calling AI model at {model_url} with {len(messages)} messages, model={model_id}, temperature={temperature}")
         logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
@@ -756,6 +777,12 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         logger.info(f"Extracted content from response (length: {len(content)} chars)")
         logger.debug(f"Content preview: {content[:500]}")
         
+        # Strip think tags before processing
+        logger.info("parse_moments_response: About to call strip_think_tags")
+        content = strip_think_tags(content)
+        logger.info(f"parse_moments_response: After strip_think_tags, content length: {len(content)} chars")
+        logger.debug(f"parse_moments_response: Content after strip_think_tags (first 300 chars): {content[:300]}")
+        
         # Try to extract JSON from content (handle markdown code blocks)
         json_str = content.strip()
         
@@ -956,7 +983,7 @@ def process_moments_generation_async(
         max_moment_length: Maximum moment length in seconds
         min_moments: Minimum number of moments to generate
         max_moments: Maximum number of moments to generate
-        model: Model identifier ("minimax" or "qwen"), default: "minimax"
+        model: Model identifier ("minimax", "qwen", or "qwen3_omni"), default: "minimax"
         temperature: Temperature parameter for the model, default: 0.7
     """
     def generate():
