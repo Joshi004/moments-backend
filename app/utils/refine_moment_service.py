@@ -12,7 +12,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.ai_request_logger import log_ai_request_response
-from app.utils.model_prompt_config import get_model_prompt_config
+from app.utils.model_prompt_config import get_refinement_prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +187,8 @@ def build_refinement_prompt(
     Returns:
         Complete prompt string with all sections assembled
     """
-    # Get model-specific prompt configuration
-    prompt_config = get_model_prompt_config(model_key)
+    # Get model-specific prompt configuration for refinement (requires JSON object, not array)
+    prompt_config = get_refinement_prompt_config(model_key)
     json_header = prompt_config["json_header"]
     json_footer = prompt_config.get("json_footer", "")
     # Format words as [start-end] word
@@ -221,23 +221,34 @@ Example:
 [5.92-6.24] scared"""
     
     # Response format specification (backend-only, not editable)
-    response_format_specification = """OUTPUT FORMAT - READ CAREFULLY:
-You must respond with ONLY a valid JSON object. Nothing else.
+    response_format_specification = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
 
-REQUIRED STRUCTURE:
+You MUST respond with ONLY a valid JSON object. Nothing else. No exceptions.
+
+CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
+- Your response MUST start with { and MUST end with }
+- Do NOT output a JSON array [ ] - ONLY an object { }
+- Do NOT wrap the object in an array
+- Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", etc.
+- Do NOT include any thinking, reasoning, or explanation
+- NO text before the {
+- NO text after the }
+- NO markdown code blocks (no ```json or ```)
+- NO comments or notes
+
+REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
 {
   "start_time": 5.12,
   "end_time": 67.84
 }
 
 RULES:
-- Output MUST start with { and end with }
-- NO text before the {
-- NO text after the }
 - Must have exactly 2 fields: start_time (float), end_time (float)
 - The start_time and end_time must correspond to word boundaries from the provided transcript
 - The start_time must be less than end_time
-- Do not add any other fields"""
+- Do not add any other fields
+
+FINAL REMINDER: Output ONLY the JSON object { ... }. Nothing else."""
     
     # Assemble complete prompt with model-specific JSON header
     # For Qwen models, JSON header MUST be at the very top
