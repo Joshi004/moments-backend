@@ -12,6 +12,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.ai_request_logger import log_ai_request_response
+from app.utils.model_prompt_config import get_model_prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,8 @@ def build_refinement_prompt(
     words: List[Dict],
     original_start: float,
     original_end: float,
-    original_title: str
+    original_title: str,
+    model_key: str = "minimax"
 ) -> str:
     """
     Build the complete prompt for moment refinement.
@@ -180,10 +182,15 @@ def build_refinement_prompt(
         original_start: Original moment start time
         original_end: Original moment end time
         original_title: Title of the moment being refined
+        model_key: Model identifier for model-specific prompting
         
     Returns:
         Complete prompt string with all sections assembled
     """
+    # Get model-specific prompt configuration
+    prompt_config = get_model_prompt_config(model_key)
+    json_header = prompt_config["json_header"]
+    json_footer = prompt_config.get("json_footer", "")
     # Format words as [start-end] word
     words_text = "\n".join([
         f"[{word['start']:.2f}-{word['end']:.2f}] {word['word']}"
@@ -214,26 +221,27 @@ Example:
 [5.92-6.24] scared"""
     
     # Response format specification (backend-only, not editable)
-    response_format_specification = """OUTPUT FORMAT:
-You must respond with a valid JSON object containing only two fields:
-- start_time: (float) The precise start time in seconds where this moment should begin
-- end_time: (float) The precise end time in seconds where this moment should end
+    response_format_specification = """OUTPUT FORMAT - READ CAREFULLY:
+You must respond with ONLY a valid JSON object. Nothing else.
 
-Example response:
+REQUIRED STRUCTURE:
 {
   "start_time": 5.12,
   "end_time": 67.84
 }
 
-IMPORTANT:
+RULES:
+- Output MUST start with { and end with }
+- NO text before the {
+- NO text after the }
+- Must have exactly 2 fields: start_time (float), end_time (float)
 - The start_time and end_time must correspond to word boundaries from the provided transcript
 - The start_time must be less than end_time
-- Both timestamps must be within the range of the provided word timestamps
-- Do NOT include any other fields in your response
-- Do NOT add explanations or comments, just return the JSON object"""
+- Do not add any other fields"""
     
-    # Assemble complete prompt
-    complete_prompt = f"""{context_explanation}
+    # Assemble complete prompt with model-specific JSON header
+    # For Qwen models, JSON header MUST be at the very top
+    complete_prompt = f"""{json_header}{context_explanation}
 
 {user_prompt}
 
@@ -242,7 +250,7 @@ IMPORTANT:
 Word-level transcript:
 {words_text}
 
-{response_format_specification}"""
+{response_format_specification}{json_footer}"""
     
     return complete_prompt
 
@@ -659,7 +667,8 @@ def process_moment_refinement_async(
                 words=words,
                 original_start=moment['start_time'],
                 original_end=moment['end_time'],
-                original_title=moment['title']
+                original_title=moment['title'],
+                model_key=model  # Pass model key for model-specific prompting
             )
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")

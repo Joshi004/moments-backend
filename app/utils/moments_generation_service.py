@@ -18,6 +18,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.ai_request_logger import log_ai_request_response
+from app.utils.model_prompt_config import get_model_prompt_config, get_response_format_param
 
 logger = logging.getLogger(__name__)
 
@@ -559,6 +560,12 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
         if 'top_k' in config:
             payload["top_k"] = config['top_k']
         
+        # Add response_format for models that support it (vLLM 0.10+)
+        response_format = get_response_format_param(model_key)
+        if response_format:
+            payload["response_format"] = response_format
+            logger.info(f"Using response_format enforcement: {response_format}")
+        
         # Log prompt being sent (first message content, truncated)
         prompt_preview = messages[0].get('content', '')[:500] if messages else 'N/A'
         
@@ -820,7 +827,8 @@ def build_prompt(
     min_moment_length: float,
     max_moment_length: float,
     min_moments: int,
-    max_moments: int
+    max_moments: int,
+    model_key: str = "minimax"
 ) -> str:
     """
     Build the complete prompt for the AI model.
@@ -833,6 +841,7 @@ def build_prompt(
         max_moment_length: Maximum moment length in seconds
         min_moments: Minimum number of moments to generate
         max_moments: Maximum number of moments to generate
+        model_key: Model identifier for model-specific prompting
     
     Returns:
         Complete prompt string with all sections assembled
@@ -853,9 +862,15 @@ def build_prompt(
             "min_moment_length": min_moment_length,
             "max_moment_length": max_moment_length,
             "min_moments": min_moments,
-            "max_moments": max_moments
+            "max_moments": max_moments,
+            "model_key": model_key
         }
     )
+    
+    # Get model-specific prompt configuration
+    prompt_config = get_model_prompt_config(model_key)
+    json_header = prompt_config["json_header"]
+    json_footer = prompt_config.get("json_footer", "")
     # Format segments as [timestamp] text (only start timestamp and text)
     segments_text = "\n".join([
         f"[{seg['start']:.2f}] {seg['text']}"
@@ -876,13 +891,23 @@ Example:
 [5.12] I could really be excited by a jobless future"""
     
     # Response format specification (backend-only, not editable)
-    response_format_specification = """OUTPUT FORMAT:
-You must respond with a valid JSON array. Each object in the array represents one moment and must have exactly these fields:
-- start_time: (float) The start time in seconds (must match or be close to a segment timestamp)
-- end_time: (float) The end time in seconds (must be greater than start_time)
-- title: (string) A clear, descriptive title for this moment (5-15 words)
+    response_format_specification = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
 
-Example response:
+You MUST respond with ONLY a valid JSON array. Nothing else. No exceptions.
+
+CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
+- Your response MUST start with [ and MUST end with ]
+- Do NOT output a JSON object { } - ONLY an array [ ]
+- Do NOT wrap the array in an object
+- Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", "final_output", etc.
+- Do NOT repeat the same data multiple times
+- Do NOT include any thinking, reasoning, or explanation
+- NO text before the [
+- NO text after the ]
+- NO markdown code blocks (no ```json or ```)
+- NO comments or notes
+
+REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
 [
   {
     "start_time": 0.24,
@@ -892,9 +917,16 @@ Example response:
   {
     "start_time": 45.2,
     "end_time": 78.8,
-    "title": "Discussion about human potential and creativity"
+    "title": "Discussion about human potential"
   }
-]"""
+]
+
+RULES:
+- Each object needs exactly 3 fields: start_time (float), end_time (float), title (string)
+- Do not add any other fields to the objects
+- Do not add any fields outside the array
+
+FINAL REMINDER: Output ONLY the JSON array [ ... ]. Nothing else."""
     
     # Constraints section (backend-only, dynamically generated)
     constraints = f"""CONSTRAINTS:
@@ -906,8 +938,9 @@ Example response:
 - All end_time values must be <= {video_duration:.2f}
 - Each moment's end_time must be > start_time"""
     
-    # Assemble complete prompt
-    complete_prompt = f"""{user_prompt}
+    # Assemble complete prompt with model-specific JSON header
+    # For Qwen models, JSON header MUST be at the very top
+    complete_prompt = f"""{json_header}{user_prompt}
 
 {input_format_explanation}
 
@@ -916,7 +949,7 @@ Transcript segments:
 
 {response_format_specification}
 
-{constraints}"""
+{constraints}{json_footer}"""
     
     log_event(
         level="INFO",
@@ -1057,12 +1090,127 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         
         logger.debug(f"Attempting to parse JSON: {json_str[:500]}")
         
-        # Parse JSON
-        moments = json.loads(json_str)
+        # Parse JSON - try full parse first
+        try:
+            parsed_data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            # If JSON is malformed (possibly truncated), try to extract moments from partial JSON
+            logger.warning(f"JSON parse error: {str(e)}. Attempting to extract moments from partial/truncated JSON...")
+            
+            # First, try to extract moments arrays from the string using regex
+            # Look for arrays containing moment objects with start_time, end_time, title
+            moments_pattern = r'"moments"\s*:\s*(\[[^\]]*(?:\{[^\}]*"start_time"[^\}]*"end_time"[^\}]*"title"[^\}]*\}[^\]]*)*\])'
+            moments_match = re.search(moments_pattern, json_str, re.DOTALL)
+            
+            if not moments_match:
+                # Try other common field names
+                for field_name in ["output", "final_output", "response", "final_json_output", "json_output"]:
+                    field_pattern = f'"{field_name}"\\s*:\\s*(\\[[^\\]]*(?:\\{{[^\\}}]*"start_time"[^\\}}]*"end_time"[^\\}}]*"title"[^\\}}]*\\}}[^\\]]*)*\\])'
+                    moments_match = re.search(field_pattern, json_str, re.DOTALL)
+                    if moments_match:
+                        logger.info(f"Found moments array in field '{field_name}'")
+                        break
+            
+            if moments_match:
+                try:
+                    array_str = moments_match.group(1)
+                    parsed_data = json.loads(array_str)
+                    logger.info("Successfully extracted moments array from partial JSON")
+                except json.JSONDecodeError:
+                    # Try to find the last complete moments array by searching backwards
+                    logger.warning("Failed to parse extracted array, trying to find last complete array...")
+                    # Find all potential moments arrays
+                    all_arrays = []
+                    for field_name in ["moments", "output", "final_output", "response", "final_json_output"]:
+                        pattern = f'"{field_name}"\\s*:\\s*\\['
+                        for match in re.finditer(pattern, json_str):
+                            start_pos = match.end() - 1  # Include the [
+                            # Try to find the matching closing bracket
+                            bracket_count = 0
+                            for i in range(start_pos, len(json_str)):
+                                if json_str[i] == '[':
+                                    bracket_count += 1
+                                elif json_str[i] == ']':
+                                    bracket_count -= 1
+                                    if bracket_count == 0:
+                                        try:
+                                            array_str = json_str[start_pos:i+1]
+                                            test_parse = json.loads(array_str)
+                                            if isinstance(test_parse, list) and len(test_parse) > 0:
+                                                if isinstance(test_parse[0], dict) and 'start_time' in test_parse[0]:
+                                                    all_arrays.append((i, test_parse))
+                                        except:
+                                            pass
+                                        break
+                    
+                    if all_arrays:
+                        # Use the last (most complete) array
+                        _, parsed_data = max(all_arrays, key=lambda x: x[0])
+                        logger.info(f"Found {len(parsed_data)} moments in last complete array")
+                    else:
+                        raise ValueError(f"Could not extract valid moments array from partial JSON")
+            else:
+                # Try a simpler approach - find first [ and last ]
+                first_bracket = json_str.find('[')
+                last_bracket = json_str.rfind(']')
+                if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+                    try:
+                        array_str = json_str[first_bracket:last_bracket+1]
+                        parsed_data = json.loads(array_str)
+                        logger.info("Successfully extracted array using bracket matching")
+                    except json.JSONDecodeError:
+                        # Last resort: try to extract from partial JSON by finding complete moment objects
+                        logger.warning("Trying to extract complete moment objects from truncated JSON...")
+                        moment_objects = []
+                        # Find all complete moment objects: {"start_time": ..., "end_time": ..., "title": ...}
+                        moment_pattern = r'\{\s*"start_time"\s*:\s*[\d.]+\s*,\s*"end_time"\s*:\s*[\d.]+\s*,\s*"title"\s*:\s*"[^"]*"\s*\}'
+                        for match in re.finditer(moment_pattern, json_str):
+                            try:
+                                moment_obj = json.loads(match.group(0))
+                                moment_objects.append(moment_obj)
+                            except:
+                                pass
+                        
+                        if moment_objects:
+                            parsed_data = moment_objects
+                            logger.info(f"Extracted {len(moment_objects)} complete moment objects from truncated JSON")
+                        else:
+                            raise ValueError(f"Invalid JSON in response: {str(e)}. Could not extract valid array or moments.")
+                else:
+                    raise ValueError(f"Invalid JSON in response: {str(e)}. Could not find array brackets.")
         
-        # Validate it's a list
-        if not isinstance(moments, list):
-            raise ValueError("Response is not a list")
+        # Handle case where model returns an object instead of array
+        # Try to extract the array from common field names
+        if isinstance(parsed_data, dict):
+            logger.warning("Model returned a JSON object instead of array. Attempting to extract array from common fields...")
+            
+            # Try common field names that might contain the moments array
+            possible_fields = ["moments", "output", "final_output", "response", "final_json", 
+                             "json_output", "final_json_output", "final", "final_output"]
+            
+            moments = None
+            for field in possible_fields:
+                if field in parsed_data and isinstance(parsed_data[field], list):
+                    moments = parsed_data[field]
+                    logger.info(f"Found moments array in field '{field}'")
+                    break
+            
+            if moments is None:
+                # Try to find any list field
+                for key, value in parsed_data.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        # Check if it looks like moments (has objects with start_time/end_time)
+                        if isinstance(value[0], dict) and 'start_time' in value[0]:
+                            moments = value
+                            logger.info(f"Found moments array in field '{key}'")
+                            break
+            
+            if moments is None:
+                raise ValueError("Response is a JSON object but no moments array found in common fields (moments, output, final_output, response, etc.)")
+        elif isinstance(parsed_data, list):
+            moments = parsed_data
+        else:
+            raise ValueError(f"Response is not a list or object, got {type(parsed_data).__name__}")
         
         # Validate each moment has required fields
         validated_moments = []
@@ -1378,7 +1526,8 @@ def process_moments_generation_async(
                 min_moment_length=min_moment_length,
                 max_moment_length=max_moment_length,
                 min_moments=min_moments,
-                max_moments=max_moments
+                max_moments=max_moments,
+                model_key=model  # Pass model key for model-specific prompting
             )
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")

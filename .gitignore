@@ -161,6 +161,7 @@ static/audios/*
 # Logs
 *.log
 logs/
+logs/ai_requests/
 
 # Database
 *.db
