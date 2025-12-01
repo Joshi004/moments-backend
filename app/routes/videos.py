@@ -1326,7 +1326,7 @@ Generate moments that:
             raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
         
         # Validate model
-        if request.model not in ["minimax", "qwen", "qwen3_omni"]:
+        if request.model not in ["minimax", "qwen", "qwen3_omni", "qwen3_vl_fp8"]:
             log_event(
                 level="WARNING",
                 logger="app.routes.videos",
@@ -1336,7 +1336,7 @@ Generate moments that:
                 message="Invalid model",
                 context={"model": request.model}
             )
-            raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax', 'qwen', or 'qwen3_omni'")
+            raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax', 'qwen', 'qwen3_omni', or 'qwen3_vl_fp8'")
         
         # Validate temperature
         if request.temperature < 0.0 or request.temperature > 2.0:
@@ -1634,7 +1634,7 @@ Guidelines:
             raise HTTPException(status_code=400, detail="Prompt cannot be empty")
         
         # Validate model
-        if request.model not in ["minimax", "qwen", "qwen3_omni"]:
+        if request.model not in ["minimax", "qwen", "qwen3_omni", "qwen3_vl_fp8"]:
             log_event(
                 level="WARNING",
                 logger="app.routes.videos",
@@ -1644,7 +1644,7 @@ Guidelines:
                 message="Invalid model",
                 context={"model": request.model}
             )
-            raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax', 'qwen', or 'qwen3_omni'")
+            raise HTTPException(status_code=400, detail="Invalid model. Must be 'minimax', 'qwen', 'qwen3_omni', or 'qwen3_vl_fp8'")
         
         # Validate temperature
         if request.temperature < 0.0 or request.temperature > 2.0:

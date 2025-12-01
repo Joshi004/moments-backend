@@ -17,6 +17,7 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
+from app.utils.ai_request_logger import log_ai_request_response
 
 logger = logging.getLogger(__name__)
 
@@ -1405,14 +1406,59 @@ def process_moments_generation_async(
                 model_name = extract_model_name(ai_response)
                 logger.info(f"Using AI model: {model_name}")
                 
+                # Extract response content for logging
+                response_content = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '')
+                
                 # Parse response to extract moments
                 logger.info("Parsing AI model response...")
-                moments = parse_moments_response(ai_response)
+                parsing_success = False
+                parsing_error = None
+                moments = []
                 
-                if not moments:
-                    raise Exception("No moments found in AI model response")
-                
-                logger.info(f"Parsed {len(moments)} moments from AI response")
+                try:
+                    moments = parse_moments_response(ai_response)
+                    parsing_success = True
+                    
+                    if not moments:
+                        raise Exception("No moments found in AI model response")
+                    
+                    logger.info(f"Parsed {len(moments)} moments from AI response")
+                except Exception as parse_err:
+                    parsing_error = str(parse_err)
+                    logger.error(f"Error parsing moments: {parsing_error}")
+                    raise
+                finally:
+                    # Log request/response for debugging
+                    model_url = get_model_url(model)
+                    payload = {
+                        "messages": messages,
+                        "max_tokens": MAX_TOKENS,
+                        "temperature": temperature
+                    }
+                    if model_id:
+                        payload["model"] = model_id
+                    if 'top_p' in model_config:
+                        payload["top_p"] = model_config['top_p']
+                    if 'top_k' in model_config:
+                        payload["top_k"] = model_config['top_k']
+                    
+                    log_ai_request_response(
+                        operation="moment_generation",
+                        video_id=video_id,
+                        model_key=model,
+                        model_name=model_name,
+                        model_id=model_id,
+                        model_url=model_url,
+                        request_payload=payload,
+                        response_status_code=200,  # If we got here, status was 200
+                        response_data=ai_response,
+                        response_content=response_content,
+                        duration_seconds=time.time() - start_time,
+                        parsing_success=parsing_success,
+                        parsing_error=parsing_error,
+                        extracted_data=moments if parsing_success else None,
+                        request_id=get_request_id(),
+                    )
                 
                 # Create generation_config dictionary with all parameters
                 generation_config = {

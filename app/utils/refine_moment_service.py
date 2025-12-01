@@ -11,6 +11,7 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
+from app.utils.ai_request_logger import log_ai_request_response
 
 logger = logging.getLogger(__name__)
 
@@ -736,11 +737,61 @@ def process_moment_refinement_async(
                 model_name = extract_model_name(ai_response)
                 logger.info(f"Using AI model: {model_name}")
                 
+                # Extract response content for logging
+                response_content = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '')
+                
                 # Parse response to extract refined timestamps
                 logger.info("Parsing AI model response...")
-                refined_start, refined_end = parse_refinement_response(ai_response)
+                parsing_success = False
+                parsing_error = None
+                refined_start = None
+                refined_end = None
                 
-                logger.info(f"Refined timestamps: [{refined_start:.2f}s - {refined_end:.2f}s]")
+                try:
+                    refined_start, refined_end = parse_refinement_response(ai_response)
+                    parsing_success = True
+                    logger.info(f"Refined timestamps: [{refined_start:.2f}s - {refined_end:.2f}s]")
+                except Exception as parse_err:
+                    parsing_error = str(parse_err)
+                    logger.error(f"Error parsing refinement: {parsing_error}")
+                    raise
+                finally:
+                    # Log request/response for debugging
+                    from app.utils.model_config import get_model_url
+                    model_url = get_model_url(model)
+                    payload = {
+                        "messages": messages,
+                        "max_tokens": 15000,  # MAX_TOKENS from moments_generation_service
+                        "temperature": temperature
+                    }
+                    if model_id:
+                        payload["model"] = model_id
+                    if 'top_p' in model_config:
+                        payload["top_p"] = model_config['top_p']
+                    if 'top_k' in model_config:
+                        payload["top_k"] = model_config['top_k']
+                    
+                    extracted_data = None
+                    if parsing_success and refined_start is not None and refined_end is not None:
+                        extracted_data = {"start_time": refined_start, "end_time": refined_end}
+                    
+                    log_ai_request_response(
+                        operation="moment_refinement",
+                        video_id=video_id,
+                        model_key=model,
+                        model_name=model_name,
+                        model_id=model_id,
+                        model_url=model_url,
+                        request_payload=payload,
+                        response_status_code=200,  # If we got here, status was 200
+                        response_data=ai_response,
+                        response_content=response_content,
+                        duration_seconds=time.time() - time.time(),  # Will be approximated
+                        parsing_success=parsing_success,
+                        parsing_error=parsing_error,
+                        extracted_data=extracted_data,
+                        request_id=get_request_id(),
+                    )
                 
                 # Validate refined timestamps
                 if refined_start < 0 or refined_end > video_duration:
