@@ -13,7 +13,7 @@ from app.utils.logging_config import (
 )
 from app.utils.ai_request_logger import log_ai_request_response
 from app.utils.model_prompt_config import get_refinement_prompt_config
-from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range
+from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -188,10 +188,10 @@ def build_refinement_prompt(
     Args:
         user_prompt: User-provided prompt (editable, visible in UI)
         words: List of word dictionaries with 'word', 'start', and 'end' fields
-        clip_start: Actual clip start time (aligned to word boundary)
-        clip_end: Actual clip end time (aligned to word boundary)
-        original_start: Original moment start time
-        original_end: Original moment end time
+        clip_start: Clip start time (0 if normalized, or actual clip_start if absolute)
+        clip_end: Clip end time (duration if normalized, or actual clip_end if absolute)
+        original_start: Original moment start time (absolute, for context)
+        original_end: Original moment end time (absolute, for context)
         original_title: Title of the moment being refined
         model_key: Model identifier for model-specific prompting
         
@@ -664,6 +664,24 @@ def process_moment_refinement_async(
             if not words:
                 raise Exception("No words found in specified time range")
             
+            # Store the offset for timestamp normalization
+            # The clip_start is the offset - it's the absolute time where the clip begins
+            offset = clip_start
+            
+            # Normalize word timestamps to start from 0
+            # This aligns the transcript with video clips that will also start from 0
+            normalized_words = normalize_word_timestamps(words, offset)
+            
+            # Calculate normalized clip boundaries (relative to 0)
+            normalized_clip_start = 0.0
+            normalized_clip_end = clip_end - offset
+            
+            logger.info(
+                f"Timestamp normalization: offset={offset:.2f}s, "
+                f"absolute clip=[{clip_start:.2f}s - {clip_end:.2f}s], "
+                f"normalized clip=[{normalized_clip_start:.2f}s - {normalized_clip_end:.2f}s]"
+            )
+            
             # Get video duration for validation
             video_file = get_video_by_filename(video_filename)
             if not video_file:
@@ -683,13 +701,14 @@ def process_moment_refinement_async(
             
             logger.info(f"Video duration: {video_duration:.2f} seconds, Words: {len(words)}, Clip: [{clip_start:.2f}s - {clip_end:.2f}s]")
             
-            # Build refinement prompt with clip boundaries
+            # Build refinement prompt with normalized clip boundaries and words
+            # The model will receive timestamps starting from 0
             complete_prompt = build_refinement_prompt(
                 user_prompt=user_prompt,
-                words=words,
-                clip_start=clip_start,
-                clip_end=clip_end,
-                original_start=moment['start_time'],
+                words=normalized_words,  # Use normalized words (starting from 0)
+                clip_start=normalized_clip_start,  # 0.0
+                clip_end=normalized_clip_end,  # Duration of clip
+                original_start=moment['start_time'],  # Keep absolute times for context
                 original_end=moment['end_time'],
                 original_title=moment['title'],
                 model_key=model  # Pass model key for model-specific prompting
@@ -781,9 +800,18 @@ def process_moment_refinement_async(
                 refined_end = None
                 
                 try:
-                    refined_start, refined_end = parse_refinement_response(ai_response)
+                    # Model returns normalized timestamps (relative to 0)
+                    refined_start_normalized, refined_end_normalized = parse_refinement_response(ai_response)
+                    
+                    # Denormalize timestamps to get absolute times
+                    refined_start = denormalize_timestamp(refined_start_normalized, offset)
+                    refined_end = denormalize_timestamp(refined_end_normalized, offset)
+                    
                     parsing_success = True
-                    logger.info(f"Refined timestamps: [{refined_start:.2f}s - {refined_end:.2f}s]")
+                    logger.info(
+                        f"Refined timestamps: normalized=[{refined_start_normalized:.2f}s - {refined_end_normalized:.2f}s], "
+                        f"absolute=[{refined_start:.2f}s - {refined_end:.2f}s]"
+                    )
                 except Exception as parse_err:
                     parsing_error = str(parse_err)
                     logger.error(f"Error parsing refinement: {parsing_error}")
@@ -839,6 +867,9 @@ def process_moment_refinement_async(
                     "padding": padding,
                     "clip_start": clip_start,
                     "clip_end": clip_end,
+                    "timestamp_offset": offset,  # Store offset for traceability
+                    "normalized_clip_start": normalized_clip_start,
+                    "normalized_clip_end": normalized_clip_end,
                     "operation_type": "refinement"
                 }
                 

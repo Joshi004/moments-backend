@@ -219,3 +219,87 @@ def extract_words_in_range(
     
     return extracted
 
+
+def normalize_word_timestamps(
+    words: List[Dict],
+    offset: float
+) -> List[Dict]:
+    """
+    Normalize word timestamps by subtracting an offset to make them relative to 0.
+    
+    This is useful when preparing transcripts to send alongside video clips,
+    where the clip starts at 0 but the original transcript has absolute timestamps.
+    
+    Args:
+        words: List of word dictionaries with 'word', 'start', and 'end' fields
+        offset: The time offset to subtract from all timestamps (typically clip_start)
+    
+    Returns:
+        New list of word dictionaries with normalized timestamps (start and end shifted by -offset)
+    
+    Example:
+        >>> words = [
+        ...     {'word': 'the', 'start': 28.5, 'end': 29.0},
+        ...     {'word': 'key', 'start': 29.0, 'end': 29.3}
+        ... ]
+        >>> normalize_word_timestamps(words, 28.5)
+        [
+            {'word': 'the', 'start': 0.0, 'end': 0.5},
+            {'word': 'key', 'start': 0.5, 'end': 0.8}
+        ]
+    """
+    if not words:
+        return []
+    
+    normalized = []
+    for word in words:
+        if not isinstance(word, dict):
+            continue
+        
+        if 'word' not in word or 'start' not in word or 'end' not in word:
+            logger.warning(f"Word missing required fields: {word}")
+            continue
+        
+        try:
+            normalized.append({
+                'word': word['word'],
+                'start': float(word['start']) - offset,
+                'end': float(word['end']) - offset
+            })
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Error normalizing word timestamp: {word}, error: {e}")
+            continue
+    
+    logger.info(
+        f"Normalized {len(normalized)} words with offset {offset:.2f}s "
+        f"(first word now starts at {normalized[0]['start']:.2f}s)" if normalized else 
+        f"Normalized 0 words with offset {offset:.2f}s"
+    )
+    
+    return normalized
+
+
+def denormalize_timestamp(
+    relative_time: float,
+    offset: float
+) -> float:
+    """
+    Convert a normalized (relative) timestamp back to absolute time by adding the offset.
+    
+    This is the inverse operation of normalize_word_timestamps for individual timestamps.
+    
+    Args:
+        relative_time: Time relative to 0 (e.g., from normalized transcript or model response)
+        offset: The original offset that was subtracted (typically clip_start)
+    
+    Returns:
+        Absolute timestamp (relative_time + offset)
+    
+    Example:
+        >>> denormalize_timestamp(31.62, 28.5)
+        60.12
+    """
+    absolute_time = relative_time + offset
+    logger.debug(f"Denormalized timestamp: {relative_time:.2f}s + {offset:.2f}s = {absolute_time:.2f}s")
+    return absolute_time
+
