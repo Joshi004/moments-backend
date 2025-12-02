@@ -18,6 +18,12 @@ from app.utils.refine_moment_service import (
     process_moment_refinement_async,
     get_refinement_status
 )
+from app.utils.video_clipping_service import (
+    start_clip_extraction_job,
+    is_extracting_clips,
+    get_clip_extraction_status,
+    process_clip_extraction_async
+)
 from app.utils.logging_config import (
     log_event,
     log_operation_start,
@@ -1823,3 +1829,261 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
         )
         raise
 
+
+class ExtractClipsRequest(BaseModel):
+    """Request model for clip extraction."""
+    left_padding: float = 30.0
+    right_padding: float = 30.0
+    override_existing: bool = True
+
+
+@router.post("/videos/{video_id}/extract-clips")
+async def extract_clips(video_id: str, request: ExtractClipsRequest):
+    """Start clip extraction process for a video."""
+    start_time = time.time()
+    operation = "extract_clips"
+    
+    log_operation_start(
+        logger="app.routes.videos",
+        function="extract_clips",
+        operation=operation,
+        message=f"Starting clip extraction for {video_id}",
+        context={
+            "video_id": video_id,
+            "request_params": {
+                "left_padding": request.left_padding,
+                "right_padding": request.right_padding,
+                "override_existing": request.override_existing
+            },
+            "request_id": get_request_id()
+        }
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video by matching stem
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="extract_clips",
+                operation=operation,
+                event="validation_error",
+                message="Video not found",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Check if moments exist
+        log_event(
+            level="DEBUG",
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            event="validation_start",
+            message="Loading moments",
+            context={"video_filename": video_file.name}
+        )
+        moments = load_moments(video_file.name)
+        
+        if not moments or len(moments) == 0:
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="extract_clips",
+                operation=operation,
+                event="validation_error",
+                message="No moments found",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=400, detail="No moments found for this video")
+        
+        # Check if already processing
+        if is_extracting_clips(video_id):
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="extract_clips",
+                operation=operation,
+                event="validation_error",
+                message="Clip extraction already in progress",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
+        
+        # Validate parameters
+        if request.left_padding < 0 or request.right_padding < 0:
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="extract_clips",
+                operation=operation,
+                event="validation_error",
+                message="Invalid padding values",
+                context={"left_padding": request.left_padding, "right_padding": request.right_padding}
+            )
+            raise HTTPException(status_code=400, detail="Padding values must be >= 0")
+        
+        log_event(
+            level="DEBUG",
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            event="validation_complete",
+            message="All validations passed",
+            context={
+                "num_moments": len(moments),
+                "left_padding": request.left_padding,
+                "right_padding": request.right_padding
+            }
+        )
+        
+        # Start extraction job
+        log_event(
+            level="DEBUG",
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            event="operation_start",
+            message="Registering clip extraction job",
+            context={"video_id": video_id}
+        )
+        if not start_clip_extraction_job(video_id):
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="extract_clips",
+                operation=operation,
+                event="validation_error",
+                message="Failed to register extraction job",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
+        
+        # Start async processing
+        log_event(
+            level="INFO",
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            event="operation_start",
+            message="Starting async clip extraction",
+            context={
+                "video_id": video_id,
+                "video_filename": video_file.name,
+                "num_moments": len(moments)
+            }
+        )
+        process_clip_extraction_async(
+            video_id=video_id,
+            video_path=video_file,
+            video_filename=video_file.name,
+            moments=moments,
+            left_padding=request.left_padding,
+            right_padding=request.right_padding,
+            override_existing=request.override_existing
+        )
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            message="Clip extraction job started",
+            context={
+                "video_id": video_id,
+                "duration_seconds": duration
+            }
+        )
+        
+        return {"message": "Clip extraction started", "video_id": video_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.routes.videos",
+            function="extract_clips",
+            operation=operation,
+            error=e,
+            message="Error starting clip extraction",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/clip-extraction-status")
+async def get_clip_extraction_status_endpoint(video_id: str):
+    """Get clip extraction status for a video."""
+    start_time = time.time()
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video by matching stem
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            duration = time.time() - start_time
+            log_status_check(
+                endpoint_type="clip_extraction",
+                video_id=video_id,
+                moment_id=None,
+                status="error",
+                status_code=404,
+                duration=duration
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get extraction status
+        status = get_clip_extraction_status(video_id)
+        
+        duration = time.time() - start_time
+        status_value = status.get("status") if status else "not_started"
+        
+        log_status_check(
+            endpoint_type="clip_extraction",
+            video_id=video_id,
+            moment_id=None,
+            status=status_value,
+            status_code=200,
+            duration=duration
+        )
+        
+        if status is None:
+            return {"status": "not_started", "started_at": None}
+        
+        return status
+    except HTTPException as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="clip_extraction",
+            video_id=video_id,
+            moment_id=None,
+            status="error",
+            status_code=e.status_code,
+            duration=duration
+        )
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="clip_extraction",
+            video_id=video_id,
+            moment_id=None,
+            status="error",
+            status_code=500,
+            duration=duration
+        )
+        raise
