@@ -13,6 +13,7 @@ from app.utils.logging_config import (
 )
 from app.utils.ai_request_logger import log_ai_request_response
 from app.utils.model_prompt_config import get_refinement_prompt_config
+from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range
 
 logger = logging.getLogger(__name__)
 
@@ -117,57 +118,65 @@ def extract_word_timestamps_for_range(
     transcript: Dict,
     start: float,
     end: float,
-    left_padding: float,
-    right_padding: float
-) -> List[Dict]:
+    padding: float
+) -> Tuple[List[Dict], float, float]:
     """
-    Extract word-level timestamps within padded time range.
+    Extract word-level timestamps within padded time range, aligned to word boundaries.
     
     Args:
         transcript: Dictionary containing transcript data with 'word_timestamps'
         start: Original moment start time in seconds
         end: Original moment end time in seconds
-        left_padding: Seconds to pad before start
-        right_padding: Seconds to pad after end
+        padding: Seconds to pad before start and after end (single value for both sides)
         
     Returns:
-        List of word dictionaries with 'word', 'start', and 'end' fields
+        Tuple of (words, clip_start, clip_end) where:
+        - words: List of word dictionaries with 'word', 'start', and 'end' fields
+        - clip_start: Actual start time aligned to word boundary
+        - clip_end: Actual end time aligned to word boundary
     """
     if not transcript or 'word_timestamps' not in transcript:
         logger.warning("Transcript does not contain word_timestamps")
-        return []
+        return [], max(0, start - padding), end + padding
     
     word_timestamps = transcript['word_timestamps']
     if not isinstance(word_timestamps, list):
         logger.warning("word_timestamps is not a list")
-        return []
+        return [], max(0, start - padding), end + padding
     
-    # Calculate padded range
-    padded_start = max(0, start - left_padding)
-    padded_end = end + right_padding
+    # Use the common utility to calculate precise boundaries
+    from app.utils.model_config import get_clipping_config
+    config = get_clipping_config()
+    margin = config.get('margin', 2.0)
     
-    # Extract words within range
-    extracted_words = []
-    for word_data in word_timestamps:
-        if isinstance(word_data, dict) and 'word' in word_data and 'start' in word_data and 'end' in word_data:
-            word_start = float(word_data['start'])
-            word_end = float(word_data['end'])
-            
-            # Include word if it overlaps with our range
-            if word_end >= padded_start and word_start <= padded_end:
-                extracted_words.append({
-                    'word': str(word_data['word']),
-                    'start': word_start,
-                    'end': word_end
-                })
+    clip_start, clip_end = calculate_padded_boundaries(
+        word_timestamps=word_timestamps,
+        moment_start=start,
+        moment_end=end,
+        padding=padding,
+        margin=margin
+    )
     
-    logger.info(f"Extracted {len(extracted_words)} words from range [{padded_start:.2f}s - {padded_end:.2f}s]")
-    return extracted_words
+    # Extract words within the calculated boundaries
+    extracted_words = extract_words_in_range(
+        word_timestamps=word_timestamps,
+        start_time=clip_start,
+        end_time=clip_end
+    )
+    
+    logger.info(
+        f"Extracted {len(extracted_words)} words from range "
+        f"[{clip_start:.2f}s - {clip_end:.2f}s] with {padding:.1f}s padding"
+    )
+    
+    return extracted_words, clip_start, clip_end
 
 
 def build_refinement_prompt(
     user_prompt: str,
     words: List[Dict],
+    clip_start: float,
+    clip_end: float,
     original_start: float,
     original_end: float,
     original_title: str,
@@ -179,6 +188,8 @@ def build_refinement_prompt(
     Args:
         user_prompt: User-provided prompt (editable, visible in UI)
         words: List of word dictionaries with 'word', 'start', and 'end' fields
+        clip_start: Actual clip start time (aligned to word boundary)
+        clip_end: Actual clip end time (aligned to word boundary)
         original_start: Original moment start time
         original_end: Original moment end time
         original_title: Title of the moment being refined
@@ -203,6 +214,7 @@ You are refining the timestamps for an existing video moment. The moment current
 - Title: "{original_title}"
 - Current start time: {original_start:.2f} seconds
 - Current end time: {original_end:.2f} seconds
+- Clip boundaries: {clip_start:.2f}s to {clip_end:.2f}s (includes context padding)
 
 The timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript and determine the exact timestamps where this moment should start and end."""
     
@@ -597,8 +609,6 @@ def process_moment_refinement_async(
     moment_id: str,
     video_filename: str,
     user_prompt: str,
-    left_padding: float,
-    right_padding: float,
     model: str = "minimax",
     temperature: float = 0.7
 ) -> None:
@@ -610,8 +620,6 @@ def process_moment_refinement_async(
         moment_id: ID of the moment to refine
         video_filename: Name of the video file (e.g., "motivation.mp4")
         user_prompt: User-provided prompt (editable, visible in UI)
-        left_padding: Seconds to pad before moment start
-        right_padding: Seconds to pad after moment end
         model: Model identifier ("minimax", "qwen", or "qwen3_omni"), default: "minimax"
         temperature: Temperature parameter for the model, default: 0.7
     """
@@ -621,11 +629,15 @@ def process_moment_refinement_async(
             from app.utils.transcript_service import load_transcript
             from app.utils.moments_service import load_moments, add_moment, get_moment_by_id
             from app.utils.moments_generation_service import ssh_tunnel, call_ai_model
-            from app.utils.model_config import get_model_config
+            from app.utils.model_config import get_model_config, get_clipping_config
             from app.utils.video_utils import get_video_by_filename
             import cv2
             
             logger.info(f"Starting moment refinement for video {video_id}, moment {moment_id}")
+            
+            # Get padding configuration from backend config
+            clipping_config = get_clipping_config()
+            padding = clipping_config['padding']
             
             # Load the moment to be refined
             moment = get_moment_by_id(video_filename, moment_id)
@@ -641,13 +653,12 @@ def process_moment_refinement_async(
             if transcript_data is None:
                 raise Exception(f"Transcript not found for {audio_filename}")
             
-            # Extract word-level timestamps for the padded range
-            words = extract_word_timestamps_for_range(
+            # Extract word-level timestamps for the padded range with precise boundaries
+            words, clip_start, clip_end = extract_word_timestamps_for_range(
                 transcript_data,
                 moment['start_time'],
                 moment['end_time'],
-                left_padding,
-                right_padding
+                padding
             )
             
             if not words:
@@ -670,12 +681,14 @@ def process_moment_refinement_async(
             if video_duration <= 0:
                 raise Exception(f"Could not determine video duration for {video_filename}")
             
-            logger.info(f"Video duration: {video_duration:.2f} seconds, Words: {len(words)}")
+            logger.info(f"Video duration: {video_duration:.2f} seconds, Words: {len(words)}, Clip: [{clip_start:.2f}s - {clip_end:.2f}s]")
             
-            # Build refinement prompt
+            # Build refinement prompt with clip boundaries
             complete_prompt = build_refinement_prompt(
                 user_prompt=user_prompt,
                 words=words,
+                clip_start=clip_start,
+                clip_end=clip_end,
                 original_start=moment['start_time'],
                 original_end=moment['end_time'],
                 original_title=moment['title'],
@@ -823,8 +836,9 @@ def process_moment_refinement_async(
                     "temperature": temperature,
                     "user_prompt": user_prompt,
                     "complete_prompt": complete_prompt,
-                    "left_padding": left_padding,
-                    "right_padding": right_padding,
+                    "padding": padding,
+                    "clip_start": clip_start,
+                    "clip_end": clip_end,
                     "operation_type": "refinement"
                 }
                 

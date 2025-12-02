@@ -2,7 +2,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 import logging
 import cv2
 from app.utils.logging_config import (
@@ -12,6 +12,7 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
+from app.utils.timestamp_utils import calculate_padded_boundaries
 
 logger = logging.getLogger(__name__)
 
@@ -330,8 +331,6 @@ def extract_clips_for_video(
     video_path: Path,
     video_filename: str,
     moments: List[Dict],
-    left_padding: float = 30.0,
-    right_padding: float = 30.0,
     override_existing: bool = True
 ) -> Dict:
     """
@@ -342,8 +341,6 @@ def extract_clips_for_video(
         video_path: Path to the source video file
         video_filename: Original video filename
         moments: List of moment objects
-        left_padding: Seconds to add before moment start
-        right_padding: Seconds to add after moment end
         override_existing: Whether to override existing clips
     
     Returns:
@@ -357,13 +354,37 @@ def extract_clips_for_video(
             "video_id": video_id,
             "video_filename": video_filename,
             "num_moments": len(moments),
-            "left_padding": left_padding,
-            "right_padding": right_padding,
             "override_existing": override_existing
         }
     )
     
     try:
+        # Get clipping configuration from backend
+        from app.utils.model_config import get_clipping_config
+        clipping_config = get_clipping_config()
+        padding = clipping_config['padding']
+        margin = clipping_config['margin']
+        
+        # Load transcript for word-level timestamp alignment
+        from app.utils.transcript_service import load_transcript
+        audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
+        transcript_data = load_transcript(audio_filename)
+        
+        if transcript_data is None or 'word_timestamps' not in transcript_data:
+            log_event(
+                level="WARNING",
+                logger="app.utils.video_clipping_service",
+                function="extract_clips_for_video",
+                operation=operation,
+                event="validation_warning",
+                message="Transcript not available, using simple padding without word alignment",
+                context={"audio_filename": audio_filename}
+            )
+            word_timestamps = None
+        else:
+            word_timestamps = transcript_data['word_timestamps']
+            logger.info(f"Loaded transcript with {len(word_timestamps)} words for precise clipping")
+        
         # Get video duration for boundary checks
         video_duration = get_video_duration(video_path)
         if video_duration <= 0:
@@ -378,7 +399,9 @@ def extract_clips_for_video(
             message="Starting batch clip extraction",
             context={
                 "video_duration": video_duration,
-                "total_moments": len(moments)
+                "total_moments": len(moments),
+                "padding": padding,
+                "has_transcript": word_timestamps is not None
             }
         )
         
@@ -446,9 +469,28 @@ def extract_clips_for_video(
                 })
                 continue
             
-            # Apply padding with boundary checks
-            padded_start = max(0, original_start - left_padding)
-            padded_end = min(video_duration, original_end + right_padding)
+            # Calculate precise clip boundaries using word timestamps
+            if word_timestamps:
+                try:
+                    clip_start, clip_end = calculate_padded_boundaries(
+                        word_timestamps=word_timestamps,
+                        moment_start=original_start,
+                        moment_end=original_end,
+                        padding=padding,
+                        margin=margin
+                    )
+                except Exception as e:
+                    logger.warning(f"Error calculating word-aligned boundaries for moment {moment_id}: {e}. Falling back to simple padding.")
+                    clip_start = max(0, original_start - padding)
+                    clip_end = min(video_duration, original_end + padding)
+            else:
+                # Fallback to simple padding if no transcript
+                clip_start = max(0, original_start - padding)
+                clip_end = min(video_duration, original_end + padding)
+            
+            # Ensure boundaries are within video duration
+            clip_start = max(0, clip_start)
+            clip_end = min(video_duration, clip_end)
             
             log_event(
                 level="DEBUG",
@@ -461,8 +503,9 @@ def extract_clips_for_video(
                     "moment_id": moment_id,
                     "original_start": original_start,
                     "original_end": original_end,
-                    "padded_start": padded_start,
-                    "padded_end": padded_end
+                    "clip_start": clip_start,
+                    "clip_end": clip_end,
+                    "word_aligned": word_timestamps is not None
                 }
             )
             
@@ -470,8 +513,8 @@ def extract_clips_for_video(
             clip_path = extract_video_clip(
                 video_path=video_path,
                 moment_id=moment_id,
-                start_time=padded_start,
-                end_time=padded_end,
+                start_time=clip_start,
+                end_time=clip_end,
                 video_filename=video_filename
             )
             
@@ -481,7 +524,9 @@ def extract_clips_for_video(
                     "moment_id": moment_id,
                     "status": "success",
                     "clip_url": get_clip_url(moment_id, video_filename),
-                    "clip_path": str(clip_path)
+                    "clip_path": str(clip_path),
+                    "clip_start": clip_start,
+                    "clip_end": clip_end
                 })
             else:
                 results["failed"] += 1
@@ -532,8 +577,6 @@ def process_clip_extraction_async(
     video_path: Path,
     video_filename: str,
     moments: List[Dict],
-    left_padding: float = 30.0,
-    right_padding: float = 30.0,
     override_existing: bool = True
 ):
     """
@@ -544,8 +587,6 @@ def process_clip_extraction_async(
         video_path: Path to the source video file
         video_filename: Original video filename
         moments: List of moment objects
-        left_padding: Seconds to add before moment start
-        right_padding: Seconds to add after moment end
         override_existing: Whether to override existing clips
     """
     def extraction_worker():
@@ -555,8 +596,6 @@ def process_clip_extraction_async(
                 video_path=video_path,
                 video_filename=video_filename,
                 moments=moments,
-                left_padding=left_padding,
-                right_padding=right_padding,
                 override_existing=override_existing
             )
             

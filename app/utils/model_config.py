@@ -2,6 +2,12 @@
 Model configuration for AI models used in moment generation and refinement.
 """
 
+# Configuration for video clipping and transcript extraction
+CLIPPING_CONFIG = {
+    "padding": 30.0,  # Single padding value used for both left and right (seconds)
+    "margin": 2.0     # Allow extra margin when finding word boundaries (seconds)
+}
+
 MODELS = {
     "minimax": {
         "name": "MiniMax",
@@ -91,5 +97,14 @@ def get_transcription_service_url() -> str:
     config = get_model_config("parakeet")
     return f"http://localhost:{config['ssh_local_port']}/transcribe"
 
+
+def get_clipping_config() -> dict:
+    """
+    Get configuration for video clipping and transcript extraction.
+    
+    Returns:
+        Dictionary with clipping configuration (padding, margin)
+    """
+    return CLIPPING_CONFIG.copy()
 
 

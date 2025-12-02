@@ -1486,8 +1486,6 @@ async def get_generation_status_endpoint(video_id: str):
 class RefineMomentRequest(BaseModel):
     """Request model for moment refinement."""
     user_prompt: Optional[str] = None
-    left_padding: float = 30.0
-    right_padding: float = 30.0
     model: str = "minimax"
     temperature: float = 0.7
 
@@ -1509,8 +1507,6 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             "request_params": {
                 "model": request.model,
                 "temperature": request.temperature,
-                "left_padding": request.left_padding,
-                "right_padding": request.right_padding,
                 "has_user_prompt": request.user_prompt is not None
             },
             "request_id": get_request_id()
@@ -1601,18 +1597,7 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             )
             raise HTTPException(status_code=409, detail="Moment refinement already in progress")
         
-        # Validate parameters
-        if request.left_padding < 0 or request.right_padding < 0:
-            log_event(
-                level="WARNING",
-                logger="app.routes.videos",
-                function="refine_moment",
-                operation=operation,
-                event="validation_error",
-                message="Invalid padding values",
-                context={"left_padding": request.left_padding, "right_padding": request.right_padding}
-            )
-            raise HTTPException(status_code=400, detail="Padding values must be >= 0")
+        # Validate parameters (padding is now backend config, removed from validation)
         
         # Default prompt if not provided
         default_prompt = """Before refining the timestamps, let's define what a moment is: A moment is a segment of a video (with its corresponding transcript) that represents something engaging, meaningful, or valuable to the viewer. A moment should be a complete, coherent thought or concept that makes sense on its own.
@@ -1724,8 +1709,6 @@ Guidelines:
             moment_id=moment_id,
             video_filename=video_file.name,
             user_prompt=user_prompt,
-            left_padding=request.left_padding,
-            right_padding=request.right_padding,
             model=request.model,
             temperature=request.temperature
         )
@@ -1832,8 +1815,6 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
 
 class ExtractClipsRequest(BaseModel):
     """Request model for clip extraction."""
-    left_padding: float = 30.0
-    right_padding: float = 30.0
     override_existing: bool = True
 
 
@@ -1851,8 +1832,6 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
         context={
             "video_id": video_id,
             "request_params": {
-                "left_padding": request.left_padding,
-                "right_padding": request.right_padding,
                 "override_existing": request.override_existing
             },
             "request_id": get_request_id()
@@ -1918,18 +1897,7 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             )
             raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
         
-        # Validate parameters
-        if request.left_padding < 0 or request.right_padding < 0:
-            log_event(
-                level="WARNING",
-                logger="app.routes.videos",
-                function="extract_clips",
-                operation=operation,
-                event="validation_error",
-                message="Invalid padding values",
-                context={"left_padding": request.left_padding, "right_padding": request.right_padding}
-            )
-            raise HTTPException(status_code=400, detail="Padding values must be >= 0")
+        # Padding configuration is now backend-only, no validation needed from request
         
         log_event(
             level="DEBUG",
@@ -1939,9 +1907,7 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             event="validation_complete",
             message="All validations passed",
             context={
-                "num_moments": len(moments),
-                "left_padding": request.left_padding,
-                "right_padding": request.right_padding
+                "num_moments": len(moments)
             }
         )
         
@@ -1986,8 +1952,6 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             video_path=video_file,
             video_filename=video_file.name,
             moments=moments,
-            left_padding=request.left_padding,
-            right_padding=request.right_padding,
             override_existing=request.override_existing
         )
         
