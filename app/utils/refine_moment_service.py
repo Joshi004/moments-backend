@@ -216,7 +216,10 @@ def build_refinement_prompt(
     video_context = ""
     if include_video and video_clip_url:
         video_context = f"""VIDEO INPUT:
-A video clip is provided along with this request. The video clip is precisely aligned with the transcript below - both start at the same point in time (0.0 seconds).
+A video clip is provided along with this request. The video clip is precisely aligned with the transcript below:
+- The video starts at 0.00 seconds
+- The transcript starts at 0.00 seconds
+- Both are synchronized in the same normalized time coordinate system
 
 IMPORTANT: Use the video frames to visually identify the exact moment boundaries. Look for:
 - Visual cues that indicate the start of the topic/segment
@@ -224,7 +227,7 @@ IMPORTANT: Use the video frames to visually identify the exact moment boundaries
 - The exact frame where the engaging content begins and ends
 - Correlation between what you see and what you hear in the transcript
 
-The video and transcript are synchronized - use both to determine the most accurate timestamps.
+Analyze BOTH the video frames and the word-level transcript to determine the most accurate timestamps. The timestamps you output should match this normalized coordinate system (starting from 0.00).
 
 """
     
@@ -234,14 +237,20 @@ You are refining the timestamps for an existing video moment. The moment current
 - Title: "{original_title}"
 - Current start time: {original_start:.2f} seconds
 - Current end time: {original_end:.2f} seconds
-- Clip boundaries: {clip_start:.2f}s to {clip_end:.2f}s (includes context padding)
 
-The timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript{' and video' if include_video else ''} and determine the exact timestamps where this moment should start and end."""
+IMPORTANT - COORDINATE SYSTEM:
+All timestamps (transcript, video, and the current moment times above) are in the SAME normalized coordinate system:
+- The clip starts at 0.00 seconds
+- The clip ends at {clip_end:.2f} seconds
+- Both the transcript and{' video' if include_video else ' audio'} are aligned to this coordinate system
+- Your output timestamps must also be in this coordinate system (0.00 to {clip_end:.2f})
+
+The current timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript{' and video' if include_video else ''} and determine the exact timestamps where this moment should start and end."""
     
     # Input format explanation (backend-only, not editable)
     input_format_explanation = """INPUT FORMAT:
 You are provided with word-level timestamps. Each line shows:
-- The start and end time of a specific word in seconds
+- The start and end time of a specific word in seconds (starting from 0.00)
 - The word itself
 
 Format: [start_time-end_time] word
@@ -250,7 +259,9 @@ Example:
 [5.12-5.48] rather
 [5.48-5.76] than
 [5.76-5.92] be
-[5.92-6.24] scared"""
+[5.92-6.24] scared
+
+The first word in the transcript starts at or near 0.00 seconds."""
     
     # Response format specification (backend-only, not editable)
     response_format_specification = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
@@ -276,8 +287,10 @@ REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
 
 RULES:
 - Must have exactly 2 fields: start_time (float), end_time (float)
+- Timestamps must be in the normalized coordinate system (starting from 0.00)
 - The start_time and end_time must correspond to word boundaries from the provided transcript
-- The start_time must be less than end_time
+- The start_time must be >= 0.00 and < end_time
+- The end_time must be <= {clip_end:.2f}
 - Do not add any other fields
 
 FINAL REMINDER: Output ONLY the JSON object { ... }. Nothing else."""
@@ -725,15 +738,25 @@ def process_moment_refinement_async(
             
             logger.info(f"Video duration: {video_duration:.2f} seconds, Words: {len(words)}, Clip: [{clip_start:.2f}s - {clip_end:.2f}s]")
             
+            # Normalize original moment timestamps to match the coordinate system
+            # of the words and video clip (both start at 0.0)
+            normalized_original_start = moment['start_time'] - offset
+            normalized_original_end = moment['end_time'] - offset
+            
+            logger.info(
+                f"Original moment timestamps: absolute=[{moment['start_time']:.2f}s - {moment['end_time']:.2f}s], "
+                f"normalized=[{normalized_original_start:.2f}s - {normalized_original_end:.2f}s]"
+            )
+            
             # Build refinement prompt with normalized clip boundaries and words
-            # The model will receive timestamps starting from 0
+            # The model will receive ALL timestamps starting from 0 (normalized coordinate system)
             complete_prompt = build_refinement_prompt(
                 user_prompt=user_prompt,
                 words=normalized_words,  # Use normalized words (starting from 0)
                 clip_start=normalized_clip_start,  # 0.0
                 clip_end=normalized_clip_end,  # Duration of clip
-                original_start=moment['start_time'],  # Keep absolute times for context
-                original_end=moment['end_time'],
+                original_start=normalized_original_start,  # Normalized to match transcript/video
+                original_end=normalized_original_end,  # Normalized to match transcript/video
                 original_title=moment['title'],
                 model_key=model,  # Pass model key for model-specific prompting
                 include_video=include_video,
