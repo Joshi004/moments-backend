@@ -89,6 +89,40 @@ def get_video_duration(video_path: Path) -> float:
         return 0.0
 
 
+def get_clip_duration(moment_id: str, video_filename: str) -> Optional[float]:
+    """
+    Get the duration of a clip file in seconds.
+    
+    Args:
+        moment_id: Unique identifier for the moment
+        video_filename: Original video filename (e.g., "ProjectUpdateVideo.mp4")
+    
+    Returns:
+        Duration in seconds if clip exists, None otherwise
+    """
+    clip_path = get_clip_path(moment_id, video_filename)
+    if not clip_path.exists() or not clip_path.is_file():
+        logger.debug(f"Clip file not found: {clip_path}")
+        return None
+    
+    try:
+        cap = cv2.VideoCapture(str(clip_path))
+        if not cap.isOpened():
+            logger.error(f"Could not open clip file: {clip_path}")
+            return None
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        duration = frame_count / fps if fps > 0 else 0.0
+        cap.release()
+        
+        logger.debug(f"Clip duration for {moment_id}: {duration:.2f}s (fps={fps}, frames={frame_count})")
+        return duration
+    except Exception as e:
+        logger.error(f"Error getting clip duration for {moment_id}: {e}")
+        return None
+
+
 def extract_video_clip(
     video_path: Path,
     moment_id: str,

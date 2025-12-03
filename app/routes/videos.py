@@ -22,7 +22,14 @@ from app.utils.video_clipping_service import (
     start_clip_extraction_job,
     is_extracting_clips,
     get_clip_extraction_status,
-    process_clip_extraction_async
+    process_clip_extraction_async,
+    check_clip_exists,
+    get_clip_duration
+)
+from app.utils.model_config import (
+    model_supports_video,
+    get_video_clip_url,
+    get_duration_tolerance
 )
 from app.utils.logging_config import (
     log_event,
@@ -1488,6 +1495,7 @@ class RefineMomentRequest(BaseModel):
     user_prompt: Optional[str] = None
     model: str = "minimax"
     temperature: float = 0.7
+    include_video: bool = False  # Whether to include video clip in refinement request
 
 
 @router.post("/videos/{video_id}/moments/{moment_id}/refine")
@@ -1507,7 +1515,8 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             "request_params": {
                 "model": request.model,
                 "temperature": request.temperature,
-                "has_user_prompt": request.user_prompt is not None
+                "has_user_prompt": request.user_prompt is not None,
+                "include_video": request.include_video
             },
             "request_id": get_request_id()
         }
@@ -1650,6 +1659,60 @@ Guidelines:
             )
             raise HTTPException(status_code=400, detail="Temperature must be between 0.0 and 2.0")
         
+        # Validate video inclusion request
+        include_video = request.include_video
+        video_clip_url = None
+        
+        if include_video:
+            # Video refinement only works with qwen3_vl_fp8
+            if not model_supports_video(request.model):
+                log_event(
+                    level="WARNING",
+                    logger="app.routes.videos",
+                    function="refine_moment",
+                    operation=operation,
+                    event="validation_error",
+                    message="Model does not support video",
+                    context={"model": request.model}
+                )
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Model '{request.model}' does not support video. Use 'qwen3_vl_fp8' for video refinement."
+                )
+            
+            # Check if clip exists
+            if not check_clip_exists(moment_id, video_file.name):
+                log_event(
+                    level="WARNING",
+                    logger="app.routes.videos",
+                    function="refine_moment",
+                    operation=operation,
+                    event="validation_error",
+                    message="Video clip not found for video refinement",
+                    context={"video_id": video_id, "moment_id": moment_id}
+                )
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Video clip not available. Extract clips first or disable video refinement."
+                )
+            
+            # Get video clip URL
+            video_clip_url = get_video_clip_url(moment_id, video_file.name)
+            
+            log_event(
+                level="INFO",
+                logger="app.routes.videos",
+                function="refine_moment",
+                operation=operation,
+                event="video_validation",
+                message="Video clip validated for refinement",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "video_clip_url": video_clip_url
+                }
+            )
+        
         log_event(
             level="DEBUG",
             logger="app.routes.videos",
@@ -1662,7 +1725,9 @@ Guidelines:
                 "moment_start": moment.get("start_time"),
                 "moment_end": moment.get("end_time"),
                 "prompt_length": len(user_prompt),
-                "using_default_prompt": request.user_prompt is None
+                "using_default_prompt": request.user_prompt is None,
+                "include_video": include_video,
+                "video_clip_url": video_clip_url
             }
         )
         
@@ -1701,7 +1766,9 @@ Guidelines:
                 "moment_id": moment_id,
                 "video_filename": video_file.name,
                 "model": request.model,
-                "temperature": request.temperature
+                "temperature": request.temperature,
+                "include_video": include_video,
+                "video_clip_url": video_clip_url
             }
         )
         process_moment_refinement_async(
@@ -1710,7 +1777,9 @@ Guidelines:
             video_filename=video_file.name,
             user_prompt=user_prompt,
             model=request.model,
-            temperature=request.temperature
+            temperature=request.temperature,
+            include_video=include_video,
+            video_clip_url=video_clip_url
         )
         
         duration = time.time() - start_time
@@ -1727,7 +1796,12 @@ Guidelines:
             }
         )
         
-        return {"message": "Moment refinement started", "video_id": video_id, "moment_id": moment_id}
+        return {
+            "message": "Moment refinement started", 
+            "video_id": video_id, 
+            "moment_id": moment_id,
+            "include_video": include_video
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -2051,3 +2125,242 @@ async def get_clip_extraction_status_endpoint(video_id: str):
             duration=duration
         )
         raise
+
+
+@router.get("/videos/{video_id}/moments/{moment_id}/video-availability")
+async def check_video_availability(video_id: str, moment_id: str):
+    """
+    Check if video clip is available for a moment and validate alignment with transcript.
+    
+    Returns:
+        Dictionary with:
+        - available: bool - Whether video clip exists
+        - clip_url: string|null - Full URL to video clip
+        - clip_duration: float|null - Duration of video clip in seconds
+        - transcript_duration: float|null - Duration of transcript segment in seconds
+        - duration_match: bool - Whether durations match within tolerance
+        - warning: string|null - Warning message if any issues
+        - model_supports_video: bool - Whether the default video model supports video
+    """
+    start_time = time.time()
+    operation = "check_video_availability"
+    
+    log_operation_start(
+        logger="app.routes.videos",
+        function="check_video_availability",
+        operation=operation,
+        message=f"Checking video availability for {video_id}/{moment_id}",
+        context={
+            "video_id": video_id,
+            "moment_id": moment_id,
+            "request_id": get_request_id()
+        }
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video by matching stem
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                event="validation_error",
+                message="Video not found",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Check if moment exists
+        moment = get_moment_by_id(video_file.name, moment_id)
+        if moment is None:
+            log_event(
+                level="WARNING",
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                event="validation_error",
+                message="Moment not found",
+                context={"video_id": video_id, "moment_id": moment_id}
+            )
+            raise HTTPException(status_code=404, detail="Moment not found")
+        
+        # Check if clip exists
+        clip_exists = check_clip_exists(moment_id, video_file.name)
+        
+        result = {
+            "available": False,
+            "clip_url": None,
+            "clip_duration": None,
+            "transcript_duration": None,
+            "duration_match": False,
+            "warning": None,
+            "model_supports_video": model_supports_video("qwen3_vl_fp8")
+        }
+        
+        if not clip_exists:
+            result["warning"] = "Video clip not available. Extract clips first to enable video refinement."
+            
+            log_operation_complete(
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                message="Video clip not found",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "clip_exists": False
+                },
+                duration=time.time() - start_time
+            )
+            return result
+        
+        # Get clip duration
+        clip_duration = get_clip_duration(moment_id, video_file.name)
+        if clip_duration is None or clip_duration <= 0:
+            result["warning"] = "Could not determine video clip duration."
+            
+            log_operation_complete(
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                message="Could not get clip duration",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "clip_exists": True,
+                    "clip_duration": clip_duration
+                },
+                duration=time.time() - start_time
+            )
+            return result
+        
+        result["clip_duration"] = clip_duration
+        result["clip_url"] = get_video_clip_url(moment_id, video_file.name)
+        
+        # Load transcript to get word timestamps and calculate transcript duration
+        audio_filename = video_file.stem + ".wav"
+        transcript_data = load_transcript(audio_filename)
+        
+        if transcript_data is None or 'word_timestamps' not in transcript_data:
+            result["warning"] = "Transcript not available. Cannot validate alignment."
+            result["available"] = True  # Clip exists, just can't validate
+            
+            log_operation_complete(
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                message="Transcript not available for validation",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "clip_exists": True,
+                    "clip_duration": clip_duration
+                },
+                duration=time.time() - start_time
+            )
+            return result
+        
+        # Get padding config to calculate the padded boundaries
+        from app.utils.model_config import get_clipping_config
+        from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range
+        
+        clipping_config = get_clipping_config()
+        padding = clipping_config['padding']
+        margin = clipping_config.get('margin', 2.0)
+        
+        word_timestamps = transcript_data['word_timestamps']
+        
+        # Calculate the same padded boundaries that clip extraction uses
+        clip_start, clip_end = calculate_padded_boundaries(
+            word_timestamps=word_timestamps,
+            moment_start=moment['start_time'],
+            moment_end=moment['end_time'],
+            padding=padding,
+            margin=margin
+        )
+        
+        # Extract words in range to get transcript duration
+        words_in_range = extract_words_in_range(word_timestamps, clip_start, clip_end)
+        
+        if not words_in_range:
+            result["warning"] = "No words found in transcript range."
+            result["available"] = True  # Clip exists
+            
+            log_operation_complete(
+                logger="app.routes.videos",
+                function="check_video_availability",
+                operation=operation,
+                message="No words in transcript range",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "clip_start": clip_start,
+                    "clip_end": clip_end
+                },
+                duration=time.time() - start_time
+            )
+            return result
+        
+        # Calculate transcript duration from first word start to last word end
+        first_word = words_in_range[0]
+        last_word = words_in_range[-1]
+        transcript_duration = last_word['end'] - first_word['start']
+        
+        result["transcript_duration"] = transcript_duration
+        
+        # Check duration match within tolerance
+        tolerance = get_duration_tolerance()
+        duration_diff = abs(transcript_duration - clip_duration)
+        duration_match = duration_diff <= tolerance
+        
+        result["duration_match"] = duration_match
+        result["available"] = True
+        
+        if not duration_match:
+            result["warning"] = (
+                f"Duration mismatch: transcript is {transcript_duration:.2f}s, "
+                f"video is {clip_duration:.2f}s (difference: {duration_diff:.2f}s, tolerance: {tolerance}s). "
+                f"Video refinement may be less accurate."
+            )
+        
+        log_operation_complete(
+            logger="app.routes.videos",
+            function="check_video_availability",
+            operation=operation,
+            message="Video availability check completed",
+            context={
+                "video_id": video_id,
+                "moment_id": moment_id,
+                "available": result["available"],
+                "clip_duration": clip_duration,
+                "transcript_duration": transcript_duration,
+                "duration_match": duration_match,
+                "duration_diff": duration_diff
+            },
+            duration=time.time() - start_time
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.routes.videos",
+            function="check_video_availability",
+            operation=operation,
+            error=e,
+            message="Error checking video availability",
+            context={"video_id": video_id, "moment_id": moment_id, "duration_seconds": duration}
+        )
+        raise HTTPException(status_code=500, detail=f"Error checking video availability: {str(e)}")

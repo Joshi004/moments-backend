@@ -520,7 +520,13 @@ def verify_tunnel_active(model_key: str = "minimax", max_retries: int = 3, retry
     return False
 
 
-def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Optional[str] = None, temperature: float = 0.7) -> Optional[Dict]:
+def call_ai_model(
+    messages: List[Dict], 
+    model_key: str = "minimax", 
+    model_id: Optional[str] = None, 
+    temperature: float = 0.7,
+    video_url: Optional[str] = None
+) -> Optional[Dict]:
     """
     Call the AI model via tunnel.
     
@@ -529,6 +535,7 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
         model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
         model_id: Optional model ID to use in the request (if None, uses config default)
         temperature: Temperature parameter for the model (default: 0.7)
+        video_url: Optional URL to video clip for multimodal requests
     
     Returns:
         Dictionary with AI model response or None if failed
@@ -543,6 +550,25 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
         # Use provided model_id or get from config
         if model_id is None:
             model_id = config.get('model_id')
+        
+        # Transform messages to multimodal format if video_url is provided
+        if video_url:
+            logger.info(f"Building multimodal request with video URL: {video_url}")
+            transformed_messages = []
+            for msg in messages:
+                if msg.get('role') == 'user' and isinstance(msg.get('content'), str):
+                    # Convert text content to multimodal content array with video
+                    multimodal_content = [
+                        {"type": "video_url", "video_url": {"url": video_url}},
+                        {"type": "text", "text": msg['content']}
+                    ]
+                    transformed_messages.append({
+                        "role": msg['role'],
+                        "content": multimodal_content
+                    })
+                else:
+                    transformed_messages.append(msg)
+            messages = transformed_messages
         
         payload = {
             "messages": messages,
@@ -567,7 +593,22 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
             logger.info(f"Using response_format enforcement: {response_format}")
         
         # Log prompt being sent (first message content, truncated)
-        prompt_preview = messages[0].get('content', '')[:500] if messages else 'N/A'
+        # Handle both string content and multimodal content array
+        first_content = messages[0].get('content', '') if messages else 'N/A'
+        if isinstance(first_content, list):
+            # Extract text from multimodal content
+            text_parts = [item.get('text', '') for item in first_content if item.get('type') == 'text']
+            prompt_preview = (text_parts[0][:500] if text_parts else 'N/A')
+        else:
+            prompt_preview = first_content[:500] if first_content else 'N/A'
+        
+        # Calculate prompt length handling multimodal content
+        first_content = messages[0].get('content', '') if messages else ''
+        if isinstance(first_content, list):
+            text_parts = [item.get('text', '') for item in first_content if item.get('type') == 'text']
+            prompt_length = len(text_parts[0]) if text_parts else 0
+        else:
+            prompt_length = len(first_content) if first_content else 0
         
         log_operation_start(
             logger="app.utils.moments_generation_service",
@@ -582,7 +623,9 @@ def call_ai_model(messages: List[Dict], model_key: str = "minimax", model_id: Op
                 "max_tokens": MAX_TOKENS,
                 "message_count": len(messages),
                 "prompt_preview": prompt_preview,
-                "prompt_length": len(messages[0].get('content', '')) if messages else 0,
+                "prompt_length": prompt_length,
+                "video_url": video_url,
+                "is_multimodal": video_url is not None,
                 "request_id": get_request_id()
             }
         )

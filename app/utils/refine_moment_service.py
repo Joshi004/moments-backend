@@ -180,7 +180,9 @@ def build_refinement_prompt(
     original_start: float,
     original_end: float,
     original_title: str,
-    model_key: str = "minimax"
+    model_key: str = "minimax",
+    include_video: bool = False,
+    video_clip_url: Optional[str] = None
 ) -> str:
     """
     Build the complete prompt for moment refinement.
@@ -194,6 +196,8 @@ def build_refinement_prompt(
         original_end: Original moment end time (absolute, for context)
         original_title: Title of the moment being refined
         model_key: Model identifier for model-specific prompting
+        include_video: Whether video is included in this refinement request
+        video_clip_url: URL of the video clip (if include_video is True)
         
     Returns:
         Complete prompt string with all sections assembled
@@ -208,6 +212,22 @@ def build_refinement_prompt(
         for word in words
     ])
     
+    # Video context section (only when video is included)
+    video_context = ""
+    if include_video and video_clip_url:
+        video_context = f"""VIDEO INPUT:
+A video clip is provided along with this request. The video clip is precisely aligned with the transcript below - both start at the same point in time (0.0 seconds).
+
+IMPORTANT: Use the video frames to visually identify the exact moment boundaries. Look for:
+- Visual cues that indicate the start of the topic/segment
+- Scene changes, speaker changes, or visual transitions
+- The exact frame where the engaging content begins and ends
+- Correlation between what you see and what you hear in the transcript
+
+The video and transcript are synchronized - use both to determine the most accurate timestamps.
+
+"""
+    
     # Context explanation (backend-only, not editable)
     context_explanation = f"""TASK CONTEXT:
 You are refining the timestamps for an existing video moment. The moment currently has the following information:
@@ -216,7 +236,7 @@ You are refining the timestamps for an existing video moment. The moment current
 - Current end time: {original_end:.2f} seconds
 - Clip boundaries: {clip_start:.2f}s to {clip_end:.2f}s (includes context padding)
 
-The timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript and determine the exact timestamps where this moment should start and end."""
+The timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript{' and video' if include_video else ''} and determine the exact timestamps where this moment should start and end."""
     
     # Input format explanation (backend-only, not editable)
     input_format_explanation = """INPUT FORMAT:
@@ -264,7 +284,7 @@ FINAL REMINDER: Output ONLY the JSON object { ... }. Nothing else."""
     
     # Assemble complete prompt with model-specific JSON header
     # For Qwen models, JSON header MUST be at the very top
-    complete_prompt = f"""{json_header}{context_explanation}
+    complete_prompt = f"""{json_header}{video_context}{context_explanation}
 
 {user_prompt}
 
@@ -610,7 +630,9 @@ def process_moment_refinement_async(
     video_filename: str,
     user_prompt: str,
     model: str = "minimax",
-    temperature: float = 0.7
+    temperature: float = 0.7,
+    include_video: bool = False,
+    video_clip_url: Optional[str] = None
 ) -> None:
     """
     Process moment refinement asynchronously in a background thread.
@@ -622,6 +644,8 @@ def process_moment_refinement_async(
         user_prompt: User-provided prompt (editable, visible in UI)
         model: Model identifier ("minimax", "qwen", or "qwen3_omni"), default: "minimax"
         temperature: Temperature parameter for the model, default: 0.7
+        include_video: Whether to include video clip in the refinement request
+        video_clip_url: URL of the video clip (if include_video is True)
     """
     def refine():
         try:
@@ -633,7 +657,7 @@ def process_moment_refinement_async(
             from app.utils.video_utils import get_video_by_filename
             import cv2
             
-            logger.info(f"Starting moment refinement for video {video_id}, moment {moment_id}")
+            logger.info(f"Starting moment refinement for video {video_id}, moment {moment_id}, include_video={include_video}")
             
             # Get padding configuration from backend config
             clipping_config = get_clipping_config()
@@ -711,8 +735,13 @@ def process_moment_refinement_async(
                 original_start=moment['start_time'],  # Keep absolute times for context
                 original_end=moment['end_time'],
                 original_title=moment['title'],
-                model_key=model  # Pass model key for model-specific prompting
+                model_key=model,  # Pass model key for model-specific prompting
+                include_video=include_video,
+                video_clip_url=video_clip_url
             )
+            
+            if include_video:
+                logger.info(f"Video included in refinement request: {video_clip_url}")
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
             
@@ -728,9 +757,15 @@ def process_moment_refinement_async(
                     "content": complete_prompt
                 }]
                 
-                # Call AI model
-                logger.info(f"Calling AI model ({model}) for moment refinement...")
-                ai_response = call_ai_model(messages, model_key=model, model_id=model_id, temperature=temperature)
+                # Call AI model (with video URL if include_video is True)
+                logger.info(f"Calling AI model ({model}) for moment refinement (include_video={include_video})...")
+                ai_response = call_ai_model(
+                    messages, 
+                    model_key=model, 
+                    model_id=model_id, 
+                    temperature=temperature,
+                    video_url=video_clip_url if include_video else None
+                )
                 
                 if ai_response is None:
                     raise Exception("AI model call failed or returned no response")
@@ -870,7 +905,9 @@ def process_moment_refinement_async(
                     "timestamp_offset": offset,  # Store offset for traceability
                     "normalized_clip_start": normalized_clip_start,
                     "normalized_clip_end": normalized_clip_end,
-                    "operation_type": "refinement"
+                    "operation_type": "refinement",
+                    "video_included": include_video,
+                    "video_clip_url": video_clip_url if include_video else None
                 }
                 
                 # Create refined moment

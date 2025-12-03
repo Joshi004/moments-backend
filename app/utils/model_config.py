@@ -1,11 +1,19 @@
 """
 Model configuration for AI models used in moment generation and refinement.
 """
+from pathlib import Path
 
 # Configuration for video clipping and transcript extraction
 CLIPPING_CONFIG = {
     "padding": 30.0,  # Single padding value used for both left and right (seconds)
     "margin": 2.0     # Allow extra margin when finding word boundaries (seconds)
+}
+
+# Configuration for video server serving moment clips
+VIDEO_SERVER_CONFIG = {
+    "base_url": "http://localhost:8080",  # Base URL for video clip server
+    "clips_path": "moment_clips",  # Path segment for moment clips
+    "duration_tolerance": 0.5,  # Tolerance in seconds for transcript-video duration matching
 }
 
 MODELS = {
@@ -43,6 +51,7 @@ MODELS = {
         "ssh_remote_host": "worker-9",
         "ssh_local_port": 6010,
         "ssh_remote_port": 8010,
+        "supports_video": True,  # This model supports video input for refinement
     },
     "parakeet": {
         "name": "Parakeet",
@@ -106,5 +115,59 @@ def get_clipping_config() -> dict:
         Dictionary with clipping configuration (padding, margin)
     """
     return CLIPPING_CONFIG.copy()
+
+
+def get_video_server_config() -> dict:
+    """
+    Get configuration for video server.
+    
+    Returns:
+        Dictionary with video server configuration (base_url, clips_path, duration_tolerance)
+    """
+    return VIDEO_SERVER_CONFIG.copy()
+
+
+def model_supports_video(model_key: str) -> bool:
+    """
+    Check if a model supports video input.
+    
+    Args:
+        model_key: Model identifier
+    
+    Returns:
+        True if model supports video, False otherwise
+    """
+    try:
+        config = get_model_config(model_key)
+        return config.get('supports_video', False)
+    except ValueError:
+        return False
+
+
+def get_video_clip_url(moment_id: str, video_filename: str) -> str:
+    """
+    Get the full URL for a video clip.
+    
+    Args:
+        moment_id: Unique identifier for the moment
+        video_filename: Original video filename (e.g., "ProjectUpdateVideo.mp4")
+    
+    Returns:
+        Full URL for the video clip
+    """
+    video_stem = Path(video_filename).stem
+    clip_filename = f"{video_stem}_{moment_id}_clip.mp4"
+    config = get_video_server_config()
+    return f"{config['base_url']}/{config['clips_path']}/{clip_filename}"
+
+
+def get_duration_tolerance() -> float:
+    """
+    Get the tolerance for transcript-video duration matching.
+    
+    Returns:
+        Tolerance in seconds
+    """
+    return VIDEO_SERVER_CONFIG['duration_tolerance']
 
 
