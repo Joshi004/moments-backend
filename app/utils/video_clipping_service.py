@@ -1,8 +1,10 @@
 import subprocess
 import threading
 import time
+import platform
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import cv2
 from app.utils.logging_config import (
@@ -184,23 +186,52 @@ def extract_video_clip(
         # Calculate duration
         duration = end_time - start_time
         
-        # FFmpeg command to extract video clip
+        # Get encoding configuration
+        from app.utils.model_config import get_encoding_config
+        encoding_config = get_encoding_config()
+        
+        # Detect platform for encoder selection
+        is_macos = platform.system() == "Darwin"
+        
+        # Build FFmpeg command with re-encoding for frame-accurate clipping
         # -ss: start time (before input for faster seeking)
         # -i: input file
         # -t: duration
-        # -c copy: copy codec (fast, no re-encoding)
+        # -c:v: video codec (platform-specific hardware/software encoding)
+        # -c:a: audio codec (re-encode audio)
         # -avoid_negative_ts make_zero: handle timestamp issues
         # -y: overwrite output file if exists
-        cmd = [
-            'ffmpeg',
-            '-ss', str(start_time),
-            '-i', str(video_path),
-            '-t', str(duration),
-            '-c', 'copy',
-            '-avoid_negative_ts', 'make_zero',
-            '-y',
-            str(output_path)
-        ]
+        
+        if is_macos:
+            # Use VideoToolbox hardware encoder on macOS
+            cmd = [
+                'ffmpeg',
+                '-ss', str(start_time),
+                '-i', str(video_path),
+                '-t', str(duration),
+                '-c:v', encoding_config['macos_encoder'],
+                '-q:v', str(encoding_config['macos_quality']),
+                '-c:a', encoding_config['audio_codec'],
+                '-b:a', encoding_config['audio_bitrate'],
+                '-avoid_negative_ts', 'make_zero',
+                '-y',
+                str(output_path)
+            ]
+        else:
+            # Use libx264 software encoder on Linux
+            cmd = [
+                'ffmpeg',
+                '-ss', str(start_time),
+                '-i', str(video_path),
+                '-t', str(duration),
+                '-c:v', encoding_config['linux_encoder'],
+                '-preset', encoding_config['linux_preset'],
+                '-c:a', encoding_config['audio_codec'],
+                '-b:a', encoding_config['audio_bitrate'],
+                '-avoid_negative_ts', 'make_zero',
+                '-y',
+                str(output_path)
+            ]
         
         log_event(
             level="INFO",
@@ -208,14 +239,17 @@ def extract_video_clip(
             function="extract_video_clip",
             operation=operation,
             event="external_call_start",
-            message="Executing FFmpeg command",
+            message="Executing FFmpeg command with re-encoding",
             context={
                 "command": " ".join(cmd),
                 "video_path": str(video_path),
                 "output_path": str(output_path),
                 "start_time": start_time,
                 "end_time": end_time,
-                "duration": duration
+                "duration": duration,
+                "platform": "macOS" if is_macos else "Linux",
+                "video_encoder": encoding_config['macos_encoder'] if is_macos else encoding_config['linux_encoder'],
+                "encoding_mode": "hardware" if is_macos else "software"
             }
         )
         
@@ -466,7 +500,22 @@ def extract_clips_for_video(
         # Update job with total count
         update_clip_extraction_progress(video_id, len(original_moments), 0, 0)
         
-        for idx, moment in enumerate(original_moments):
+        # Get number of parallel workers from configuration
+        from app.utils.model_config import get_parallel_workers
+        max_workers = get_parallel_workers()
+        
+        log_event(
+            level="INFO",
+            logger="app.utils.video_clipping_service",
+            function="extract_clips_for_video",
+            operation=operation,
+            event="parallel_processing_start",
+            message=f"Starting parallel clip extraction with {max_workers} workers",
+            context={"max_workers": max_workers, "total_clips": len(original_moments)}
+        )
+        
+        # Helper function to process a single moment
+        def process_moment(moment, idx):
             moment_id = moment.get('id')
             original_start = moment.get('start_time')
             original_end = moment.get('end_time')
@@ -481,8 +530,11 @@ def extract_clips_for_video(
                     message="Skipping moment due to missing data",
                     context={"moment": moment}
                 )
-                results["failed"] += 1
-                continue
+                return {
+                    "moment_id": moment_id,
+                    "status": "failed",
+                    "reason": "missing_data"
+                }
             
             # Check if clip already exists
             if not override_existing and check_clip_exists(moment_id, video_filename):
@@ -495,13 +547,11 @@ def extract_clips_for_video(
                     message="Skipping existing clip",
                     context={"moment_id": moment_id}
                 )
-                results["skipped"] += 1
-                results["clips"].append({
+                return {
                     "moment_id": moment_id,
                     "status": "skipped",
                     "clip_url": get_clip_url(moment_id, video_filename)
-                })
-                continue
+                }
             
             # Calculate precise clip boundaries using word timestamps
             if word_timestamps:
@@ -553,25 +603,45 @@ def extract_clips_for_video(
             )
             
             if clip_path:
-                results["successful"] += 1
-                results["clips"].append({
+                return {
                     "moment_id": moment_id,
                     "status": "success",
                     "clip_url": get_clip_url(moment_id, video_filename),
                     "clip_path": str(clip_path),
                     "clip_start": clip_start,
                     "clip_end": clip_end
-                })
+                }
             else:
-                results["failed"] += 1
-                results["clips"].append({
+                return {
                     "moment_id": moment_id,
                     "status": "failed"
-                })
+                }
+        
+        # Process clips in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_moment = {
+                executor.submit(process_moment, moment, idx): moment 
+                for idx, moment in enumerate(original_moments)
+            }
             
-            # Update progress
-            processed = results["successful"] + results["skipped"] + results["failed"]
-            update_clip_extraction_progress(video_id, len(original_moments), processed, results["failed"])
+            # Collect results as they complete
+            for future in as_completed(future_to_moment):
+                result = future.result()
+                
+                # Update results based on status
+                if result["status"] == "success":
+                    results["successful"] += 1
+                elif result["status"] == "skipped":
+                    results["skipped"] += 1
+                else:
+                    results["failed"] += 1
+                
+                results["clips"].append(result)
+                
+                # Update progress
+                processed = results["successful"] + results["skipped"] + results["failed"]
+                update_clip_extraction_progress(video_id, len(original_moments), processed, results["failed"])
         
         log_operation_complete(
             logger="app.utils.video_clipping_service",

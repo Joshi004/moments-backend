@@ -16,6 +16,17 @@ VIDEO_SERVER_CONFIG = {
     "duration_tolerance": 0.5,  # Tolerance in seconds for transcript-video duration matching
 }
 
+# Configuration for video encoding (re-encoding for frame-accurate clipping)
+VIDEO_ENCODING_CONFIG = {
+    "parallel_workers": 4,  # Number of parallel encoding jobs
+    "macos_encoder": "h264_videotoolbox",  # Hardware encoder for macOS
+    "macos_quality": 70,  # VideoToolbox quality scale (0-100, higher = better)
+    "linux_encoder": "libx264",  # Software encoder for Linux
+    "linux_preset": "fast",  # Encoding preset: ultrafast, fast, medium, slow
+    "audio_codec": "aac",  # Audio codec for re-encoding
+    "audio_bitrate": "128k",  # Audio bitrate
+}
+
 MODELS = {
     "minimax": {
         "name": "MiniMax",
@@ -169,5 +180,25 @@ def get_duration_tolerance() -> float:
         Tolerance in seconds
     """
     return VIDEO_SERVER_CONFIG['duration_tolerance']
+
+
+def get_encoding_config() -> dict:
+    """
+    Get configuration for video encoding.
+    
+    Returns:
+        Dictionary with encoding configuration (parallel_workers, encoders, quality settings)
+    """
+    return VIDEO_ENCODING_CONFIG.copy()
+
+
+def get_parallel_workers() -> int:
+    """
+    Get the number of parallel workers for video clip extraction.
+    
+    Returns:
+        Number of parallel workers
+    """
+    return VIDEO_ENCODING_CONFIG['parallel_workers']
 
 
