@@ -139,6 +139,12 @@ static/videos/*
 # Audio files
 static/audios/*
 
+# Moment clips (generated video clips)
+static/moment_clips/*.mp4
+
+# Keep moment_clips directory structure
+!static/moment_clips/.gitkeep
+
 # # Transcript files
 # static/transcripts/*
 
