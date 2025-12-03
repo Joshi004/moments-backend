@@ -152,8 +152,8 @@ def extract_words_in_range(
     """
     Extract word timestamps that fall within the specified time range.
     
-    A word is included if it overlaps with the time range, i.e., if:
-    word_end >= start_time AND word_start <= end_time
+    A word is included only if it is fully contained within the time range, i.e., if:
+    word_start >= start_time AND word_end <= end_time
     
     Args:
         word_timestamps: List of word timestamp dictionaries with 'word', 'start', 'end'
@@ -161,7 +161,7 @@ def extract_words_in_range(
         end_time: End of the time range in seconds
     
     Returns:
-        List of word dictionaries that overlap with the specified range
+        List of word dictionaries that are fully contained within the specified range
     """
     if not word_timestamps:
         return []
@@ -181,8 +181,8 @@ def extract_words_in_range(
             logger.warning(f"Invalid timestamp values in word data: {word_data}")
             continue
         
-        # Include word if it overlaps with the range
-        if word_end >= start_time and word_start <= end_time:
+        # Include word only if it is fully contained within the range
+        if word_start >= start_time and word_end <= end_time:
             extracted.append({
                 'word': str(word_data['word']),
                 'start': word_start,
