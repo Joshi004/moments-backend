@@ -2,6 +2,7 @@
 Application configuration using Pydantic Settings.
 All configuration values can be overridden via environment variables or .env file.
 """
+import os
 from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import Optional
@@ -70,9 +71,16 @@ class Settings(BaseSettings):
     clip_margin: float = 2.0     # Margin for word boundaries in seconds
     
     # Video Server Configuration
-    video_server_base_url: str = "http://localhost:8080"
+    # Use BACKEND_PORT if available, otherwise default to 7005
+    # The video clips are served by the FastAPI backend itself at /moment_clips
+    video_server_port: int = int(os.getenv('BACKEND_PORT', '7005'))
     video_server_clips_path: str = "moment_clips"
     duration_tolerance: float = 0.5  # Tolerance for transcript-video duration matching
+    
+    @property
+    def video_server_base_url(self) -> str:
+        """Get the video server base URL using the backend port."""
+        return f"http://localhost:{self.video_server_port}"
     
     # Video Encoding Configuration
     parallel_workers: int = 4

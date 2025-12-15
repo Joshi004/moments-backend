@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def get_ai_requests_directory() -> Path:
     """Get or create the AI requests log directory."""
     current_file = Path(__file__).resolve()
-    backend_dir = current_file.parent.parent.parent
+    backend_dir = current_file.parent.parent.parent.parent
     logs_dir = backend_dir / "logs" / "ai_requests"
     logs_dir.mkdir(parents=True, exist_ok=True)
     return logs_dir
