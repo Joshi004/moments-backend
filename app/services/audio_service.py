@@ -79,7 +79,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     start_time = time.time()
     
     log_operation_start(
-        logger="app.utils.audio_service",
+        logger="app.services.audio_service",
         function="extract_audio_from_video",
         operation=operation,
         message="Starting audio extraction",
@@ -94,7 +94,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         # Ensure output directory exists
         log_event(
             level="DEBUG",
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             event="file_operation_start",
@@ -121,7 +121,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         
         log_event(
             level="INFO",
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             event="external_call_start",
@@ -146,7 +146,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         if result.returncode != 0:
             log_event(
                 level="ERROR",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="extract_audio_from_video",
                 operation=operation,
                 event="external_call_error",
@@ -161,7 +161,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         
         log_event(
             level="DEBUG",
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             event="external_call_complete",
@@ -176,7 +176,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         if not output_path.exists():
             log_event(
                 level="ERROR",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="extract_audio_from_video",
                 operation=operation,
                 event="file_operation_error",
@@ -189,7 +189,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         file_size = output_path.stat().st_size
         
         log_operation_complete(
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             message="Successfully extracted audio",
@@ -206,7 +206,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     except subprocess.TimeoutExpired:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             error=Exception("Audio extraction timed out"),
@@ -221,7 +221,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     except FileNotFoundError:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             error=FileNotFoundError("FFmpeg not found"),
@@ -232,7 +232,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="extract_audio_from_video",
             operation=operation,
             error=e,
@@ -261,7 +261,7 @@ def start_processing_job(video_id: str, video_filename: str) -> bool:
     
     log_event(
         level="DEBUG",
-        logger="app.utils.audio_service",
+        logger="app.services.audio_service",
         function="start_processing_job",
         operation=operation,
         event="operation_start",
@@ -277,7 +277,7 @@ def start_processing_job(video_id: str, video_filename: str) -> bool:
         if video_id in _processing_jobs:
             log_event(
                 level="WARNING",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="start_processing_job",
                 operation=operation,
                 event="validation_error",
@@ -294,7 +294,7 @@ def start_processing_job(video_id: str, video_filename: str) -> bool:
         
         log_event(
             level="INFO",
-            logger="app.utils.audio_service",
+            logger="app.services.audio_service",
             function="start_processing_job",
             operation=operation,
             event="operation_complete",
@@ -322,7 +322,7 @@ def complete_processing_job(video_id: str, success: bool = True) -> None:
             
             log_event(
                 level="INFO",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="complete_processing_job",
                 operation=operation,
                 event="operation_complete" if success else "operation_error",
@@ -405,7 +405,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
     
     log_event(
         level="INFO",
-        logger="app.utils.audio_service",
+        logger="app.services.audio_service",
         function="process_audio_async",
         operation=operation,
         event="operation_start",
@@ -423,7 +423,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             
             log_event(
                 level="DEBUG",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="process_audio_async",
                 operation=operation,
                 event="operation_start",
@@ -442,7 +442,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             
             log_event(
                 level="INFO",
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="process_audio_async",
                 operation=operation,
                 event="operation_complete",
@@ -452,7 +452,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             
         except Exception as e:
             log_operation_error(
-                logger="app.utils.audio_service",
+                logger="app.services.audio_service",
                 function="process_audio_async",
                 operation=operation,
                 error=e,
@@ -467,7 +467,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
     
     log_event(
         level="DEBUG",
-        logger="app.utils.audio_service",
+        logger="app.services.audio_service",
         function="process_audio_async",
         operation=operation,
         event="operation_complete",

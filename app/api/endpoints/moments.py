@@ -14,23 +14,23 @@ from app.models.schemas import (
     MessageResponse,
     JobStatusResponse
 )
-from app.utils.video_utils import get_video_files
-from app.utils.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
-from app.utils.audio_service import check_audio_exists
-from app.utils.transcript_service import check_transcript_exists
-from app.utils.moments_generation_service import (
+from app.utils.video import get_video_files
+from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
+from app.services.audio_service import check_audio_exists
+from app.services.transcript_service import check_transcript_exists
+from app.services.ai.generation_service import (
     start_generation_job,
     is_generating,
     process_moments_generation_async,
     get_generation_status
 )
-from app.utils.refine_moment_service import (
+from app.services.ai.refinement_service import (
     start_refinement_job,
     is_refining,
     process_moment_refinement_async,
     get_refinement_status
 )
-from app.utils.video_clipping_service import check_clip_exists
+from app.services.video_clipping_service import check_clip_exists
 from app.utils.model_config import model_supports_video, get_video_clip_url
 from app.core.logging import (
     log_event,

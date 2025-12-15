@@ -14,7 +14,7 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
-from app.utils.timestamp_utils import calculate_padded_boundaries
+from app.utils.timestamp import calculate_padded_boundaries
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ def extract_video_clip(
         Path to the extracted clip if successful, None otherwise
     """
     operation = log_operation_start(
-        logger="app.utils.video_clipping_service",
+        logger="app.services.video_clipping_service",
         function="extract_video_clip",
         operation="video_clip_extraction",
         context={
@@ -174,7 +174,7 @@ def extract_video_clip(
         
         log_event(
             level="DEBUG",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             event="file_operation_start",
@@ -235,7 +235,7 @@ def extract_video_clip(
         
         log_event(
             level="INFO",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             event="external_call_start",
@@ -263,7 +263,7 @@ def extract_video_clip(
         
         if result.returncode != 0:
             log_operation_error(
-                logger="app.utils.video_clipping_service",
+                logger="app.services.video_clipping_service",
                 function="extract_video_clip",
                 operation=operation,
                 error=RuntimeError(f"FFmpeg command failed with return code {result.returncode}"),
@@ -279,7 +279,7 @@ def extract_video_clip(
         # Verify output file was created
         if not output_path.exists():
             log_operation_error(
-                logger="app.utils.video_clipping_service",
+                logger="app.services.video_clipping_service",
                 function="extract_video_clip",
                 operation=operation,
                 error=FileNotFoundError(f"Output file was not created: {output_path}"),
@@ -290,7 +290,7 @@ def extract_video_clip(
         
         log_event(
             level="INFO",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             event="external_call_complete",
@@ -302,7 +302,7 @@ def extract_video_clip(
         )
         
         log_operation_complete(
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             message="Video clip extracted successfully",
@@ -316,7 +316,7 @@ def extract_video_clip(
         
     except FileNotFoundError as e:
         log_operation_error(
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             error=FileNotFoundError("FFmpeg not found"),
@@ -327,7 +327,7 @@ def extract_video_clip(
         
     except Exception as e:
         log_operation_error(
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_video_clip",
             operation=operation,
             error=e,
@@ -415,7 +415,7 @@ def extract_clips_for_video(
         Dictionary with extraction results
     """
     operation = log_operation_start(
-        logger="app.utils.video_clipping_service",
+        logger="app.services.video_clipping_service",
         function="extract_clips_for_video",
         operation="batch_clip_extraction",
         context={
@@ -434,14 +434,14 @@ def extract_clips_for_video(
         margin = clipping_config['margin']
         
         # Load transcript for word-level timestamp alignment
-        from app.utils.transcript_service import load_transcript
+        from app.services.transcript_service import load_transcript
         audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
         transcript_data = load_transcript(audio_filename)
         
         if transcript_data is None or 'word_timestamps' not in transcript_data:
             log_event(
                 level="WARNING",
-                logger="app.utils.video_clipping_service",
+                logger="app.services.video_clipping_service",
                 function="extract_clips_for_video",
                 operation=operation,
                 event="validation_warning",
@@ -460,7 +460,7 @@ def extract_clips_for_video(
         
         log_event(
             level="INFO",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_clips_for_video",
             operation=operation,
             event="operation_start",
@@ -478,7 +478,7 @@ def extract_clips_for_video(
         
         log_event(
             level="INFO",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_clips_for_video",
             operation=operation,
             event="validation_complete",
@@ -506,7 +506,7 @@ def extract_clips_for_video(
         
         log_event(
             level="INFO",
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_clips_for_video",
             operation=operation,
             event="parallel_processing_start",
@@ -523,7 +523,7 @@ def extract_clips_for_video(
             if not all([moment_id, original_start is not None, original_end is not None]):
                 log_event(
                     level="WARNING",
-                    logger="app.utils.video_clipping_service",
+                    logger="app.services.video_clipping_service",
                     function="extract_clips_for_video",
                     operation=operation,
                     event="validation_failed",
@@ -540,7 +540,7 @@ def extract_clips_for_video(
             if not override_existing and check_clip_exists(moment_id, video_filename):
                 log_event(
                     level="INFO",
-                    logger="app.utils.video_clipping_service",
+                    logger="app.services.video_clipping_service",
                     function="extract_clips_for_video",
                     operation=operation,
                     event="clip_skipped",
@@ -578,7 +578,7 @@ def extract_clips_for_video(
             
             log_event(
                 level="DEBUG",
-                logger="app.utils.video_clipping_service",
+                logger="app.services.video_clipping_service",
                 function="extract_clips_for_video",
                 operation=operation,
                 event="clip_extraction_start",
@@ -644,7 +644,7 @@ def extract_clips_for_video(
                 update_clip_extraction_progress(video_id, len(original_moments), processed, results["failed"])
         
         log_operation_complete(
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_clips_for_video",
             operation=operation,
             message="Batch clip extraction completed",
@@ -660,7 +660,7 @@ def extract_clips_for_video(
         
     except Exception as e:
         log_operation_error(
-            logger="app.utils.video_clipping_service",
+            logger="app.services.video_clipping_service",
             function="extract_clips_for_video",
             operation=operation,
             error=e,

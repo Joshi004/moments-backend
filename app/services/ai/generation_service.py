@@ -9,7 +9,7 @@ from typing import Optional, Dict, List
 from contextlib import contextmanager
 import logging
 from app.utils.model_config import get_model_config, get_model_url
-from app.utils.refine_moment_service import strip_think_tags
+from app.services.ai.refinement_service import strip_think_tags
 from app.utils.logging_config import (
     log_event,
     log_operation_start,
@@ -17,8 +17,8 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
-from app.utils.ai_request_logger import log_ai_request_response
-from app.utils.model_prompt_config import get_model_prompt_config, get_response_format_param
+from app.services.ai.request_logger import log_ai_request_response
+from app.services.ai.prompt_config import get_model_prompt_config, get_response_format_param
 
 logger = logging.getLogger(__name__)
 
@@ -611,7 +611,7 @@ def call_ai_model(
             prompt_length = len(first_content) if first_content else 0
         
         log_operation_start(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             message="Calling AI model",
@@ -632,7 +632,7 @@ def call_ai_model(
         
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             event="model_call_start",
@@ -652,7 +652,7 @@ def call_ai_model(
         
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             event="model_call_complete",
@@ -671,7 +671,7 @@ def call_ai_model(
         
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             event="model_response_raw",
@@ -686,7 +686,7 @@ def call_ai_model(
             result = response.json()
             
             log_operation_complete(
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="call_ai_model",
                 operation=operation,
                 message="AI model call completed successfully",
@@ -702,7 +702,7 @@ def call_ai_model(
         except json.JSONDecodeError as e:
             log_event(
                 level="ERROR",
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="call_ai_model",
                 operation=operation,
                 event="parse_error",
@@ -739,7 +739,7 @@ def call_ai_model(
             })
         
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             error=e,
@@ -750,7 +750,7 @@ def call_ai_model(
     except requests.exceptions.Timeout as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             error=e,
@@ -766,7 +766,7 @@ def call_ai_model(
     except requests.exceptions.HTTPError as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             error=e,
@@ -783,7 +783,7 @@ def call_ai_model(
     except requests.exceptions.RequestException as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             error=e,
@@ -798,7 +798,7 @@ def call_ai_model(
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="call_ai_model",
             operation=operation,
             error=e,
@@ -893,7 +893,7 @@ def build_prompt(
     
     log_event(
         level="DEBUG",
-        logger="app.utils.moments_generation_service",
+        logger="app.services.ai.generation_service",
         function="build_prompt",
         operation=operation,
         event="prompt_generation",
@@ -996,7 +996,7 @@ Transcript segments:
     
     log_event(
         level="INFO",
-        logger="app.utils.moments_generation_service",
+        logger="app.services.ai.generation_service",
         function="build_prompt",
         operation=operation,
         event="prompt_generation",
@@ -1026,7 +1026,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
     start_time = time.time()
     
     log_operation_start(
-        logger="app.utils.moments_generation_service",
+        logger="app.services.ai.generation_service",
         function="parse_moments_response",
         operation=operation,
         message="Parsing AI model response to extract moments",
@@ -1040,7 +1040,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         # Log the full response structure for debugging
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             event="parse_start",
@@ -1052,7 +1052,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         if 'choices' not in response or len(response['choices']) == 0:
             log_event(
                 level="ERROR",
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="parse_moments_response",
                 operation=operation,
                 event="parse_error",
@@ -1065,7 +1065,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         if not content:
             log_event(
                 level="ERROR",
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="parse_moments_response",
                 operation=operation,
                 event="parse_error",
@@ -1076,7 +1076,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             event="parse_start",
@@ -1090,7 +1090,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         # Strip think tags before processing
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             event="parse_start",
@@ -1101,7 +1101,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         
         log_event(
             level="DEBUG",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             event="parse_start",
@@ -1279,7 +1279,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         duration = time.time() - start_time
         
         log_operation_complete(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             message="Successfully parsed moments from response",
@@ -1296,7 +1296,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
         log_event(
             level="ERROR",
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             event="parse_error",
@@ -1311,7 +1311,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_generation_service",
+            logger="app.services.ai.generation_service",
             function="parse_moments_response",
             operation=operation,
             error=e,
@@ -1468,13 +1468,13 @@ def process_moments_generation_async(
         
         try:
             # Import here to avoid circular imports
-            from app.utils.transcript_service import load_transcript
-            from app.utils.moments_service import save_moments, load_moments
-            from app.utils.video_utils import get_video_by_filename
+            from app.services.transcript_service import load_transcript
+            from app.services.moments_service import save_moments, load_moments
+            from app.utils.video import get_video_by_filename
             import cv2
             
             log_operation_start(
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="process_moments_generation_async",
                 operation=operation,
                 message=f"Starting moment generation for {video_id}",
@@ -1496,7 +1496,7 @@ def process_moments_generation_async(
             
             log_event(
                 level="DEBUG",
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="process_moments_generation_async",
                 operation=operation,
                 event="file_operation_start",
@@ -1509,7 +1509,7 @@ def process_moments_generation_async(
             if transcript_data is None:
                 log_event(
                     level="ERROR",
-                    logger="app.utils.moments_generation_service",
+                    logger="app.services.ai.generation_service",
                     function="process_moments_generation_async",
                     operation=operation,
                     event="file_operation_error",
@@ -1523,7 +1523,7 @@ def process_moments_generation_async(
             
             log_event(
                 level="DEBUG",
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="process_moments_generation_async",
                 operation=operation,
                 event="operation_start",
@@ -1534,7 +1534,7 @@ def process_moments_generation_async(
             if not segments:
                 log_event(
                     level="ERROR",
-                    logger="app.utils.moments_generation_service",
+                    logger="app.services.ai.generation_service",
                     function="process_moments_generation_async",
                     operation=operation,
                     event="validation_error",
@@ -1720,7 +1720,7 @@ def process_moments_generation_async(
                 
                 log_event(
                     level="INFO",
-                    logger="app.utils.moments_generation_service",
+                    logger="app.services.ai.generation_service",
                     function="process_moments_generation_async",
                     operation=operation,
                     event="file_operation_start",
@@ -1734,7 +1734,7 @@ def process_moments_generation_async(
                 if not success:
                     log_event(
                         level="ERROR",
-                        logger="app.utils.moments_generation_service",
+                        logger="app.services.ai.generation_service",
                         function="process_moments_generation_async",
                         operation=operation,
                         event="file_operation_error",
@@ -1748,7 +1748,7 @@ def process_moments_generation_async(
                 
                 duration = time.time() - start_time
                 log_operation_complete(
-                    logger="app.utils.moments_generation_service",
+                    logger="app.services.ai.generation_service",
                     function="process_moments_generation_async",
                     operation=operation,
                     message="Moment generation completed successfully",
@@ -1762,7 +1762,7 @@ def process_moments_generation_async(
         except Exception as e:
             duration = time.time() - start_time
             log_operation_error(
-                logger="app.utils.moments_generation_service",
+                logger="app.services.ai.generation_service",
                 function="process_moments_generation_async",
                 operation=operation,
                 error=e,

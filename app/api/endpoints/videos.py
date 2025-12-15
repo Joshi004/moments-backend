@@ -9,10 +9,10 @@ import time
 import cv2
 
 from app.models.schemas import VideoResponse
-from app.utils.video_utils import get_video_files, get_videos_directory
-from app.utils.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
-from app.utils.audio_service import check_audio_exists
-from app.utils.transcript_service import check_transcript_exists
+from app.utils.video import get_video_files, get_videos_directory
+from app.services.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
+from app.services.audio_service import check_audio_exists
+from app.services.transcript_service import check_transcript_exists
 from app.core.logging import (
     log_event,
     log_operation_start,

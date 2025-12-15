@@ -137,7 +137,7 @@ def generate_thumbnails_for_all_videos() -> dict:
     Returns:
         Dictionary with 'success' count and 'failed' list
     """
-    from app.utils.video_utils import get_video_files
+    from app.utils.video import get_video_files
     
     video_files = get_video_files()
     results = {

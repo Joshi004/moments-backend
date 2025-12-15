@@ -11,9 +11,9 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
-from app.utils.ai_request_logger import log_ai_request_response
-from app.utils.model_prompt_config import get_refinement_prompt_config
-from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
+from app.services.ai.request_logger import log_ai_request_response
+from app.services.ai.prompt_config import get_refinement_prompt_config
+from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +325,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
     start_time = time.time()
     
     log_operation_start(
-        logger="app.utils.refine_moment_service",
+        logger="app.services.ai.refinement_service",
         function="parse_refinement_response",
         operation=operation,
         message="Parsing refinement response",
@@ -398,7 +398,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         # Also log to structured JSON log
         log_event(
             level="INFO",
-            logger="app.utils.refine_moment_service",
+            logger="app.services.ai.refinement_service",
             function="parse_refinement_response",
             operation="parse_refinement_response",
             event="content_extracted",
@@ -490,7 +490,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         duration = time.time() - start_time
         
         log_operation_complete(
-            logger="app.utils.refine_moment_service",
+            logger="app.services.ai.refinement_service",
             function="parse_refinement_response",
             operation=operation,
             message="Successfully parsed refinement timestamps",
@@ -507,7 +507,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         duration = time.time() - start_time
         log_event(
             level="ERROR",
-            logger="app.utils.refine_moment_service",
+            logger="app.services.ai.refinement_service",
             function="parse_refinement_response",
             operation=operation,
             event="parse_error",
@@ -523,7 +523,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
         log_event(
             level="ERROR",
-            logger="app.utils.refine_moment_service",
+            logger="app.services.ai.refinement_service",
             function="parse_refinement_response",
             operation=operation,
             event="parse_error",
@@ -538,7 +538,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.refine_moment_service",
+            logger="app.services.ai.refinement_service",
             function="parse_refinement_response",
             operation=operation,
             error=e,
@@ -663,11 +663,11 @@ def process_moment_refinement_async(
     def refine():
         try:
             # Import here to avoid circular imports
-            from app.utils.transcript_service import load_transcript
-            from app.utils.moments_service import load_moments, add_moment, get_moment_by_id
-            from app.utils.moments_generation_service import ssh_tunnel, call_ai_model
+            from app.services.transcript_service import load_transcript
+            from app.services.moments_service import load_moments, add_moment, get_moment_by_id
+            from app.services.ai.generation_service import ssh_tunnel, call_ai_model
             from app.utils.model_config import get_model_config, get_clipping_config
-            from app.utils.video_utils import get_video_by_filename
+            from app.utils.video import get_video_by_filename
             import cv2
             
             logger.info(f"Starting moment refinement for video {video_id}, moment {moment_id}, include_video={include_video}")
@@ -803,7 +803,7 @@ def process_moment_refinement_async(
                     # Also log to structured JSON log
                     log_event(
                         level="INFO",
-                        logger="app.utils.refine_moment_service",
+                        logger="app.services.ai.refinement_service",
                         function="refine",
                         operation="ai_model_response",
                         event="raw_response_received",

@@ -6,14 +6,14 @@ from fastapi import APIRouter, HTTPException
 import time
 
 from app.models.schemas import MessageResponse
-from app.utils.video_utils import get_video_files
-from app.utils.audio_service import (
+from app.utils.video import get_video_files
+from app.services.audio_service import (
     check_audio_exists,
     start_processing_job,
     is_processing,
     process_audio_async
 )
-from app.utils.transcript_service import (
+from app.services.transcript_service import (
     check_transcript_exists,
     start_transcription_job,
     is_transcribing,

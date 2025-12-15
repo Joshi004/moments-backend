@@ -106,7 +106,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
     start_time = time.time()
     
     log_operation_start(
-        logger="app.utils.transcript_service",
+        logger="app.services.transcript_service",
         function="save_transcript",
         operation=operation,
         message="Saving transcript to file",
@@ -132,7 +132,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
         duration = time.time() - start_time
         
         log_operation_complete(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="save_transcript",
             operation=operation,
             message="Successfully saved transcript",
@@ -147,7 +147,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="save_transcript",
             operation=operation,
             error=e,
@@ -269,7 +269,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         ssh_remote_port = config['ssh_remote_port']
         
         log_operation_start(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="create_ssh_tunnel",
             operation=operation,
             message="Creating SSH tunnel to transcription service",
@@ -332,7 +332,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         
         log_event(
             level="DEBUG",
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="create_ssh_tunnel",
             operation=operation,
             event="external_call_start",
@@ -383,7 +383,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             duration = time.time() - start_time
             log_event(
                 level="ERROR",
-                logger="app.utils.transcript_service",
+                logger="app.services.transcript_service",
                 function="create_ssh_tunnel",
                 operation=operation,
                 event="ssh_tunnel_error",
@@ -431,7 +431,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             if result == 0:
                 log_event(
                     level="INFO",
-                    logger="app.utils.transcript_service",
+                    logger="app.services.transcript_service",
                     function="create_ssh_tunnel",
                     operation=operation,
                     event="ssh_tunnel_complete",
@@ -448,7 +448,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             else:
                 log_event(
                     level="ERROR",
-                    logger="app.utils.transcript_service",
+                    logger="app.services.transcript_service",
                     function="create_ssh_tunnel",
                     operation=operation,
                     event="ssh_tunnel_error",
@@ -466,7 +466,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         except Exception as e:
             duration = time.time() - start_time
             log_operation_error(
-                logger="app.utils.transcript_service",
+                logger="app.services.transcript_service",
                 function="create_ssh_tunnel",
                 operation=operation,
                 error=e,
@@ -479,7 +479,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="create_ssh_tunnel",
             operation=operation,
             error=e,
@@ -564,7 +564,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
     service_url = get_transcription_service_url()
     
     log_operation_start(
-        logger="app.utils.transcript_service",
+        logger="app.services.transcript_service",
         function="call_transcription_service",
         operation=operation,
         message="Calling transcription service",
@@ -580,7 +580,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
         
         log_event(
             level="DEBUG",
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="call_transcription_service",
             operation=operation,
             event="external_call_start",
@@ -599,7 +599,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
         
         log_event(
             level="DEBUG",
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="call_transcription_service",
             operation=operation,
             event="external_call_complete",
@@ -617,7 +617,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
         processing_time = result.get('processing_time', 0)
         
         log_operation_complete(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="call_transcription_service",
             operation=operation,
             message="Transcription service call completed",
@@ -635,7 +635,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
     except requests.exceptions.RequestException as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="call_transcription_service",
             operation=operation,
             error=e,
@@ -649,7 +649,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.transcript_service",
+            logger="app.services.transcript_service",
             function="call_transcription_service",
             operation=operation,
             error=e,
@@ -765,7 +765,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
     
     log_event(
         level="INFO",
-        logger="app.utils.transcript_service",
+        logger="app.services.transcript_service",
         function="process_transcription_async",
         operation=operation,
         event="operation_start",
@@ -785,7 +785,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
             
             log_event(
                 level="DEBUG",
-                logger="app.utils.transcript_service",
+                logger="app.services.transcript_service",
                 function="process_transcription_async",
                 operation=operation,
                 event="operation_start",
@@ -818,7 +818,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
             
             log_event(
                 level="INFO",
-                logger="app.utils.transcript_service",
+                logger="app.services.transcript_service",
                 function="process_transcription_async",
                 operation=operation,
                 event="operation_complete",
@@ -828,7 +828,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
             
         except Exception as e:
             log_operation_error(
-                logger="app.utils.transcript_service",
+                logger="app.services.transcript_service",
                 function="process_transcription_async",
                 operation=operation,
                 error=e,
@@ -841,7 +841,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
             if tunnel_process is not None:
                 log_event(
                     level="DEBUG",
-                    logger="app.utils.transcript_service",
+                    logger="app.services.transcript_service",
                     function="process_transcription_async",
                     operation=operation,
                     event="ssh_tunnel_start",
@@ -856,7 +856,7 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
     
     log_event(
         level="DEBUG",
-        logger="app.utils.transcript_service",
+        logger="app.services.transcript_service",
         function="process_transcription_async",
         operation=operation,
         event="operation_complete",

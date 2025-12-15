@@ -130,7 +130,7 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
     start_time = time.time()
     
     log_operation_start(
-        logger="app.utils.moments_service",
+        logger="app.services.moments_service",
         function="save_moments",
         operation=operation,
         message="Saving moments to file",
@@ -155,7 +155,7 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
         duration = time.time() - start_time
         
         log_operation_complete(
-            logger="app.utils.moments_service",
+            logger="app.services.moments_service",
             function="save_moments",
             operation=operation,
             message="Successfully saved moments",
@@ -171,7 +171,7 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
-            logger="app.utils.moments_service",
+            logger="app.services.moments_service",
             function="save_moments",
             operation=operation,
             error=e,
@@ -201,7 +201,7 @@ def validate_moment(moment: Dict, existing_moments: List[Dict], video_duration: 
     
     log_event(
         level="DEBUG",
-        logger="app.utils.moments_service",
+        logger="app.services.moments_service",
         function="validate_moment",
         operation=operation,
         event="validation_start",
@@ -263,7 +263,7 @@ def validate_moment(moment: Dict, existing_moments: List[Dict], video_duration: 
             if start_time < existing_end and end_time > existing_start:
                 log_event(
                     level="DEBUG",
-                    logger="app.utils.moments_service",
+                    logger="app.services.moments_service",
                     function="validate_moment",
                     operation=operation,
                     event="validation_error",
@@ -280,7 +280,7 @@ def validate_moment(moment: Dict, existing_moments: List[Dict], video_duration: 
     
     log_event(
         level="DEBUG",
-        logger="app.utils.moments_service",
+        logger="app.services.moments_service",
         function="validate_moment",
         operation=operation,
         event="validation_complete",

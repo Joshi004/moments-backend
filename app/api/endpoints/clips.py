@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException
 import time
 
 from app.models.schemas import ExtractClipsRequest, VideoAvailabilityResponse
-from app.utils.video_utils import get_video_files
-from app.utils.moments_service import load_moments, get_moment_by_id
-from app.utils.video_clipping_service import (
+from app.utils.video import get_video_files
+from app.services.moments_service import load_moments, get_moment_by_id
+from app.services.video_clipping_service import (
     start_clip_extraction_job,
     is_extracting_clips,
     get_clip_extraction_status,
@@ -16,9 +16,9 @@ from app.utils.video_clipping_service import (
     check_clip_exists,
     get_clip_duration
 )
-from app.utils.transcript_service import load_transcript
+from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_video_clip_url, get_duration_tolerance, get_clipping_config
-from app.utils.timestamp_utils import calculate_padded_boundaries, extract_words_in_range
+from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
 from app.core.logging import (
     log_event,
     log_operation_start,
