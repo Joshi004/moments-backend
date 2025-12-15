@@ -1,0 +1,577 @@
+"""
+Moment-related API endpoints.
+Handles moment CRUD, generation, and refinement operations.
+"""
+from fastapi import APIRouter, HTTPException
+from pathlib import Path
+import time
+import cv2
+
+from app.models.schemas import (
+    MomentResponse,
+    GenerateMomentsRequest,
+    RefineMomentRequest,
+    MessageResponse,
+    JobStatusResponse
+)
+from app.utils.video_utils import get_video_files
+from app.utils.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
+from app.utils.audio_service import check_audio_exists
+from app.utils.transcript_service import check_transcript_exists
+from app.utils.moments_generation_service import (
+    start_generation_job,
+    is_generating,
+    process_moments_generation_async,
+    get_generation_status
+)
+from app.utils.refine_moment_service import (
+    start_refinement_job,
+    is_refining,
+    process_moment_refinement_async,
+    get_refinement_status
+)
+from app.utils.video_clipping_service import check_clip_exists
+from app.utils.model_config import model_supports_video, get_video_clip_url
+from app.core.logging import (
+    log_event,
+    log_operation_start,
+    log_operation_complete,
+    log_operation_error,
+    get_request_id,
+    log_status_check
+)
+
+router = APIRouter()
+
+
+def get_video_duration(video_path: Path) -> float:
+    """Get video duration in seconds."""
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            return 0.0
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        duration = frame_count / fps if fps > 0 else 0.0
+        cap.release()
+        return duration
+    except Exception:
+        return 0.0
+
+
+@router.get("/videos/{video_id}/moments", response_model=list[MomentResponse])
+async def get_moments(video_id: str):
+    """Get all moments for a video."""
+    start_time = time.time()
+    operation = "get_moments"
+    
+    log_operation_start(
+        logger="app.api.endpoints.moments",
+        function="get_moments",
+        operation=operation,
+        message=f"Getting moments for {video_id}",
+        context={"video_id": video_id, "request_id": get_request_id()}
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video by matching stem
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            log_event(
+                level="WARNING",
+                logger="app.api.endpoints.moments",
+                function="get_moments",
+                operation=operation,
+                event="validation_error",
+                message="Video not found",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        moments = load_moments(video_file.name)
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.moments",
+            function="get_moments",
+            operation=operation,
+            message="Successfully retrieved moments",
+            context={
+                "video_id": video_id,
+                "moment_count": len(moments),
+                "duration_seconds": duration
+            }
+        )
+        
+        return [MomentResponse(**moment) for moment in moments]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.moments",
+            function="get_moments",
+            operation=operation,
+            error=e,
+            message="Error getting moments",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.post("/videos/{video_id}/moments", response_model=MomentResponse, status_code=201)
+async def create_moment(video_id: str, moment: MomentResponse):
+    """Add a new moment to a video."""
+    start_time = time.time()
+    operation = "create_moment"
+    
+    log_operation_start(
+        logger="app.api.endpoints.moments",
+        function="create_moment",
+        operation=operation,
+        message=f"Creating moment for {video_id}",
+        context={
+            "video_id": video_id,
+            "moment": {
+                "start_time": moment.start_time,
+                "end_time": moment.end_time,
+                "title": moment.title
+            },
+            "request_id": get_request_id()
+        }
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video by matching stem
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get video duration for validation
+        video_duration = get_video_duration(video_file)
+        if video_duration <= 0:
+            raise HTTPException(status_code=500, detail="Could not determine video duration")
+        
+        # Convert to dict
+        moment_dict = {
+            "start_time": moment.start_time,
+            "end_time": moment.end_time,
+            "title": moment.title
+        }
+        
+        # Add moment with validation
+        success, error_message, created_moment = add_moment(video_file.name, moment_dict, video_duration)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=error_message)
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.moments",
+            function="create_moment",
+            operation=operation,
+            message="Successfully created moment",
+            context={
+                "video_id": video_id,
+                "moment_id": created_moment.get("id"),
+                "duration_seconds": duration
+            }
+        )
+        
+        return MomentResponse(**created_moment)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.moments",
+            function="create_moment",
+            operation=operation,
+            error=e,
+            message="Error creating moment",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.post("/videos/{video_id}/generate-moments")
+async def generate_moments(video_id: str, request: GenerateMomentsRequest):
+    """Start moment generation process for a video."""
+    start_time = time.time()
+    operation = "generate_moments"
+    
+    log_operation_start(
+        logger="app.api.endpoints.moments",
+        function="generate_moments",
+        operation=operation,
+        message=f"Starting moment generation for {video_id}",
+        context={
+            "video_id": video_id,
+            "request_params": {
+                "model": request.model,
+                "temperature": request.temperature,
+                "min_moment_length": request.min_moment_length,
+                "max_moment_length": request.max_moment_length,
+                "min_moments": request.min_moments,
+                "max_moments": request.max_moments,
+                "has_user_prompt": request.user_prompt is not None
+            },
+            "request_id": get_request_id()
+        }
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Check prerequisites
+        audio_filename = video_file.stem + ".wav"
+        
+        if not check_audio_exists(video_file.name):
+            raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
+        
+        if not check_transcript_exists(audio_filename):
+            raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
+        
+        # Check if already processing
+        if is_generating(video_id):
+            raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
+        
+        # Default prompt
+        default_prompt = """Analyze the following video transcript and identify the most important, engaging, or valuable moments. Each moment should represent a distinct topic, insight, or highlight that would be meaningful to viewers.
+
+Generate moments that:
+- Capture key insights, turning points, or memorable segments
+- Have clear, descriptive titles (5-15 words)
+- Represent complete thoughts or concepts
+- Are non-overlapping and well-spaced throughout the video"""
+        
+        user_prompt = request.user_prompt if request.user_prompt else default_prompt
+        
+        # Start generation job
+        if not start_generation_job(video_id):
+            raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
+        
+        # Start async processing
+        process_moments_generation_async(
+            video_id=video_id,
+            video_filename=video_file.name,
+            user_prompt=user_prompt,
+            min_moment_length=request.min_moment_length,
+            max_moment_length=request.max_moment_length,
+            min_moments=request.min_moments,
+            max_moments=request.max_moments,
+            model=request.model,
+            temperature=request.temperature
+        )
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.moments",
+            function="generate_moments",
+            operation=operation,
+            message="Moment generation job started",
+            context={"video_id": video_id, "model": request.model, "duration_seconds": duration}
+        )
+        
+        return {"message": "Moment generation started", "video_id": video_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.moments",
+            function="generate_moments",
+            operation=operation,
+            error=e,
+            message="Error starting moment generation",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/generation-status")
+async def get_generation_status_endpoint(video_id: str):
+    """Get moment generation status for a video."""
+    start_time = time.time()
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            duration = time.time() - start_time
+            log_status_check(
+                endpoint_type="generation",
+                video_id=video_id,
+                moment_id=None,
+                status="error",
+                status_code=404,
+                duration=duration
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        status = get_generation_status(video_id)
+        
+        duration = time.time() - start_time
+        status_value = status.get("status") if status else "not_started"
+        
+        log_status_check(
+            endpoint_type="generation",
+            video_id=video_id,
+            moment_id=None,
+            status=status_value,
+            status_code=200,
+            duration=duration
+        )
+        
+        if status is None:
+            return {"status": "not_started", "started_at": None}
+        
+        return status
+        
+    except HTTPException as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="generation",
+            video_id=video_id,
+            moment_id=None,
+            status="error",
+            status_code=e.status_code,
+            duration=duration
+        )
+        raise
+
+
+@router.post("/videos/{video_id}/moments/{moment_id}/refine")
+async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequest):
+    """Start moment refinement process."""
+    start_time = time.time()
+    operation = "refine_moment"
+    
+    log_operation_start(
+        logger="app.api.endpoints.moments",
+        function="refine_moment",
+        operation=operation,
+        message=f"Starting moment refinement for {video_id}/{moment_id}",
+        context={
+            "video_id": video_id,
+            "moment_id": moment_id,
+            "request_params": {
+                "model": request.model,
+                "temperature": request.temperature,
+                "has_user_prompt": request.user_prompt is not None,
+                "include_video": request.include_video
+            },
+            "request_id": get_request_id()
+        }
+    )
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Check if moment exists
+        moment = get_moment_by_id(video_file.name, moment_id)
+        if moment is None:
+            raise HTTPException(status_code=404, detail="Moment not found")
+        
+        # Check prerequisites
+        audio_filename = video_file.stem + ".wav"
+        
+        if not check_audio_exists(video_file.name):
+            raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
+        
+        if not check_transcript_exists(audio_filename):
+            raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
+        
+        # Check if already processing
+        if is_refining(video_id, moment_id):
+            raise HTTPException(status_code=409, detail="Moment refinement already in progress")
+        
+        # Default prompt
+        default_prompt = """Before refining the timestamps, let's define what a moment is: A moment is a segment of a video (with its corresponding transcript) that represents something engaging, meaningful, or valuable to the viewer. A moment should be a complete, coherent thought or concept that makes sense on its own.
+
+Now, analyze the word-level transcript and identify the precise start and end timestamps for this moment. The current timestamps may be slightly off. Find the exact point where this topic/segment naturally begins and ends.
+
+Guidelines:
+- Start the moment at the first word that introduces the topic or begins the engaging segment
+- End the moment at the last word that concludes the thought or completes the concept
+- Be precise with word boundaries
+- Ensure the moment captures complete sentences or phrases
+- The refined moment should represent a coherent, engaging segment that makes complete sense on its own"""
+        
+        user_prompt = request.user_prompt if request.user_prompt else default_prompt
+        
+        # Handle video inclusion
+        include_video = request.include_video
+        video_clip_url = None
+        
+        if include_video:
+            # Video refinement only works with qwen3_vl_fp8
+            if not model_supports_video(request.model):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model '{request.model}' does not support video. Use 'qwen3_vl_fp8' for video refinement."
+                )
+            
+            # Check if clip exists
+            if not check_clip_exists(moment_id, video_file.name):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Video clip not available. Extract clips first or disable video refinement."
+                )
+            
+            video_clip_url = get_video_clip_url(moment_id, video_file.name)
+        
+        # Start refinement job
+        if not start_refinement_job(video_id, moment_id):
+            raise HTTPException(status_code=409, detail="Moment refinement already in progress")
+        
+        # Start async processing
+        process_moment_refinement_async(
+            video_id=video_id,
+            moment_id=moment_id,
+            video_filename=video_file.name,
+            user_prompt=user_prompt,
+            model=request.model,
+            temperature=request.temperature,
+            include_video=include_video,
+            video_clip_url=video_clip_url
+        )
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.moments",
+            function="refine_moment",
+            operation=operation,
+            message="Moment refinement job started",
+            context={
+                "video_id": video_id,
+                "moment_id": moment_id,
+                "model": request.model,
+                "duration_seconds": duration
+            }
+        )
+        
+        return {
+            "message": "Moment refinement started",
+            "video_id": video_id,
+            "moment_id": moment_id,
+            "include_video": include_video
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.moments",
+            function="refine_moment",
+            operation=operation,
+            error=e,
+            message="Error starting moment refinement",
+            context={"video_id": video_id, "moment_id": moment_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/refinement-status/{moment_id}")
+async def get_refinement_status_endpoint(video_id: str, moment_id: str):
+    """Get moment refinement status."""
+    start_time = time.time()
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            duration = time.time() - start_time
+            log_status_check(
+                endpoint_type="refinement",
+                video_id=video_id,
+                moment_id=moment_id,
+                status="error",
+                status_code=404,
+                duration=duration
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        status = get_refinement_status(video_id, moment_id)
+        
+        duration = time.time() - start_time
+        status_value = status.get("status") if status else "not_started"
+        
+        log_status_check(
+            endpoint_type="refinement",
+            video_id=video_id,
+            moment_id=moment_id,
+            status=status_value,
+            status_code=200,
+            duration=duration
+        )
+        
+        if status is None:
+            return {"status": "not_started", "started_at": None}
+        
+        return status
+        
+    except HTTPException as e:
+        duration = time.time() - start_time
+        log_status_check(
+            endpoint_type="refinement",
+            video_id=video_id,
+            moment_id=moment_id,
+            status="error",
+            status_code=e.status_code,
+            duration=duration
+        )
+        raise
+
