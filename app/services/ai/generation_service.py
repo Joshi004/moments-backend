@@ -19,13 +19,12 @@ from app.utils.logging_config import (
 )
 from app.services.ai.request_logger import log_ai_request_response
 from app.services.ai.prompt_config import get_model_prompt_config, get_response_format_param
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# In-memory job tracking dictionary for moment generation
-# Structure: {video_id: {"status": "processing"|"completed"|"failed", "started_at": timestamp}}
-_generation_jobs: Dict[str, Dict] = {}
-_generation_lock = threading.Lock()
+# Job repository for distributed job tracking
+job_repo = JobRepository()
 
 # Hardcoded max_tokens for all models
 MAX_TOKENS = 15000
@@ -1321,119 +1320,7 @@ def parse_moments_response(response: Dict) -> List[Dict]:
         raise ValueError(f"Error parsing response: {str(e)}")
 
 
-def start_generation_job(video_id: str) -> bool:
-    """
-    Register a new moment generation job.
-    
-    Args:
-        video_id: ID of the video (filename stem)
-    
-    Returns:
-        True if job was registered, False if already processing
-    """
-    with _generation_lock:
-        # Check if job exists and is currently processing
-        if video_id in _generation_jobs:
-            job_status = _generation_jobs[video_id].get("status", "")
-            if job_status == "processing":
-                return False
-            # If job is completed or failed, we can start a new one
-            # Remove the old job entry
-            del _generation_jobs[video_id]
-        
-        _generation_jobs[video_id] = {
-            "status": "processing",
-            "started_at": time.time()
-        }
-        return True
-
-
-def complete_generation_job(video_id: str, success: bool = True) -> None:
-    """
-    Mark a generation job as complete.
-    
-    Args:
-        video_id: ID of the video
-        success: True if processing succeeded, False otherwise
-    """
-    with _generation_lock:
-        if video_id in _generation_jobs:
-            _generation_jobs[video_id]["status"] = "completed" if success else "failed"
-
-
-def is_generating(video_id: str) -> bool:
-    """
-    Check if a video is currently generating moments.
-    
-    Args:
-        video_id: ID of the video
-    
-    Returns:
-        True if generating, False otherwise
-    """
-    with _generation_lock:
-        if video_id not in _generation_jobs:
-            return False
-        status = _generation_jobs[video_id].get("status", "")
-        return status == "processing"
-
-
-def get_generation_jobs() -> Dict[str, List[Dict]]:
-    """
-    Get all active generation jobs.
-    
-    Returns:
-        Dictionary with 'active_jobs' count and 'jobs' list
-    """
-    with _generation_lock:
-        # Clean up completed/failed jobs older than 30 seconds
-        current_time = time.time()
-        jobs_to_remove = []
-        
-        for video_id, job_info in _generation_jobs.items():
-            if job_info["status"] != "processing":
-                # Remove completed/failed jobs after 30 seconds
-                if current_time - job_info["started_at"] > 30:
-                    jobs_to_remove.append(video_id)
-        
-        for video_id in jobs_to_remove:
-            del _generation_jobs[video_id]
-        
-        # Get active generation jobs
-        active_jobs = [
-            {
-                "video_id": video_id,
-                "status": job_info["status"]
-            }
-            for video_id, job_info in _generation_jobs.items()
-            if job_info["status"] == "processing"
-        ]
-        
-        return {
-            "active_jobs": len(active_jobs),
-            "jobs": active_jobs
-        }
-
-
-def get_generation_status(video_id: str) -> Optional[Dict]:
-    """
-    Get generation status for a specific video.
-    
-    Args:
-        video_id: ID of the video
-    
-    Returns:
-        Dictionary with 'status' and 'started_at', or None if no job exists
-    """
-    with _generation_lock:
-        if video_id not in _generation_jobs:
-            return None
-        
-        job_info = _generation_jobs[video_id]
-        return {
-            "status": job_info.get("status", "unknown"),
-            "started_at": job_info.get("started_at", 0)
-        }
+# Job management functions now handled by JobRepository
 
 
 def process_moments_generation_async(
@@ -1744,7 +1631,11 @@ def process_moments_generation_async(
                     raise Exception("Failed to save moments to file")
                 
                 # Mark job as complete
-                complete_generation_job(video_id, success=True)
+                job_repo.update_status(
+                    JobType.MOMENT_GENERATION,
+                    video_id,
+                    JobStatus.COMPLETED
+                )
                 
                 duration = time.time() - start_time
                 log_operation_complete(
@@ -1772,7 +1663,12 @@ def process_moments_generation_async(
                     "duration_seconds": duration
                 }
             )
-            complete_generation_job(video_id, success=False)
+            job_repo.update_status(
+                JobType.MOMENT_GENERATION,
+                video_id,
+                JobStatus.FAILED,
+                error=str(e)
+            )
         finally:
             # Tunnel is closed by context manager
             pass

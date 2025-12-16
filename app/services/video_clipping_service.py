@@ -15,13 +15,12 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.timestamp import calculate_padded_boundaries
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# In-memory job tracking dictionary
-# Structure: {video_id: {"status": "processing"|"completed"|"failed", "started_at": timestamp, "total_moments": int, "processed_moments": int, "failed_moments": int}}
-_clip_extraction_jobs: Dict[str, Dict] = {}
-_job_lock = threading.Lock()
+# Job repository for distributed job tracking
+job_repo = JobRepository()
 
 
 def get_moment_clips_directory() -> Path:
@@ -337,61 +336,18 @@ def extract_video_clip(
         return None
 
 
-def start_clip_extraction_job(video_id: str) -> bool:
-    """
-    Register a clip extraction job for a video.
-    
-    Args:
-        video_id: ID of the video
-        
-    Returns:
-        True if job was registered, False if already processing
-    """
-    with _job_lock:
-        if video_id in _clip_extraction_jobs:
-            return False
-        _clip_extraction_jobs[video_id] = {
-            "status": "processing",
-            "started_at": time.time(),
-            "total_moments": 0,
-            "processed_moments": 0,
-            "failed_moments": 0
-        }
-        return True
-
-
-def is_extracting_clips(video_id: str) -> bool:
-    """Check if clip extraction is in progress for a video."""
-    with _job_lock:
-        if video_id not in _clip_extraction_jobs:
-            return False
-        status = _clip_extraction_jobs[video_id]["status"]
-        return status == "processing"
-
-
-def get_clip_extraction_status(video_id: str) -> Optional[Dict]:
-    """Get clip extraction status for a video."""
-    with _job_lock:
-        if video_id not in _clip_extraction_jobs:
-            return None
-        return _clip_extraction_jobs[video_id].copy()
-
+# Job management functions now handled by JobRepository
 
 def update_clip_extraction_progress(video_id: str, total: int, processed: int, failed: int):
     """Update clip extraction progress."""
-    with _job_lock:
-        if video_id in _clip_extraction_jobs:
-            _clip_extraction_jobs[video_id]["total_moments"] = total
-            _clip_extraction_jobs[video_id]["processed_moments"] = processed
-            _clip_extraction_jobs[video_id]["failed_moments"] = failed
-
-
-def complete_clip_extraction_job(video_id: str, success: bool):
-    """Mark clip extraction job as completed or failed."""
-    with _job_lock:
-        if video_id in _clip_extraction_jobs:
-            _clip_extraction_jobs[video_id]["status"] = "completed" if success else "failed"
-            _clip_extraction_jobs[video_id]["completed_at"] = time.time()
+    job_repo.update_status(
+        JobType.CLIP_EXTRACTION,
+        video_id,
+        JobStatus.PROCESSING,
+        total_moments=total,
+        processed_moments=processed,
+        failed_moments=failed
+    )
 
 
 def extract_clips_for_video(
@@ -705,11 +661,20 @@ def process_clip_extraction_async(
             
             # Mark as completed
             success = results.get("failed", 0) < results.get("total", 1)
-            complete_clip_extraction_job(video_id, success)
+            job_repo.update_status(
+                JobType.CLIP_EXTRACTION,
+                video_id,
+                JobStatus.COMPLETED if success else JobStatus.FAILED
+            )
             
         except Exception as e:
             logger.error(f"Error in clip extraction worker: {e}")
-            complete_clip_extraction_job(video_id, False)
+            job_repo.update_status(
+                JobType.CLIP_EXTRACTION,
+                video_id,
+                JobStatus.FAILED,
+                error=str(e)
+            )
     
     # Start extraction in background thread
     thread = threading.Thread(target=extraction_worker, daemon=True)

@@ -9,13 +9,14 @@ from app.models.schemas import ExtractClipsRequest, VideoAvailabilityResponse
 from app.utils.video import get_video_files
 from app.services.moments_service import load_moments, get_moment_by_id
 from app.services.video_clipping_service import (
-    start_clip_extraction_job,
-    is_extracting_clips,
-    get_clip_extraction_status,
     process_clip_extraction_async,
     check_clip_exists,
     get_clip_duration
 )
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
+
+# Initialize job repository
+job_repo = JobRepository()
 from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_video_clip_url, get_duration_tolerance, get_clipping_config
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
@@ -69,11 +70,12 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             raise HTTPException(status_code=400, detail="No moments found for this video")
         
         # Check if already processing
-        if is_extracting_clips(video_id):
+        if job_repo.is_processing(JobType.CLIP_EXTRACTION, video_id):
             raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
         
         # Start extraction job
-        if not start_clip_extraction_job(video_id):
+        job = job_repo.create(JobType.CLIP_EXTRACTION, video_id)
+        if job is None:
             raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
         
         # Start async processing
@@ -138,10 +140,13 @@ async def get_clip_extraction_status_endpoint(video_id: str):
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
-        status = get_clip_extraction_status(video_id)
+        # Get status and update last poll
+        job = job_repo.get(JobType.CLIP_EXTRACTION, video_id)
+        if job:
+            job_repo.update_last_poll(JobType.CLIP_EXTRACTION, video_id)
         
         duration = time.time() - start_time
-        status_value = status.get("status") if status else "not_started"
+        status_value = job.get("status") if job else "not_started"
         
         log_status_check(
             endpoint_type="clip_extraction",
@@ -152,10 +157,10 @@ async def get_clip_extraction_status_endpoint(video_id: str):
             duration=duration
         )
         
-        if status is None:
+        if job is None:
             return {"status": "not_started", "started_at": None}
         
-        return status
+        return {"status": job.get("status"), "started_at": job.get("started_at")}
         
     except HTTPException as e:
         duration = time.time() - start_time

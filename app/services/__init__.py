@@ -10,10 +10,6 @@ from app.services.audio_service import (
     check_audio_exists,
     get_audio_url,
     extract_audio_from_video,
-    start_processing_job,
-    complete_processing_job,
-    is_processing,
-    get_processing_jobs,
     process_audio_async
 )
 
@@ -23,10 +19,6 @@ from app.services.transcript_service import (
     check_transcript_exists,
     load_transcript,
     save_transcript,
-    start_transcription_job,
-    complete_transcription_job,
-    is_transcribing,
-    get_transcription_jobs,
     process_transcription_async
 )
 
@@ -49,10 +41,6 @@ from app.services.video_clipping_service import (
     get_video_duration,
     get_clip_duration,
     extract_video_clip,
-    start_clip_extraction_job,
-    complete_clip_extraction_job,
-    is_extracting_clips,
-    get_clip_extraction_status,
     process_clip_extraction_async,
     extract_clips_for_video
 )
@@ -73,10 +61,6 @@ __all__ = [
     "check_audio_exists",
     "get_audio_url",
     "extract_audio_from_video",
-    "start_processing_job",
-    "complete_processing_job",
-    "is_processing",
-    "get_processing_jobs",
     "process_audio_async",
     
     # Transcript service
@@ -85,10 +69,6 @@ __all__ = [
     "check_transcript_exists",
     "load_transcript",
     "save_transcript",
-    "start_transcription_job",
-    "complete_transcription_job",
-    "is_transcribing",
-    "get_transcription_jobs",
     "process_transcription_async",
     
     # Moments service
@@ -109,10 +89,6 @@ __all__ = [
     "get_video_duration",
     "get_clip_duration",
     "extract_video_clip",
-    "start_clip_extraction_job",
-    "complete_clip_extraction_job",
-    "is_extracting_clips",
-    "get_clip_extraction_status",
     "process_clip_extraction_async",
     "extract_clips_for_video",
     

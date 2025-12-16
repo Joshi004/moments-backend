@@ -77,6 +77,19 @@ class Settings(BaseSettings):
     video_server_clips_path: str = "moment_clips"
     duration_tolerance: float = 0.5  # Tolerance for transcript-video duration matching
     
+    # Redis Configuration
+    redis_host: str = "127.0.0.1"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    
+    # Job Lock Configuration
+    job_lock_ttl: int = 900      # 15 minutes
+    job_result_ttl: int = 30     # 30 seconds post-completion
+    
+    # Container identification
+    container_id: str = os.getenv("HOSTNAME", f"backend-{os.getpid()}")
+    
     @property
     def video_server_base_url(self) -> str:
         """Get the video server base URL using the backend port."""

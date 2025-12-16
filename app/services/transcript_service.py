@@ -17,13 +17,12 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.model_config import get_model_config, get_transcription_service_url
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# In-memory job tracking dictionary for transcriptions
-# Structure: {video_id: {"status": "processing"|"completed"|"failed", "started_at": timestamp, "audio_filename": str}}
-_transcription_jobs: Dict[str, Dict] = {}
-_transcription_lock = threading.Lock()
+# Job repository for distributed job tracking
+job_repo = JobRepository()
 
 # Audio base URL (not part of model config)
 AUDIO_BASE_URL = "http://localhost:8080/audios"
@@ -662,95 +661,7 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
         return None
 
 
-def start_transcription_job(video_id: str, audio_filename: str) -> bool:
-    """
-    Register a new transcription job.
-    
-    Args:
-        video_id: ID of the video (filename stem)
-        audio_filename: Name of the audio file
-    
-    Returns:
-        True if job was registered, False if already processing
-    """
-    with _transcription_lock:
-        if video_id in _transcription_jobs:
-            return False
-        
-        _transcription_jobs[video_id] = {
-            "status": "processing",
-            "started_at": time.time(),
-            "audio_filename": audio_filename
-        }
-        return True
-
-
-def complete_transcription_job(video_id: str, success: bool = True) -> None:
-    """
-    Mark a transcription job as complete.
-    
-    Args:
-        video_id: ID of the video
-        success: True if processing succeeded, False otherwise
-    """
-    with _transcription_lock:
-        if video_id in _transcription_jobs:
-            _transcription_jobs[video_id]["status"] = "completed" if success else "failed"
-
-
-def is_transcribing(video_id: str) -> bool:
-    """
-    Check if a video is currently being transcribed.
-    
-    Args:
-        video_id: ID of the video
-    
-    Returns:
-        True if transcribing, False otherwise
-    """
-    with _transcription_lock:
-        if video_id not in _transcription_jobs:
-            return False
-        status = _transcription_jobs[video_id].get("status", "")
-        return status == "processing"
-
-
-def get_transcription_jobs() -> Dict[str, List[Dict]]:
-    """
-    Get all active transcription jobs.
-    
-    Returns:
-        Dictionary with 'active_jobs' count and 'jobs' list
-    """
-    with _transcription_lock:
-        # Clean up completed/failed jobs older than 30 seconds
-        current_time = time.time()
-        jobs_to_remove = []
-        
-        for video_id, job_info in _transcription_jobs.items():
-            if job_info["status"] != "processing":
-                # Remove completed/failed jobs after 30 seconds
-                if current_time - job_info["started_at"] > 30:
-                    jobs_to_remove.append(video_id)
-        
-        for video_id in jobs_to_remove:
-            del _transcription_jobs[video_id]
-        
-        # Get active transcription jobs
-        active_jobs = [
-            {
-                "video_id": video_id,
-                "status": job_info["status"],
-                "audio_filename": job_info.get("audio_filename", "")
-            }
-            for video_id, job_info in _transcription_jobs.items()
-            if job_info["status"] == "processing"
-        ]
-        
-        return {
-            "active_jobs": len(active_jobs),
-            "jobs": active_jobs
-        }
+# Job management functions now handled by JobRepository
 
 
 def process_transcription_async(video_id: str, audio_filename: str) -> None:
@@ -814,7 +725,11 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
                 raise Exception("Failed to save transcript file")
             
             # Mark job as complete
-            complete_transcription_job(video_id, success=True)
+            job_repo.update_status(
+                JobType.TRANSCRIPTION,
+                video_id,
+                JobStatus.COMPLETED
+            )
             
             log_event(
                 level="INFO",
@@ -835,7 +750,12 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
                 message="Error in async transcription processing",
                 context={"video_id": video_id}
             )
-            complete_transcription_job(video_id, success=False)
+            job_repo.update_status(
+                JobType.TRANSCRIPTION,
+                video_id,
+                JobStatus.FAILED,
+                error=str(e)
+            )
         finally:
             # Always close tunnel
             if tunnel_process is not None:
