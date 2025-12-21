@@ -19,17 +19,15 @@ from app.services.moments_service import load_moments, add_moment, get_moment_by
 from app.services.audio_service import check_audio_exists
 from app.services.transcript_service import check_transcript_exists
 from app.services.ai.generation_service import (
-    start_generation_job,
-    is_generating,
-    process_moments_generation_async,
-    get_generation_status
+    process_moments_generation_async
 )
 from app.services.ai.refinement_service import (
-    start_refinement_job,
-    is_refining,
-    process_moment_refinement_async,
-    get_refinement_status
+    process_moment_refinement_async
 )
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
+
+# Initialize job repository
+job_repo = JobRepository()
 from app.services.video_clipping_service import check_clip_exists
 from app.utils.model_config import model_supports_video, get_video_clip_url
 from app.core.logging import (
@@ -259,7 +257,7 @@ async def generate_moments(video_id: str, request: GenerateMomentsRequest):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
         # Check if already processing
-        if is_generating(video_id):
+        if job_repo.is_processing(JobType.MOMENT_GENERATION, video_id):
             raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
         
         # Default prompt
@@ -274,7 +272,8 @@ Generate moments that:
         user_prompt = request.user_prompt if request.user_prompt else default_prompt
         
         # Start generation job
-        if not start_generation_job(video_id):
+        job = job_repo.create(JobType.MOMENT_GENERATION, video_id)
+        if job is None:
             raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
         
         # Start async processing
@@ -343,10 +342,13 @@ async def get_generation_status_endpoint(video_id: str):
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
-        status = get_generation_status(video_id)
+        # Get status and update last poll
+        job = job_repo.get(JobType.MOMENT_GENERATION, video_id)
+        if job:
+            job_repo.update_last_poll(JobType.MOMENT_GENERATION, video_id)
         
         duration = time.time() - start_time
-        status_value = status.get("status") if status else "not_started"
+        status_value = job.get("status") if job else "not_started"
         
         log_status_check(
             endpoint_type="generation",
@@ -357,7 +359,7 @@ async def get_generation_status_endpoint(video_id: str):
             duration=duration
         )
         
-        if status is None:
+        if job is None:
             return {"status": "not_started", "started_at": None}
         
         return status
@@ -427,7 +429,7 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
         # Check if already processing
-        if is_refining(video_id, moment_id):
+        if job_repo.is_processing(JobType.MOMENT_REFINEMENT, video_id, moment_id):
             raise HTTPException(status_code=409, detail="Moment refinement already in progress")
         
         # Default prompt
@@ -466,7 +468,8 @@ Guidelines:
             video_clip_url = get_video_clip_url(moment_id, video_file.name)
         
         # Start refinement job
-        if not start_refinement_job(video_id, moment_id):
+        job = job_repo.create(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
+        if job is None:
             raise HTTPException(status_code=409, detail="Moment refinement already in progress")
         
         # Start async processing
@@ -544,10 +547,13 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
-        status = get_refinement_status(video_id, moment_id)
+        # Get status and update last poll
+        job = job_repo.get(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
+        if job:
+            job_repo.update_last_poll(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
         
         duration = time.time() - start_time
-        status_value = status.get("status") if status else "not_started"
+        status_value = job.get("status") if job else "not_started"
         
         log_status_check(
             endpoint_type="refinement",
@@ -558,7 +564,7 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
             duration=duration
         )
         
-        if status is None:
+        if job is None:
             return {"status": "not_started", "started_at": None}
         
         return status

@@ -14,18 +14,15 @@ from app.utils.logging_config import (
 from app.services.ai.request_logger import log_ai_request_response
 from app.services.ai.prompt_config import get_refinement_prompt_config
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# In-memory job tracking dictionary for moment refinement
-# Structure: {job_key: {"status": "processing"|"completed"|"failed", "started_at": timestamp}}
-_refinement_jobs: Dict[str, Dict] = {}
-_refinement_lock = threading.Lock()
+# Job repository for distributed job tracking
+job_repo = JobRepository()
 
 
-def get_refinement_job_key(video_id: str, moment_id: str) -> str:
-    """Generate a unique key for a refinement job."""
-    return f"{video_id}:{moment_id}"
+# Removed get_refinement_job_key - handled by JobRepository
 
 
 def extract_model_name(response: Dict) -> str:
@@ -552,89 +549,7 @@ def parse_refinement_response(response: Dict) -> Tuple[float, float]:
         raise ValueError(f"Error parsing response: {str(e)}")
 
 
-def start_refinement_job(video_id: str, moment_id: str) -> bool:
-    """
-    Register a new refinement job.
-    
-    Args:
-        video_id: ID of the video (filename stem)
-        moment_id: ID of the moment being refined
-        
-    Returns:
-        True if job was registered, False if already processing
-    """
-    job_key = get_refinement_job_key(video_id, moment_id)
-    with _refinement_lock:
-        # Check if job exists and is currently processing
-        if job_key in _refinement_jobs:
-            job_status = _refinement_jobs[job_key].get("status", "")
-            if job_status == "processing":
-                return False
-            # If job is completed or failed, we can start a new one
-            del _refinement_jobs[job_key]
-        
-        _refinement_jobs[job_key] = {
-            "status": "processing",
-            "started_at": time.time()
-        }
-        return True
-
-
-def complete_refinement_job(video_id: str, moment_id: str, success: bool = True) -> None:
-    """
-    Mark a refinement job as complete.
-    
-    Args:
-        video_id: ID of the video
-        moment_id: ID of the moment
-        success: True if processing succeeded, False otherwise
-    """
-    job_key = get_refinement_job_key(video_id, moment_id)
-    with _refinement_lock:
-        if job_key in _refinement_jobs:
-            _refinement_jobs[job_key]["status"] = "completed" if success else "failed"
-
-
-def is_refining(video_id: str, moment_id: str) -> bool:
-    """
-    Check if a moment is currently being refined.
-    
-    Args:
-        video_id: ID of the video
-        moment_id: ID of the moment
-        
-    Returns:
-        True if refining, False otherwise
-    """
-    job_key = get_refinement_job_key(video_id, moment_id)
-    with _refinement_lock:
-        if job_key not in _refinement_jobs:
-            return False
-        status = _refinement_jobs[job_key].get("status", "")
-        return status == "processing"
-
-
-def get_refinement_status(video_id: str, moment_id: str) -> Optional[Dict]:
-    """
-    Get refinement status for a specific moment.
-    
-    Args:
-        video_id: ID of the video
-        moment_id: ID of the moment
-        
-    Returns:
-        Dictionary with 'status' and 'started_at', or None if no job exists
-    """
-    job_key = get_refinement_job_key(video_id, moment_id)
-    with _refinement_lock:
-        if job_key not in _refinement_jobs:
-            return None
-        
-        job_info = _refinement_jobs[job_key]
-        return {
-            "status": job_info.get("status", "unknown"),
-            "started_at": job_info.get("started_at", 0)
-        }
+# Job management functions now handled by JobRepository
 
 
 def process_moment_refinement_async(
@@ -956,7 +871,12 @@ def process_moment_refinement_async(
                     raise Exception(f"Failed to save refined moment: {error_message}")
                 
                 # Mark job as complete
-                complete_refinement_job(video_id, moment_id, success=True)
+                job_repo.update_status(
+                    JobType.MOMENT_REFINEMENT,
+                    video_id,
+                    JobStatus.COMPLETED,
+                    moment_id=moment_id
+                )
                 
                 logger.info(f"Moment refinement completed successfully for {video_id}:{moment_id}")
                 
@@ -964,7 +884,13 @@ def process_moment_refinement_async(
             logger.error(f"Error in async moment refinement for {video_id}:{moment_id}: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            complete_refinement_job(video_id, moment_id, success=False)
+            job_repo.update_status(
+                JobType.MOMENT_REFINEMENT,
+                video_id,
+                JobStatus.FAILED,
+                moment_id=moment_id,
+                error=str(e)
+            )
     
     # Start processing in background thread
     thread = threading.Thread(target=refine, daemon=True)

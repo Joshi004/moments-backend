@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.logging import setup_logging
+from app.core.redis import get_redis_client, close_redis_client, health_check
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
 from app.api.endpoints import videos, moments, transcripts, clips
@@ -61,7 +62,21 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    redis_status = "connected" if health_check() else "disconnected"
+    return {"status": "healthy", "redis": redis_status}
+
+
+# Startup event to initialize Redis
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Redis connection on startup."""
+    try:
+        get_redis_client()
+    except Exception as e:
+        # Log error but don't prevent startup
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to initialize Redis: {e}")
 
 
 # Shutdown event to cleanup resources
@@ -69,5 +84,6 @@ async def health():
 async def shutdown_event():
     """Cleanup resources on shutdown."""
     cleanup_resources()
+    close_redis_client()
 
 

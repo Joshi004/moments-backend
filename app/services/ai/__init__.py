@@ -16,20 +16,14 @@ from app.services.ai.prompt_builder import PromptBuilder
 
 # AI orchestration services
 from app.services.ai.generation_service import (
-    start_generation_job,
-    is_generating,
     process_moments_generation_async,
-    get_generation_status,
     strip_think_tags,
     ssh_tunnel,
     call_ai_model
 )
 
 from app.services.ai.refinement_service import (
-    start_refinement_job,
-    is_refining,
-    process_moment_refinement_async,
-    get_refinement_status
+    process_moment_refinement_async
 )
 
 # Prompt configuration
@@ -55,19 +49,13 @@ __all__ = [
     "PromptBuilder",
     
     # Generation service
-    "start_generation_job",
-    "is_generating",
     "process_moments_generation_async",
-    "get_generation_status",
     "strip_think_tags",
     "ssh_tunnel",
     "call_ai_model",
     
     # Refinement service
-    "start_refinement_job",
-    "is_refining",
     "process_moment_refinement_async",
-    "get_refinement_status",
     
     # Prompt configuration
     "get_model_prompt_config",

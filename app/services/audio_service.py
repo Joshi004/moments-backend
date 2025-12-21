@@ -11,13 +11,12 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# In-memory job tracking dictionary
-# Structure: {video_id: {"status": "processing"|"completed"|"failed", "started_at": timestamp, "video_filename": str}}
-_processing_jobs: Dict[str, Dict] = {}
-_job_lock = threading.Lock()
+# Job repository for distributed job tracking
+job_repo = JobRepository()
 
 
 def get_audio_directory() -> Path:
@@ -246,113 +245,7 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         return False
 
 
-def start_processing_job(video_id: str, video_filename: str) -> bool:
-    """
-    Register a new processing job.
-    
-    Args:
-        video_id: ID of the video (filename stem)
-        video_filename: Full filename of the video
-    
-    Returns:
-        True if job was registered, False if already processing
-    """
-    operation = "audio_processing_job"
-    
-    log_event(
-        level="DEBUG",
-        logger="app.services.audio_service",
-        function="start_processing_job",
-        operation=operation,
-        event="operation_start",
-        message="Registering audio processing job",
-        context={
-            "video_id": video_id,
-            "video_filename": video_filename,
-            "request_id": get_request_id()
-        }
-    )
-    
-    with _job_lock:
-        if video_id in _processing_jobs:
-            log_event(
-                level="WARNING",
-                logger="app.services.audio_service",
-                function="start_processing_job",
-                operation=operation,
-                event="validation_error",
-                message="Job already exists",
-                context={"video_id": video_id}
-            )
-            return False
-        
-        _processing_jobs[video_id] = {
-            "status": "processing",
-            "started_at": time.time(),
-            "video_filename": video_filename
-        }
-        
-        log_event(
-            level="INFO",
-            logger="app.services.audio_service",
-            function="start_processing_job",
-            operation=operation,
-            event="operation_complete",
-            message="Job registered successfully",
-            context={"video_id": video_id}
-        )
-        return True
-
-
-def complete_processing_job(video_id: str, success: bool = True) -> None:
-    """
-    Mark a processing job as complete.
-    
-    Args:
-        video_id: ID of the video
-        success: True if processing succeeded, False otherwise
-    """
-    operation = "audio_processing_job"
-    
-    with _job_lock:
-        if video_id in _processing_jobs:
-            job_started_at = _processing_jobs[video_id].get("started_at", time.time())
-            duration = time.time() - job_started_at
-            _processing_jobs[video_id]["status"] = "completed" if success else "failed"
-            
-            log_event(
-                level="INFO",
-                logger="app.services.audio_service",
-                function="complete_processing_job",
-                operation=operation,
-                event="operation_complete" if success else "operation_error",
-                message=f"Job {'completed' if success else 'failed'}",
-                context={
-                    "video_id": video_id,
-                    "success": success,
-                    "duration_seconds": duration
-                }
-            )
-            # Keep job in dict for a short time, then remove it
-            # This allows frontend to detect completion
-            # Jobs will be cleaned up after a delay
-
-
-def is_processing(video_id: str) -> bool:
-    """
-    Check if a video is currently being processed.
-    
-    Args:
-        video_id: ID of the video
-    
-    Returns:
-        True if processing, False otherwise
-    """
-    with _job_lock:
-        if video_id not in _processing_jobs:
-            return False
-        status = _processing_jobs[video_id].get("status", "")
-        return status == "processing"
+# Job management functions now handled by JobRepository
 
 
 def get_processing_jobs() -> Dict[str, List[Dict]]:
@@ -438,7 +331,11 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             success = extract_audio_from_video(video_path, output_path)
             
             # Mark job as complete
-            complete_processing_job(video_id, success)
+            job_repo.update_status(
+                JobType.AUDIO_EXTRACTION,
+                video_id,
+                JobStatus.COMPLETED if success else JobStatus.FAILED
+            )
             
             log_event(
                 level="INFO",
@@ -459,7 +356,12 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
                 message="Error in async audio processing",
                 context={"video_id": video_id}
             )
-            complete_processing_job(video_id, success=False)
+            job_repo.update_status(
+                JobType.AUDIO_EXTRACTION,
+                video_id,
+                JobStatus.FAILED,
+                error=str(e)
+            )
     
     # Start processing in background thread
     thread = threading.Thread(target=extract, daemon=True)

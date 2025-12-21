@@ -9,17 +9,17 @@ from app.models.schemas import MessageResponse
 from app.utils.video import get_video_files
 from app.services.audio_service import (
     check_audio_exists,
-    start_processing_job,
-    is_processing,
     process_audio_async
 )
 from app.services.transcript_service import (
     check_transcript_exists,
-    start_transcription_job,
-    is_transcribing,
     process_transcription_async,
     load_transcript
 )
+from app.repositories.job_repository import JobRepository, JobType, JobStatus
+
+# Initialize job repository
+job_repo = JobRepository()
 from app.core.logging import (
     log_event,
     log_operation_start,
@@ -68,7 +68,7 @@ async def process_audio(video_id: str):
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Check if already processing
-        if is_processing(video_id):
+        if job_repo.is_processing(JobType.AUDIO_EXTRACTION, video_id):
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.transcripts",
@@ -94,7 +94,8 @@ async def process_audio(video_id: str):
             raise HTTPException(status_code=400, detail="Audio file already exists for this video")
         
         # Start processing job
-        if not start_processing_job(video_id, video_file.name):
+        job = job_repo.create(JobType.AUDIO_EXTRACTION, video_id, video_filename=video_file.name)
+        if job is None:
             raise HTTPException(status_code=409, detail="Audio processing already in progress for this video")
         
         # Start async processing
@@ -168,7 +169,7 @@ async def process_transcript(video_id: str):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
         
         # Check if already processing
-        if is_transcribing(video_id):
+        if job_repo.is_processing(JobType.TRANSCRIPTION, video_id):
             raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
         
         # Check if transcript already exists
@@ -176,7 +177,8 @@ async def process_transcript(video_id: str):
             raise HTTPException(status_code=400, detail="Transcript already exists for this video")
         
         # Start transcription job
-        if not start_transcription_job(video_id, audio_filename):
+        job = job_repo.create(JobType.TRANSCRIPTION, video_id, audio_filename=audio_filename)
+        if job is None:
             raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
         
         # Start async processing
@@ -203,6 +205,106 @@ async def process_transcript(video_id: str):
             operation=operation,
             error=e,
             message="Error starting transcript generation",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/audio-extraction-status")
+async def get_audio_extraction_status(video_id: str):
+    """Get audio extraction status for a video."""
+    start_time = time.time()
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get status and update last poll
+        job = job_repo.get(JobType.AUDIO_EXTRACTION, video_id)
+        if job:
+            job_repo.update_last_poll(JobType.AUDIO_EXTRACTION, video_id)
+        
+        duration = time.time() - start_time
+        
+        if job is None:
+            return {"status": "not_started", "started_at": None}
+        
+        return {
+            "status": job.get("status"),
+            "started_at": job.get("started_at"),
+            "elapsed_seconds": time.time() - job.get("started_at", time.time()),
+            "error": job.get("error")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.transcripts",
+            function="get_audio_extraction_status",
+            operation="get_audio_extraction_status",
+            error=e,
+            message="Error getting audio extraction status",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/transcription-status")
+async def get_transcription_status(video_id: str):
+    """Get transcription status for a video."""
+    start_time = time.time()
+    
+    try:
+        video_files = get_video_files()
+        
+        # Find video
+        video_file = None
+        for vf in video_files:
+            if vf.stem == video_id:
+                video_file = vf
+                break
+        
+        if not video_file or not video_file.exists():
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get status and update last poll
+        job = job_repo.get(JobType.TRANSCRIPTION, video_id)
+        if job:
+            job_repo.update_last_poll(JobType.TRANSCRIPTION, video_id)
+        
+        duration = time.time() - start_time
+        
+        if job is None:
+            return {"status": "not_started", "started_at": None}
+        
+        return {
+            "status": job.get("status"),
+            "started_at": job.get("started_at"),
+            "elapsed_seconds": time.time() - job.get("started_at", time.time()),
+            "error": job.get("error")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.transcripts",
+            function="get_transcription_status",
+            operation="get_transcription_status",
+            error=e,
+            message="Error getting transcription status",
             context={"video_id": video_id, "duration_seconds": duration}
         )
         raise
