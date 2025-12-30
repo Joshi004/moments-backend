@@ -632,6 +632,48 @@ def extract_clips_for_video(
         }
 
 
+async def extract_clips_parallel(
+    video_path: Path,
+    video_filename: str,
+    moments: List[Dict],
+    override_existing: bool = False
+) -> bool:
+    """
+    Extract clips in parallel (async wrapper for pipeline).
+    
+    Args:
+        video_path: Path to the source video file
+        video_filename: Original video filename
+        moments: List of moment objects
+        override_existing: Whether to override existing clips
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Extract video_id from filename
+        video_id = Path(video_filename).stem
+        
+        # Call the synchronous function
+        results = extract_clips_for_video(
+            video_id=video_id,
+            video_path=video_path,
+            video_filename=video_filename,
+            moments=moments,
+            override_existing=override_existing
+        )
+        
+        # Return success based on whether we had more successes than failures
+        if "error" in results:
+            return False
+        
+        return results.get("failed", 0) == 0 or results.get("successful", 0) > 0
+        
+    except Exception as e:
+        logger.error(f"Error in extract_clips_parallel: {e}")
+        return False
+
+
 def process_clip_extraction_async(
     video_id: str,
     video_path: Path,

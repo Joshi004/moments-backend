@@ -1,0 +1,157 @@
+[
+  {
+    "request_id": "pipeline:motivation:1766321477137",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1766321477.1373131,
+    "completed_at": 1766322132.371671,
+    "total_duration_seconds": 655.2343578338623,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1766321724.235712,
+        "completed_at": 1766321731.971264,
+        "duration_seconds": 7.735551834106445
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1766321731.9736168,
+        "completed_at": 1766322132.371229,
+        "duration_seconds": 400.39761209487915
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "generation",
+    "error_message": "Moment generation timed out after 900 seconds"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1766322632.4594932,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1766322132.3755362,
+        "completed_at": 1766322139.3806221,
+        "duration_seconds": 7.0050859451293945
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1766322139.3830981,
+        "completed_at": 1766322632.458397,
+        "duration_seconds": 493.07529878616333
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "generation",
+    "error_message": "Moment generation timed out after 900 seconds"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1766323039.8911831,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "pending",
+        "skipped": false
+      },
+      "audio_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "failed",
+        "skipped": false,
+        "completed_at": 1766323039.880227
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "generation",
+    "error_message": "Moment generation timed out after 900 seconds"
+  }
+]

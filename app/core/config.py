@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     max_tokens: int = 15000
     default_temperature: float = 0.7
     
+    # Pipeline Configuration
+    pipeline_lock_ttl: int = 1800  # 30 minutes
+    pipeline_history_dir: Path = Path("static/pipeline_history")
+    
+    # SCP Upload Configuration
+    scp_remote_host: str = "naresh@85.234.64.44"
+    scp_audio_remote_path: str = "/home/naresh/datasets/audios/"
+    scp_clips_remote_path: str = "/home/naresh/datasets/moment_clips/"
+    scp_connect_timeout: int = 10
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

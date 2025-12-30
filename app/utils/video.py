@@ -77,3 +77,18 @@ def get_video_by_filename(filename: str):
         return video_path
     return None
 
+
+def get_video_by_id(video_id: str):
+    """
+    Get a video file by its ID (filename without extension).
+    
+    Args:
+        video_id: Video ID (e.g., 'motivation', 'ProjectUpdateVideo')
+    
+    Returns:
+        Path object if video exists, None otherwise
+    """
+    # Assume .mp4 extension
+    filename = f"{video_id}.mp4"
+    return get_video_by_filename(filename)
+

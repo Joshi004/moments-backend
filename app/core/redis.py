@@ -96,3 +96,5 @@ def health_check() -> bool:
         logger.error(f"Redis health check failed: {e}")
         return False
 
+
+
