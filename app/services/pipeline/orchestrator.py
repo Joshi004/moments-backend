@@ -89,6 +89,12 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
             return True, "Transcript already exists"
     
     elif stage == PipelineStage.MOMENT_GENERATION:
+        # Check override flag first
+        if config.get("override_existing_moments", False):
+            # User explicitly wants to regenerate - don't skip
+            return False, ""
+        
+        # Original logic - skip if moments exist
         moments = load_moments(video_filename)
         if moments and len(moments) > 0:
             return True, f"Moments already exist ({len(moments)} moments)"
@@ -116,6 +122,13 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         moments = load_moments(video_filename)
         if not moments:
             return True, "No moments to refine"
+        
+        # Check override flag
+        if config.get("override_existing_refinement", False):
+            # User wants to re-refine everything - don't skip
+            return False, ""
+        
+        # Original logic - skip if all already refined
         all_refined = all(m.get('is_refined', False) for m in moments)
         if all_refined:
             return True, "All moments already refined"
@@ -298,7 +311,13 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
     if not moments:
         raise Exception("No moments found for refinement")
     
-    moments_to_refine = [m for m in moments if not m.get('is_refined', False)]
+    # Check override flag to determine which moments to refine
+    if config.get("override_existing_refinement", False):
+        # Re-refine ALL moments (including already refined ones)
+        moments_to_refine = moments
+    else:
+        # Only refine moments that haven't been refined yet
+        moments_to_refine = [m for m in moments if not m.get('is_refined', False)]
     
     if not moments_to_refine:
         logger.info(f"All moments already refined for {video_id}")

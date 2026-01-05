@@ -38,6 +38,8 @@ class PipelineStartRequest(BaseModel):
     include_video_refinement: bool = Field(default=True)
     generation_prompt: Optional[str] = None
     refinement_prompt: Optional[str] = None
+    override_existing_moments: bool = Field(default=False)
+    override_existing_refinement: bool = Field(default=False)
 
 
 class StageStatusResponse(BaseModel):
