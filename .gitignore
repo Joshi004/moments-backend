@@ -164,6 +164,18 @@ static/moment_clips/*.mp4
 .env.local
 .env.*.local
 
+# GCP Credentials (NEVER commit these!)
+*-credentials.json
+*-service-account.json
+service-account*.json
+gcp-*.json
+credentials/
+.gcp/
+
+# GCS Service Account Credentials (explicit protection)
+credentials/*.json
+gcs-bucket.json
+
 # Logs
 *.log
 logs/

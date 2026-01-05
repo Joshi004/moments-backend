@@ -17,7 +17,7 @@ from app.services.pipeline.status import (
     update_refinement_progress,
 )
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
-from app.services.pipeline.upload_service import SCPUploader
+from app.services.pipeline.upload_service import GCSUploader
 
 # Import existing services
 from app.services.audio_service import (
@@ -142,22 +142,36 @@ async def execute_audio_extraction(video_id: str) -> None:
     logger.info(f"Extracted audio for {video_id}")
 
 
-async def execute_audio_upload(video_id: str) -> None:
-    """Execute audio upload stage."""
+async def execute_audio_upload(video_id: str) -> str:
+    """
+    Execute audio upload stage to GCS.
+    
+    Returns:
+        Signed URL for the uploaded audio file
+    """
     video_filename = f"{video_id}.mp4"
     audio_path = get_audio_path(video_filename)
     
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
     
-    uploader = SCPUploader()
-    remote_path = await uploader.upload_audio(audio_path)
+    uploader = GCSUploader()
+    gcs_path, signed_url = await uploader.upload_audio(audio_path, video_id)
     
-    logger.info(f"Uploaded audio for {video_id} to {remote_path}")
+    logger.info(f"Uploaded audio for {video_id} to gs://{uploader.bucket_name}/{gcs_path}")
+    logger.info(f"Generated signed URL (expires in 1 hour)")
+    
+    return signed_url
 
 
-async def execute_transcription(video_id: str) -> None:
-    """Execute transcription stage."""
+async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
+    """
+    Execute transcription stage using GCS signed URL.
+    
+    Args:
+        video_id: Video identifier
+        audio_signed_url: GCS signed URL for the audio file
+    """
     video_filename = f"{video_id}.mp4"
     
     # The transcription service runs async in a thread
@@ -165,8 +179,10 @@ async def execute_transcription(video_id: str) -> None:
     from app.repositories.job_repository import JobRepository, JobType, JobStatus
     job_repo = JobRepository()
     
-    # Start transcription
-    process_transcription_async(video_id)
+    logger.info(f"Starting transcription for {video_id} with GCS audio URL")
+    
+    # Start transcription with signed URL
+    process_transcription_async(video_id, audio_signed_url)
     
     # Wait for completion
     max_wait = 600  # 10 minutes
@@ -257,21 +273,21 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
 
 
 async def execute_clip_upload(video_id: str) -> None:
-    """Execute clip upload stage."""
+    """Execute clip upload stage to GCS."""
     video_filename = f"{video_id}.mp4"
     moments = load_moments(video_filename)
     
     if not moments:
         raise Exception("No moments found for clip upload")
     
-    uploader = SCPUploader()
+    uploader = GCSUploader()
     updated_moments = await uploader.upload_all_clips(video_id, moments)
     
-    # Save updated moments with remote paths
+    # Save updated moments with GCS paths and signed URLs
     save_moments(video_filename, updated_moments)
     
-    uploaded_count = sum(1 for m in updated_moments if m.get('remote_clip_path'))
-    logger.info(f"Uploaded {uploaded_count} clips for {video_id}")
+    uploaded_count = sum(1 for m in updated_moments if m.get('gcs_clip_path'))
+    logger.info(f"Uploaded {uploaded_count} clips for {video_id} to GCS")
 
 
 async def execute_moment_refinement(video_id: str, config: dict) -> None:
@@ -301,6 +317,16 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
         async with semaphore:
             moment_id = moment['id']
             
+            # Generate GCS signed URL for video if needed
+            video_clip_url = None
+            if config.get("include_video_refinement", True):
+                from app.services.video_clipping_service import get_clip_gcs_signed_url
+                video_clip_url = get_clip_gcs_signed_url(moment_id, video_filename)
+                if video_clip_url:
+                    logger.info(f"Generated GCS signed URL for clip refinement: {moment_id}")
+                else:
+                    logger.warning(f"Failed to generate GCS signed URL for clip: {moment_id}")
+            
             # Start refinement
             process_moment_refinement_async(
                 video_id=video_id,
@@ -310,6 +336,7 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                 model=config.get("model", "qwen3_vl_fp8"),
                 temperature=config.get("temperature", 0.7),
                 include_video=config.get("include_video_refinement", True),
+                video_clip_url=video_clip_url,
             )
             
             # Wait for completion
@@ -360,10 +387,23 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:
-        await execute_audio_upload(video_id)
+        audio_signed_url = await execute_audio_upload(video_id)
+        # Store signed URL in Redis for next stage
+        from app.core.redis import get_redis_client
+        redis = get_redis_client()
+        status_key = f"pipeline:{video_id}:status"
+        redis.hset(status_key, "audio_signed_url", audio_signed_url)
+        logger.info(f"Stored audio signed URL in pipeline state for {video_id}")
     
     elif stage == PipelineStage.TRANSCRIPTION:
-        await execute_transcription(video_id)
+        # Retrieve signed URL from Redis
+        from app.core.redis import get_redis_client
+        redis = get_redis_client()
+        status_key = f"pipeline:{video_id}:status"
+        audio_signed_url = redis.hget(status_key, "audio_signed_url")
+        if audio_signed_url:
+            audio_signed_url = audio_signed_url.decode('utf-8') if isinstance(audio_signed_url, bytes) else audio_signed_url
+        await execute_transcription(video_id, audio_signed_url)
     
     elif stage == PipelineStage.MOMENT_GENERATION:
         await execute_moment_generation(video_id, config)

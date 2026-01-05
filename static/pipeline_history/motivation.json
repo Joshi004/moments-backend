@@ -153,5 +153,257 @@
     },
     "error_stage": "generation",
     "error_message": "Moment generation timed out after 900 seconds"
+  },
+  {
+    "request_id": "pipeline:motivation:1767106738081",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767106738.081554,
+    "completed_at": 1767106739.869909,
+    "total_duration_seconds": 1.7883551120758057,
+    "stages": {
+      "audio": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767106738.0896719,
+        "completed_at": 1767106739.8456051,
+        "duration_seconds": 1.7559332847595215
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767106739.847457,
+        "completed_at": 1767106739.869521,
+        "duration_seconds": 0.0220639705657959
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Project was not passed and could not be determined from the environment."
+  },
+  {
+    "request_id": "pipeline:motivation:1767106816673",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767106816.673475,
+    "completed_at": 1767106816.687936,
+    "total_duration_seconds": 0.014461040496826172,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767106816.678543,
+        "completed_at": 1767106816.68539,
+        "duration_seconds": 0.006846904754638672
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Project was not passed and could not be determined from the environment."
+  },
+  {
+    "request_id": "pipeline:motivation:1767106998914",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767106998.915045,
+    "completed_at": 1767106998.9267552,
+    "total_duration_seconds": 0.011710166931152344,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767106998.918127,
+        "completed_at": 1767106998.926305,
+        "duration_seconds": 0.008177995681762695
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Project was not passed and could not be determined from the environment."
+  },
+  {
+    "request_id": "pipeline:motivation:1767107440480",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767107440.481369,
+    "completed_at": 1767107452.000303,
+    "total_duration_seconds": 11.51893401145935,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767107440.488642,
+        "completed_at": 1767107451.999609,
+        "duration_seconds": 11.510967016220093
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "you need a private key to sign credentials.the credentials you are currently using <class 'google.oauth2.credentials.Credentials'> just contains a token. see https://googleapis.dev/python/google-api-core/latest/auth.html#setting-up-a-service-account for more details."
+  },
+  {
+    "request_id": "pipeline:motivation:1767182052107",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767182052.113344,
+    "completed_at": 1767182054.967361,
+    "total_duration_seconds": 2.8540170192718506,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767182052.166497,
+        "completed_at": 1767182054.966741,
+        "duration_seconds": 2.800244092941284
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "you need a private key to sign credentials.the credentials you are currently using <class 'google.oauth2.credentials.Credentials'> just contains a token. see https://googleapis.dev/python/google-api-core/latest/auth.html#setting-up-a-service-account for more details."
   }
 ]

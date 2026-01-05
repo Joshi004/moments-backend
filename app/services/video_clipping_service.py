@@ -62,7 +62,7 @@ def check_clip_exists(moment_id: str, video_filename: str) -> bool:
 
 def get_clip_url(moment_id: str, video_filename: str) -> Optional[str]:
     """
-    Get the URL for accessing a clip file.
+    Get the URL for accessing a clip file from local backend.
     
     Returns:
         URL string if clip exists, None otherwise
@@ -72,6 +72,47 @@ def get_clip_url(moment_id: str, video_filename: str) -> Optional[str]:
         clip_filename = f"{video_stem}_{moment_id}_clip.mp4"
         return f"/static/moment_clips/{clip_filename}"
     return None
+
+
+def get_clip_gcs_signed_url(moment_id: str, video_filename: str) -> Optional[str]:
+    """
+    Upload clip to GCS if not already uploaded, and return signed URL.
+    Used for AI model refinement with video.
+    
+    Args:
+        moment_id: Moment identifier
+        video_filename: Video filename (e.g., "video123.mp4")
+    
+    Returns:
+        GCS signed URL if clip exists and upload succeeds, None otherwise
+    """
+    clip_path = get_clip_path(moment_id, video_filename)
+    if not clip_path.exists():
+        logger.warning(f"Clip not found for GCS upload: {clip_path}")
+        return None
+    
+    try:
+        from app.services.pipeline.upload_service import GCSUploader
+        import asyncio
+        
+        video_id = Path(video_filename).stem
+        uploader = GCSUploader()
+        
+        # Run the async upload in a new event loop (since this is called from sync context)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            gcs_path, signed_url = loop.run_until_complete(
+                uploader.upload_clip(clip_path, video_id, moment_id)
+            )
+            logger.info(f"Generated GCS signed URL for clip: {moment_id}")
+            return signed_url
+        finally:
+            loop.close()
+    
+    except Exception as e:
+        logger.error(f"Failed to upload clip to GCS for moment {moment_id}: {type(e).__name__}: {e}")
+        return None
 
 
 def get_video_duration(video_path: Path) -> float:

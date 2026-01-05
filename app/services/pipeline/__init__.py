@@ -28,7 +28,7 @@ from app.services.pipeline.history import (
     load_history,
     get_latest_run,
 )
-from app.services.pipeline.upload_service import SCPUploader
+from app.services.pipeline.upload_service import GCSUploader
 from app.services.pipeline.orchestrator import execute_pipeline
 
 __all__ = [
@@ -57,7 +57,7 @@ __all__ = [
     "load_history",
     "get_latest_run",
     # Upload
-    "SCPUploader",
+    "GCSUploader",
     # Orchestrator
     "execute_pipeline",
 ]

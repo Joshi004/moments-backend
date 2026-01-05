@@ -24,9 +24,6 @@ logger = logging.getLogger(__name__)
 # Job repository for distributed job tracking
 job_repo = JobRepository()
 
-# Audio base URL (not part of model config)
-AUDIO_BASE_URL = "http://localhost:8080/audios"
-
 
 def get_transcript_directory() -> Path:
     """Get the path to the transcripts directory."""
@@ -664,15 +661,18 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
 # Job management functions now handled by JobRepository
 
 
-def process_transcription_async(video_id: str, audio_filename: str) -> None:
+def process_transcription_async(video_id: str, audio_signed_url: str) -> None:
     """
-    Process transcription asynchronously in a background thread.
+    Process transcription asynchronously in a background thread using GCS signed URL.
     
     Args:
         video_id: ID of the video (filename stem)
-        audio_filename: Name of the audio file (e.g., "motivation.wav")
+        audio_signed_url: GCS signed URL for the audio file
     """
     operation = "transcription_processing_async"
+    
+    # Extract audio filename from video_id for saving transcript
+    audio_filename = f"{video_id}.wav"
     
     log_event(
         level="INFO",
@@ -680,10 +680,10 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
         function="process_transcription_async",
         operation=operation,
         event="operation_start",
-        message="Starting async transcription processing thread",
+        message="Starting async transcription processing thread with GCS audio",
         context={
             "video_id": video_id,
-            "audio_filename": audio_filename,
+            "audio_url_type": "gcs_signed_url",
             "request_id": get_request_id()
         }
     )
@@ -691,8 +691,8 @@ def process_transcription_async(video_id: str, audio_filename: str) -> None:
     def transcribe():
         tunnel_process = None
         try:
-            # Construct audio URL
-            audio_url = f"{AUDIO_BASE_URL}/{audio_filename}"
+            # Use the GCS signed URL directly
+            audio_url = audio_signed_url
             
             log_event(
                 level="DEBUG",
