@@ -277,7 +277,7 @@ class GCSUploader:
                 method="GET",
                 credentials=self.credentials  # Explicitly use service account
             )
-            logger.debug(f"Generated signed URL using service account credentials")
+            logger.debug(f"Generated signed URL using service account credentials",url)
         else:
             # Fallback to default signing (may fail with ADC)
             logger.warning("Generating signed URL without service account - this may fail")
@@ -332,7 +332,7 @@ class GCSUploader:
                     f"Skipping upload and generating new signed URL."
                 )
                 signed_url = self.generate_signed_url(gcs_path)
-                logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s))")
+                logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
                 return (gcs_path, signed_url)
         
         # Upload file with retry
@@ -350,7 +350,7 @@ class GCSUploader:
         
         # Generate signed URL
         signed_url = self.generate_signed_url(gcs_path)
-        logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s))")
+        logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
         
         return (gcs_path, signed_url)
     
@@ -405,7 +405,7 @@ class GCSUploader:
         
         # Generate signed URL
         signed_url = self.generate_signed_url(gcs_path)
-        logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s))")
+        logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
         
         return (gcs_path, signed_url)
     

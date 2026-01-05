@@ -113,9 +113,9 @@ class HumanReadableFormatter(logging.Formatter):
                         log_lines.append(f"  {key}:")
                         log_lines.append(indented_value)
                     else:
-                        # Truncate very long values
+                        # Truncate very long values (except URLs which should be logged in full)
                         value_str = str(value)
-                        if len(value_str) > 500:
+                        if len(value_str) > 500 and 'url' not in key.lower():
                             value_str = value_str[:500] + "... (truncated)"
                         log_lines.append(f"  {key}: {value_str}")
             else:
