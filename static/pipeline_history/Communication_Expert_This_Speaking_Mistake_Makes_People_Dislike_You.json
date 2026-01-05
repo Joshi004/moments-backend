@@ -1,0 +1,63 @@
+[
+  {
+    "request_id": "pipeline:Communication_Expert_This_Speaking_Mistake_Makes_People_Dislike_You:1767617284981",
+    "video_id": "Communication_Expert_This_Speaking_Mistake_Makes_People_Dislike_You",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767617284.9812639,
+    "completed_at": 1767619789.212856,
+    "total_duration_seconds": 2504.2315921783447,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617284.988248,
+        "completed_at": 1767617325.266717,
+        "duration_seconds": 40.27846884727478
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (25 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617325.286317,
+        "completed_at": 1767617325.3542871,
+        "duration_seconds": 0.06797003746032715
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617325.361789,
+        "completed_at": 1767617386.185378,
+        "duration_seconds": 60.82358908653259
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617386.197459,
+        "completed_at": 1767619789.211605,
+        "duration_seconds": 2403.014146089554,
+        "moments_refined": 7,
+        "moments_total": 7
+      }
+    },
+    "result": {
+      "moments_refined": 7
+    },
+    "error_stage": null,
+    "error_message": null
+  }
+]

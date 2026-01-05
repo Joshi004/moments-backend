@@ -54,5 +54,55 @@
     },
     "error_stage": "generation",
     "error_message": "Moment generation timed out after 900 seconds"
+  },
+  {
+    "request_id": "pipeline:motivation:1767613577836",
+    "video_id": "motivation",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767613577.8368251,
+    "completed_at": 1767613577.9456651,
+    "total_duration_seconds": 0.1088399887084961,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767613577.8488991,
+        "completed_at": 1767613577.944546,
+        "duration_seconds": 0.09564685821533203
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
   }
 ]

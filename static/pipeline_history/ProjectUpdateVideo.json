@@ -276,5 +276,238 @@
     },
     "error_stage": null,
     "error_message": null
+  },
+  {
+    "request_id": "pipeline:ProjectUpdateVideo:1767612850299",
+    "video_id": "ProjectUpdateVideo",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767612850.299924,
+    "completed_at": 1767614093.966924,
+    "total_duration_seconds": 1243.667000055313,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767612850.315559,
+        "completed_at": 1767612852.7587252,
+        "duration_seconds": 2.4431662559509277
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (6 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767612852.763959,
+        "completed_at": 1767612852.7872,
+        "duration_seconds": 0.023241043090820312
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767612852.7883132,
+        "completed_at": 1767612892.6039438,
+        "duration_seconds": 39.81563067436218
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767612892.607567,
+        "completed_at": 1767614093.966058,
+        "duration_seconds": 1201.3584909439087,
+        "moments_refined": 3,
+        "moments_total": 3
+      }
+    },
+    "result": {
+      "moments_refined": 3
+    },
+    "error_stage": null,
+    "error_message": null
+  },
+  {
+    "request_id": "pipeline:ProjectUpdateVideo:1767614335434",
+    "video_id": "ProjectUpdateVideo",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767614335.434772,
+    "completed_at": 1767615579.168163,
+    "total_duration_seconds": 1243.733391046524,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767614335.4445739,
+        "completed_at": 1767614337.914381,
+        "duration_seconds": 2.4698071479797363
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (9 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767614337.91854,
+        "completed_at": 1767614337.944625,
+        "duration_seconds": 0.02608489990234375
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767614337.946357,
+        "completed_at": 1767614377.643481,
+        "duration_seconds": 39.697124004364014
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767614377.645099,
+        "completed_at": 1767615579.1608992,
+        "duration_seconds": 1201.5158002376556,
+        "moments_refined": 3,
+        "moments_total": 3
+      }
+    },
+    "result": {
+      "moments_refined": 3
+    },
+    "error_stage": null,
+    "error_message": null
+  },
+  {
+    "request_id": "pipeline:ProjectUpdateVideo:1767616196729",
+    "video_id": "ProjectUpdateVideo",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767616196.729863,
+    "completed_at": 1767616196.8082502,
+    "total_duration_seconds": 0.07838726043701172,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767616196.734509,
+        "completed_at": 1767616196.807455,
+        "duration_seconds": 0.07294607162475586
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
+  },
+  {
+    "request_id": "pipeline:ProjectUpdateVideo:1767616219498",
+    "video_id": "ProjectUpdateVideo",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767616219.498514,
+    "completed_at": 1767617463.0287948,
+    "total_duration_seconds": 1243.530280828476,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767616219.5053241,
+        "completed_at": 1767616221.88431,
+        "duration_seconds": 2.37898588180542
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (12 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767616221.8889458,
+        "completed_at": 1767616221.906722,
+        "duration_seconds": 0.0177762508392334
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767616221.908281,
+        "completed_at": 1767616261.5920398,
+        "duration_seconds": 39.68375873565674
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767616261.594193,
+        "completed_at": 1767617463.028003,
+        "duration_seconds": 1201.4338099956512,
+        "moments_refined": 3,
+        "moments_total": 3
+      }
+    },
+    "result": {
+      "moments_refined": 3
+    },
+    "error_stage": null,
+    "error_message": null
   }
 ]
