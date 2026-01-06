@@ -216,7 +216,7 @@ async def get_pipeline_status(video_id: str):
         return PipelineStatusResponse(
             request_id=latest.get("request_id", ""),
             video_id=video_id,
-            status="not_running",
+            status=latest.get("status", "not_running"),
             model=latest.get("model", ""),
             started_at=latest.get("started_at", 0),
             completed_at=latest.get("completed_at"),
