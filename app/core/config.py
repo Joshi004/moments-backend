@@ -108,6 +108,42 @@ class Settings(BaseSettings):
     max_tokens: int = 15000
     default_temperature: float = 0.7
     
+    # Pipeline Configuration
+    pipeline_lock_ttl: int = 1800  # 30 minutes
+    pipeline_history_dir: Path = Path("static/pipeline_history")
+    
+    # SCP Upload Configuration (DEPRECATED - using GCS now)
+    # scp_remote_host: str = "naresh@85.234.64.44"
+    # scp_audio_remote_path: str = "/home/naresh/datasets/audios/"
+    # scp_clips_remote_path: str = "/home/naresh/datasets/moment_clips/"
+    # scp_connect_timeout: int = 10
+    
+    # GCS Configuration
+    gcs_bucket_name: str = "rumble-ai-bucket-1"
+    gcs_audio_prefix: str = "audio/"
+    gcs_clips_prefix: str = "clips/"
+    gcs_signed_url_expiry_hours: float = 1.0
+    gcs_upload_timeout_seconds: int = 300  # 5 minutes
+    gcs_max_retries: int = 3
+    gcs_retry_base_delay: float = 1.0  # Exponential: 1s, 2s, 4s
+    
+    # GCS Service Account Configuration
+    gcs_service_account_file: Optional[str] = None  # Relative or absolute path to JSON file
+    
+    @property
+    def gcs_credentials_path(self) -> Optional[Path]:
+        """Get the full path to GCS service account credentials."""
+        if self.gcs_service_account_file:
+            # If absolute path provided, use it
+            if Path(self.gcs_service_account_file).is_absolute():
+                return Path(self.gcs_service_account_file)
+            
+            # Otherwise, treat as relative to backend root
+            backend_dir = Path(__file__).parent.parent.parent
+            return backend_dir / self.gcs_service_account_file
+        
+        return None
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

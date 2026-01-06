@@ -15,7 +15,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "c18db96cb37103db",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_c18db96cb37103db_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_c18db96cb37103db_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082501Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=776ab42fbe9f492515dfc3445ac178d965cf2e9261561383a8e76a24ef80f163d2b09d5107d703be3d02a5db372b7fd1a195cba6ca8b7b1d4d9640c54cdd4341cdefaf9837dea3c9f80d3a1b65057c918809d07989c289c76b7384f2ef3a5906144072a5eee8419ce3975731d8d62e7a0f7a8291a1436203a39f1a2136f9a675799da5edd4083204c0c7188baeb85cef1da32a97a647736d22ca07317546af5e2168e03f000283aaa59f048894e72d4536aad8772a815480bb9efede3f9ad1d5b93ffbdebb88d1efbae0af5eefb9f785fd7d5fe4ce176b4b6a4be3a6d22df1cb80de4c26fb26bad3c239c14c1f6c2894e0adf7c776b9f3f7178de4fa94e9b5e7"
   },
   {
     "start_time": 746.32,
@@ -33,7 +38,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "4aa6aff1268ce864",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_4aa6aff1268ce864_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_4aa6aff1268ce864_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082520Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=4a17eea3871144c2d91e96498ae60dd810a88268d0466f54b8ff4368e69636b22cc4f7739f66812897de746ed2e86b9076b217bea3ae3446db4c18092486c568458f77d0c1e20be9e1d5353816bb8d5dfcccd0a46fe1990664f3d4c37d00161ac54e3b3068f72e924cd6a0d8ed5bced595b9a5ba423501a506153da58cb12322a78b17c86d2f10b4333287ee9340d00eb1cd3ee947a4c1f534d528590b75edbde8926ced4cfb1c79d1046cc12b7b8abcd58298e957e6ef849c5529611ab53652153ecc73a671d0030c98e5e749c72e49269d42c357715721e4b1bfe47ad412c856d24c66ca2e3dc9a50d3cbe3c7904637c5c658ca5385b231b3cd0922c3a8074"
   },
   {
     "start_time": 1366.48,
@@ -51,7 +61,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "081a5d6d030bb450",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_081a5d6d030bb450_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_081a5d6d030bb450_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082531Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=48fcd091446f44fa872222642396bf49301e88909269887186414d195f8c036e313979888ca400e1d3641b123e822f5130578d90a4d36ce74457d3d5e53bf3b7ee410b33dd67465a44fcd6382a0abaf71d544f1fd4c1ebefbae4eb47f203ac40cc00284b1eeb340f151b719933f809d1a1220eef0cee5892340063ce88f02259e17d0d2832d02070bf336ce10d396e8e2551f490329b550f63793d23a48e2f82011c747c20207ea967f89e53945eb77ef222883badc63c3a981407b3e2fac37121f3e840e6ba5d7872899926caadd9ed2078bfa574b28c777a165610fa47e05f090cf5fcfe193924f3a139592eb707f8b486a51d6261eb82815fae89d34e27aa"
   },
   {
     "start_time": 2079.68,
@@ -69,7 +84,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "bfd6f4a4e473f844",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_bfd6f4a4e473f844_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_bfd6f4a4e473f844_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082544Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=8edd2fe1dabc3aa1683f2eaa2884324c85ac889d6cacb465929f1a6d2e89f364e2fb9b2b796c27729c2b41e2445a44665fcff0fc674f8a6ff365bb12d04474ab304ea9f68e919cae8c8ef8aa23428598934ba9854173bdcdbae0bf4a920b89f8a63b8347e3e40a9d666dbc8bd1de7247450ba1201dd2d97dd23250a6c2584904ca36c65c535a1ad608acd66ab5a56f83b4a4a33243d129e29f3d0526e83ff0fa5987623dc0ff5cf2f8c75d8b75f9c2c7ccd1c39ce9be7f292ff3c109ac19c146d343ca0af8791085fcf857dc1823cd759aba2fd9b55cbd2b1e65d9243e12ca0c551dcc79184dc541e94b94986f3883e4e4fd7e53173a5bf25fe01e714c594878"
   },
   {
     "start_time": 4187.16,
@@ -87,7 +107,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "c91c8eeee806b454",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_c91c8eeee806b454_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_c91c8eeee806b454_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082605Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=34b09709e3e2c5688def0d7af1ed558a34beec9d6de0bf332104501ed39dee0b149b9a8f92c4d4437a87a15e12a703c8261d10598886c92b3a6c9edc3e4600e6bb1cb036b2328b380c52c278249a469c68297dc7f4ae2d2aec2481cbf835fd5c9cef59525c6e8570a55d091367ddae0b3b737365686f98bcd6005ab6e0c8ae74d80b5b2470749ef77168c91b8fdf6d6f11013e454de7d9b611f02d3c7e6f125a02d83508320ddc687910463ce0ae5b0ee845842871db8b9167047efe7ea4acbe072e3d64f9b3edf1a305b63e9fbcc8fae06cd424540bc73b40331ef9c19fbe60e18795e8b2b4ee5e63103b9d17784bda241a9350b62c8feb8b27695199e53efe"
   },
   {
     "start_time": 4769.6,
@@ -105,7 +130,12 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "155864ceebedefc3",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_155864ceebedefc3_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_155864ceebedefc3_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082619Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=0411b7910df04c51bde5639bf5fad0235c7a26554ae7767a954e3dafa5a6b89840a248017573bb2531741f447f1cf7d92fcd6680e2a2b2df0252027e3930676c977b82659ca85634603ba7d0610df807d04efc2c7a9943fd21c1a5704199b841f06b35823688bff380add216e31951a94968829a0f1b67c1f5d3eac90dd6afec522f89dc3dfdc0ca1ae634469cadce22342a48fda3e31f9ab870da96b9ff6fe0ccb54a4e4f9efbd44f0ab16e9cbba82806668650b3664c03083eacc9808ae14ed528fdd35478aa09393cedd1a2de80035e8fec060b676c55422045c2f91bfb0ebe6b555c4b40e7155621c4550ef6ee03021bad473d66f2dfaa524ca51977909b"
   },
   {
     "start_time": 5005.6,
@@ -123,6 +153,11 @@
       "min_moments": 1,
       "max_moments": 10,
       "operation_type": "generation"
-    }
+    },
+    "id": "8a334eeed09970f0",
+    "is_refined": false,
+    "parent_id": null,
+    "gcs_clip_path": "clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_8a334eeed09970f0_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/The_Woman_Who_Makes_Millionaires/The_Woman_Who_Makes_Millionaires_8a334eeed09970f0_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260106%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260106T082630Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=3df4d1df308960a0a3c1f9423bfe4c6005c92b993c5743ed7284056258897593eba70dbb6b1c085b64fa455d3700311e87ead295ea3cee20870c9c99ac00c57da6042f6dc6087d4bc9b2fde8688bd7eeb47dd68064678ab5e980843b47ae8f85a298d7b1ce5821717ad5642ab53a45b2c3d1255a720434ba70ec9baed777fa1ee2b9648003db8a73b0066e49cf6006f0455869974e20eeec19a76c02dffe2c93a275fc0dceeaeb8c1416bc9cabdae47e9d8a763f3bafaa01082faee1606b6668c56b0d1b45df99357a5b426cebda3d889650a899db7d9debeb5b7938e4b8cde69afc21b16e343d36ee4d7f775b6e195a3ea6fcc955f595cd8bb6320460e9d395"
   }
 ]

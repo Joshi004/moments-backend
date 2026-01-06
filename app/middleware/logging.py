@@ -27,7 +27,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         is_status_endpoint = (
             "/refinement-status/" in request.url.path or 
             "/generation-status" in request.url.path or
-            "/clip-extraction-status" in request.url.path
+            "/clip-extraction-status" in request.url.path or
+            "/pipeline/" in request.url.path and "/status" in request.url.path or
+            "/audio-extraction-status" in request.url.path or
+            "/transcription-status" in request.url.path
         )
         
         # Skip verbose logging for status endpoints (they handle their own compact logging)

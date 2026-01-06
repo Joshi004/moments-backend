@@ -28,15 +28,14 @@ from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 # Initialize job repository
 job_repo = JobRepository()
-from app.services.video_clipping_service import check_clip_exists
-from app.utils.model_config import model_supports_video, get_video_clip_url
+from app.services.video_clipping_service import check_clip_exists, get_clip_gcs_signed_url
+from app.utils.model_config import model_supports_video
 from app.core.logging import (
     log_event,
     log_operation_start,
     log_operation_complete,
     log_operation_error,
-    get_request_id,
-    log_status_check
+    get_request_id
 )
 
 router = APIRouter()
@@ -318,8 +317,6 @@ Generate moments that:
 @router.get("/videos/{video_id}/generation-status")
 async def get_generation_status_endpoint(video_id: str):
     """Get moment generation status for a video."""
-    start_time = time.time()
-    
     try:
         video_files = get_video_files()
         
@@ -331,15 +328,6 @@ async def get_generation_status_endpoint(video_id: str):
                 break
         
         if not video_file or not video_file.exists():
-            duration = time.time() - start_time
-            log_status_check(
-                endpoint_type="generation",
-                video_id=video_id,
-                moment_id=None,
-                status="error",
-                status_code=404,
-                duration=duration
-            )
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Get status and update last poll
@@ -347,33 +335,12 @@ async def get_generation_status_endpoint(video_id: str):
         if job:
             job_repo.update_last_poll(JobType.MOMENT_GENERATION, video_id)
         
-        duration = time.time() - start_time
-        status_value = job.get("status") if job else "not_started"
-        
-        log_status_check(
-            endpoint_type="generation",
-            video_id=video_id,
-            moment_id=None,
-            status=status_value,
-            status_code=200,
-            duration=duration
-        )
-        
         if job is None:
             return {"status": "not_started", "started_at": None}
         
         return status
         
-    except HTTPException as e:
-        duration = time.time() - start_time
-        log_status_check(
-            endpoint_type="generation",
-            video_id=video_id,
-            moment_id=None,
-            status="error",
-            status_code=e.status_code,
-            duration=duration
-        )
+    except HTTPException:
         raise
 
 
@@ -465,7 +432,7 @@ Guidelines:
                     detail="Video clip not available. Extract clips first or disable video refinement."
                 )
             
-            video_clip_url = get_video_clip_url(moment_id, video_file.name)
+            video_clip_url = get_clip_gcs_signed_url(moment_id, video_file.name)
         
         # Start refinement job
         job = job_repo.create(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
@@ -523,8 +490,6 @@ Guidelines:
 @router.get("/videos/{video_id}/refinement-status/{moment_id}")
 async def get_refinement_status_endpoint(video_id: str, moment_id: str):
     """Get moment refinement status."""
-    start_time = time.time()
-    
     try:
         video_files = get_video_files()
         
@@ -536,15 +501,6 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
                 break
         
         if not video_file or not video_file.exists():
-            duration = time.time() - start_time
-            log_status_check(
-                endpoint_type="refinement",
-                video_id=video_id,
-                moment_id=moment_id,
-                status="error",
-                status_code=404,
-                duration=duration
-            )
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Get status and update last poll
@@ -552,32 +508,11 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
         if job:
             job_repo.update_last_poll(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
         
-        duration = time.time() - start_time
-        status_value = job.get("status") if job else "not_started"
-        
-        log_status_check(
-            endpoint_type="refinement",
-            video_id=video_id,
-            moment_id=moment_id,
-            status=status_value,
-            status_code=200,
-            duration=duration
-        )
-        
         if job is None:
             return {"status": "not_started", "started_at": None}
         
         return status
         
-    except HTTPException as e:
-        duration = time.time() - start_time
-        log_status_check(
-            endpoint_type="refinement",
-            video_id=video_id,
-            moment_id=moment_id,
-            status="error",
-            status_code=e.status_code,
-            duration=duration
-        )
+    except HTTPException:
         raise
 

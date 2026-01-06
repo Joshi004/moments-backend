@@ -25,8 +25,7 @@ from app.core.logging import (
     log_operation_start,
     log_operation_complete,
     log_operation_error,
-    get_request_id,
-    log_status_check
+    get_request_id
 )
 
 router = APIRouter()
@@ -116,8 +115,6 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
 @router.get("/videos/{video_id}/clip-extraction-status")
 async def get_clip_extraction_status_endpoint(video_id: str):
     """Get clip extraction status for a video."""
-    start_time = time.time()
-    
     try:
         video_files = get_video_files()
         
@@ -129,15 +126,6 @@ async def get_clip_extraction_status_endpoint(video_id: str):
                 break
         
         if not video_file or not video_file.exists():
-            duration = time.time() - start_time
-            log_status_check(
-                endpoint_type="clip_extraction",
-                video_id=video_id,
-                moment_id=None,
-                status="error",
-                status_code=404,
-                duration=duration
-            )
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Get status and update last poll
@@ -145,33 +133,12 @@ async def get_clip_extraction_status_endpoint(video_id: str):
         if job:
             job_repo.update_last_poll(JobType.CLIP_EXTRACTION, video_id)
         
-        duration = time.time() - start_time
-        status_value = job.get("status") if job else "not_started"
-        
-        log_status_check(
-            endpoint_type="clip_extraction",
-            video_id=video_id,
-            moment_id=None,
-            status=status_value,
-            status_code=200,
-            duration=duration
-        )
-        
         if job is None:
             return {"status": "not_started", "started_at": None}
         
         return {"status": job.get("status"), "started_at": job.get("started_at")}
         
-    except HTTPException as e:
-        duration = time.time() - start_time
-        log_status_check(
-            endpoint_type="clip_extraction",
-            video_id=video_id,
-            moment_id=None,
-            status="error",
-            status_code=e.status_code,
-            duration=duration
-        )
+    except HTTPException:
         raise
 
 
