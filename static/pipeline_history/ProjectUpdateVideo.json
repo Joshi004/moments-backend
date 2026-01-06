@@ -509,5 +509,66 @@
     },
     "error_stage": null,
     "error_message": null
+  },
+  {
+    "request_id": "pipeline:ProjectUpdateVideo:1767617753279",
+    "video_id": "ProjectUpdateVideo",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767617753.279897,
+    "completed_at": 1767622602.819616,
+    "total_duration_seconds": 4849.539719104767,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617753.287808,
+        "completed_at": 1767617756.066358,
+        "duration_seconds": 2.778550148010254
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (15 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617756.0714738,
+        "completed_at": 1767617756.0897012,
+        "duration_seconds": 0.018227338790893555
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617756.091085,
+        "completed_at": 1767617796.3675818,
+        "duration_seconds": 40.27649688720703
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767617796.370233,
+        "completed_at": 1767622602.8188539,
+        "duration_seconds": 4806.448620796204,
+        "moments_refined": 15,
+        "moments_total": 15
+      }
+    },
+    "result": {
+      "moments_refined": 15
+    },
+    "error_stage": null,
+    "error_message": null
   }
 ]
