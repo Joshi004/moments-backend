@@ -104,5 +104,55 @@
     },
     "error_stage": "audio_upload",
     "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767704945.2674198,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767704945.172013,
+        "completed_at": 1767704945.267089,
+        "duration_seconds": 0.09507584571838379
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
   }
 ]

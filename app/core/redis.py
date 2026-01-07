@@ -34,6 +34,9 @@ def get_redis_client() -> redis.Redis:
                 f"Initializing Redis connection to {settings.redis_host}:{settings.redis_port}"
             )
             
+            # #region agent log
+            import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "post-fix", "hypothesisId": "A", "location": "redis.py:38", "message": "Redis pool config FIXED", "data": {"socket_timeout": 10, "block_timeout_ms": 5000, "buffer_seconds": 5}, "timestamp": __import__('time').time() * 1000}) + '\n')
+            # #endregion
             # Create connection pool
             pool = redis.ConnectionPool(
                 host=settings.redis_host,
@@ -43,7 +46,7 @@ def get_redis_client() -> redis.Redis:
                 decode_responses=True,  # Automatically decode bytes to strings
                 max_connections=10,
                 socket_connect_timeout=5,
-                socket_timeout=5,
+                socket_timeout=10,  # Must be > block timeout (5s) to prevent socket timeout during blocking reads
             )
             
             # Create Redis client with connection pool

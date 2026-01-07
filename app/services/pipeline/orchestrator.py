@@ -41,8 +41,97 @@ from app.utils.video import get_video_by_filename
 
 logger = logging.getLogger(__name__)
 
+
+async def execute_video_download(video_id: str, config: dict) -> None:
+    """
+    Execute video download stage.
+    
+    Args:
+        video_id: Video identifier
+        config: Pipeline configuration with video_url
+    
+    Raises:
+        Exception: If download fails
+    """
+    from app.services.gcs_downloader import GCSDownloader
+    from app.services.url_registry import URLRegistry
+    from app.utils.video import get_videos_directory
+    from app.core.redis import get_redis_client
+    
+    video_url = config.get("video_url")
+    if not video_url:
+        raise ValueError("video_url not found in config")
+    
+    # Destination path
+    videos_dir = get_videos_directory()
+    dest_path = videos_dir / f"{video_id}.mp4"
+    
+    # Check if already exists (double-check)
+    if dest_path.exists():
+        logger.info(f"Video already exists at {dest_path}, skipping download")
+        return
+    
+    logger.info(f"Starting video download: {video_url} -> {dest_path}")
+    
+    # Progress callback to update Redis
+    redis = get_redis_client()
+    status_key = f"pipeline:{video_id}:status"
+    
+    def progress_callback(bytes_downloaded: int, total_bytes: int):
+        """Update download progress in Redis."""
+        try:
+            percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
+            redis.hset(status_key, "download_bytes", str(bytes_downloaded))
+            redis.hset(status_key, "download_total", str(total_bytes))
+            redis.hset(status_key, "download_percentage", str(percentage))
+        except Exception as e:
+            logger.error(f"Failed to update download progress: {e}")
+    
+    # Download video
+    downloader = GCSDownloader()
+    
+    try:
+        success = await downloader.download(
+            url=video_url,
+            dest_path=dest_path,
+            video_id=video_id,
+            progress_callback=progress_callback
+        )
+        
+        if not success:
+            raise Exception("Download failed")
+        
+        # Verify file was created
+        if not dest_path.exists():
+            raise Exception("Download completed but file not found")
+        
+        file_size = dest_path.stat().st_size
+        logger.info(f"Download completed: {dest_path} ({file_size / (1024**2):.2f} MB)")
+        
+        # Register in URL registry
+        registry = URLRegistry()
+        registry.register(
+            url=video_url,
+            video_id=video_id,
+            file_size=file_size,
+            force_downloaded=config.get("force_download", False)
+        )
+        
+    except Exception as e:
+        # Cleanup on failure
+        if dest_path.exists():
+            logger.warning(f"Cleaning up partial download: {dest_path}")
+            try:
+                dest_path.unlink()
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup partial download: {cleanup_error}")
+        
+        raise Exception(f"Video download failed: {e}")
+
+
 # Stage sequences for each model
 QWEN_STAGES = [
+    PipelineStage.VIDEO_DOWNLOAD,
     PipelineStage.AUDIO_EXTRACTION,
     PipelineStage.AUDIO_UPLOAD,
     PipelineStage.TRANSCRIPTION,
@@ -53,6 +142,7 @@ QWEN_STAGES = [
 ]
 
 MINIMAX_STAGES = [
+    PipelineStage.VIDEO_DOWNLOAD,
     PipelineStage.AUDIO_EXTRACTION,
     PipelineStage.AUDIO_UPLOAD,
     PipelineStage.TRANSCRIPTION,
@@ -75,7 +165,18 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
     """
     video_filename = f"{video_id}.mp4"
     
-    if stage == PipelineStage.AUDIO_EXTRACTION:
+    if stage == PipelineStage.VIDEO_DOWNLOAD:
+        # Check if video already exists locally
+        from app.utils.video import get_video_by_id
+        video = get_video_by_id(video_id)
+        if video and video.exists():
+            return True, "Video already exists locally"
+        # If no video exists, check if download URL is provided
+        if not config.get("video_url"):
+            raise ValueError("Video not found and no download URL provided")
+        return False, ""
+    
+    elif stage == PipelineStage.AUDIO_EXTRACTION:
         if check_audio_exists(video_filename):
             return True, "Audio file already exists"
     
@@ -402,7 +503,10 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         video_id: Video identifier
         config: Pipeline configuration
     """
-    if stage == PipelineStage.AUDIO_EXTRACTION:
+    if stage == PipelineStage.VIDEO_DOWNLOAD:
+        await execute_video_download(video_id, config)
+    
+    elif stage == PipelineStage.AUDIO_EXTRACTION:
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:

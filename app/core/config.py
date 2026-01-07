@@ -5,7 +5,7 @@ All configuration values can be overridden via environment variables or .env fil
 import os
 from pydantic_settings import BaseSettings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -129,6 +129,23 @@ class Settings(BaseSettings):
     
     # GCS Service Account Configuration
     gcs_service_account_file: Optional[str] = None  # Relative or absolute path to JSON file
+    
+    # Video Download Configuration
+    video_download_timeout_seconds: int = 1800  # 30 minutes
+    video_download_max_size_bytes: int = 4 * 1024 * 1024 * 1024  # 4 GB
+    video_download_max_concurrent: int = 2
+    video_download_chunk_size: int = 8192  # 8 KB chunks
+    video_download_retry_count: int = 3
+    video_download_retry_base_delay: float = 2.0
+    
+    # URL Registry
+    url_registry_file: Path = Path("static/url_registry.json")
+    
+    # Generic filename patterns (trigger hash-based ID)
+    video_download_generic_names: List[str] = [
+        "video", "clip", "output", "download", "untitled", 
+        "temp", "file", "movie", "media"
+    ]
     
     @property
     def gcs_credentials_path(self) -> Optional[Path]:

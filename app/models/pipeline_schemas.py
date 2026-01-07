@@ -8,6 +8,7 @@ from enum import Enum
 
 class PipelineStage(str, Enum):
     """Pipeline stage enumeration."""
+    VIDEO_DOWNLOAD = "download"
     AUDIO_EXTRACTION = "audio"
     AUDIO_UPLOAD = "audio_upload"
     TRANSCRIPTION = "transcript"
@@ -51,6 +52,7 @@ class StageStatusResponse(BaseModel):
     skipped: bool = False
     skip_reason: Optional[str] = None
     error: Optional[str] = None
+    progress: Optional[Dict[str, Any]] = None  # For download progress, refinement progress, etc.
 
 
 class PipelineStatusResponse(BaseModel):

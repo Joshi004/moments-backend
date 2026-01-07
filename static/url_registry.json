@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "url": "gs://rumble-ai-bucket-1/Videos/01_ProjectUpdateVideo.mp4",
+      "url_hash": "6cec2a368dbbc42688067ca9a11c0abf214f8306d4cf4d30dcd32897d1fd02e3",
+      "video_id": "01-projectupdatevideo",
+      "file_size": 358936990,
+      "downloaded_at": "2026-01-06T13:19:57Z",
+      "force_downloaded": false
+    }
+  ],
+  "url_to_latest_video_id": {
+    "6cec2a368dbbc42688067ca9a11c0abf214f8306d4cf4d30dcd32897d1fd02e3": "01-projectupdatevideo"
+  }
+}

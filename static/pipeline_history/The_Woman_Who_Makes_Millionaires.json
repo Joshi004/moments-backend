@@ -98,5 +98,216 @@
     },
     "error_stage": "audio_upload",
     "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
+  },
+  {
+    "request_id": "pipeline:The_Woman_Who_Makes_Millionaires:1767687729420",
+    "video_id": "The_Woman_Who_Makes_Millionaires",
+    "status": "completed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767687729.42064,
+    "completed_at": 1767690393.582436,
+    "total_duration_seconds": 2664.161796092987,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767687729.4419,
+        "completed_at": 1767687758.6062121,
+        "duration_seconds": 29.16431212425232
+      },
+      "transcript": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Transcript already exists"
+      },
+      "generation": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Moments already exist (7 moments)"
+      },
+      "clips": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767687758.621547,
+        "completed_at": 1767687887.3339,
+        "duration_seconds": 128.71235299110413
+      },
+      "clip_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767687887.342891,
+        "completed_at": 1767687990.930848,
+        "duration_seconds": 103.58795690536499
+      },
+      "refinement": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767687990.9390771,
+        "completed_at": 1767690393.581568,
+        "duration_seconds": 2402.6424908638,
+        "moments_refined": 7,
+        "moments_total": 7
+      }
+    },
+    "result": {
+      "moments_refined": 7
+    },
+    "error_stage": null,
+    "error_message": null
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767704945.321152,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767704945.2714932,
+        "completed_at": 1767704945.3207748,
+        "duration_seconds": 0.04928159713745117
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767704945.374084,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767704945.324686,
+        "completed_at": 1767704945.3729951,
+        "duration_seconds": 0.0483090877532959
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767704945.4298491,
+    "total_duration_seconds": null,
+    "stages": {
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767704945.377811,
+        "completed_at": 1767704945.429347,
+        "duration_seconds": 0.05153608322143555
+      },
+      "transcript": {
+        "status": "pending",
+        "skipped": false
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "audio_upload",
+    "error_message": "Could not find a suitable TLS CA certificate bundle, invalid path: /Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/venv/lib/python3.9/site-packages/certifi/cacert.pem"
   }
 ]

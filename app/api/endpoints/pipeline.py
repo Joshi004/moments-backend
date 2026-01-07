@@ -61,6 +61,51 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
     if started_at and completed_at:
         duration = completed_at - started_at
     
+    # Build progress information if available
+    progress = None
+    
+    # Download progress
+    if stage == PipelineStage.VIDEO_DOWNLOAD:
+        download_bytes = status_data.get("download_bytes")
+        download_total = status_data.get("download_total")
+        download_percentage = status_data.get("download_percentage")
+        
+        if download_bytes or download_total or download_percentage:
+            progress = {}
+            if download_bytes:
+                try:
+                    progress["bytes_downloaded"] = int(download_bytes)
+                except ValueError:
+                    pass
+            if download_total:
+                try:
+                    progress["total_bytes"] = int(download_total)
+                except ValueError:
+                    pass
+            if download_percentage:
+                try:
+                    progress["percentage"] = int(download_percentage)
+                except ValueError:
+                    pass
+    
+    # Refinement progress
+    elif stage == PipelineStage.MOMENT_REFINEMENT:
+        refinement_total = status_data.get("refinement_total")
+        refinement_processed = status_data.get("refinement_processed")
+        
+        if refinement_total or refinement_processed:
+            progress = {}
+            if refinement_total:
+                try:
+                    progress["total"] = int(refinement_total)
+                except ValueError:
+                    pass
+            if refinement_processed:
+                try:
+                    progress["processed"] = int(refinement_processed)
+                except ValueError:
+                    pass
+    
     return StageStatusResponse(
         status=status,
         started_at=started_at,
@@ -69,6 +114,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
         skipped=(skipped_str == "true"),
         skip_reason=skip_reason if skip_reason else None,
         error=None,
+        progress=progress,
     )
 
 
