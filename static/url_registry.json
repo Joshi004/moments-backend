@@ -63,6 +63,14 @@
       "file_size": 358936990,
       "downloaded_at": "2026-01-07T16:33:52Z",
       "force_downloaded": false
+    },
+    {
+      "url": "gs://rumble-ai-bucket-1/Videos/09_ProjectUpdateVideo.mp4",
+      "url_hash": "7118d35aadaf1567f84b749bb8a330f56fe3c93a57022efe23f99e3753d3bc22",
+      "video_id": "09-projectupdatevideo",
+      "file_size": 358936990,
+      "downloaded_at": "2026-01-07T18:25:29Z",
+      "force_downloaded": false
     }
   ],
   "url_to_latest_video_id": {
@@ -73,6 +81,7 @@
     "1bc68826091e05e24721b9fe41024e5c51b20c3a949db083335ed3450ed040a9": "05-projectupdatevideo",
     "950d24ae1ec3ec8cab746fdf13fb0901bc256df3cf311d5c3ecc99afef23911f": "06-projectupdatevideo",
     "2d42e837add02be8874f286d63ca1fa58796f0c77abd6099a09e16638b07f9b9": "07-projectupdatevideo",
-    "23e8d2add587c9540c53a965ae4f44a2af96cd88cb6b0e4f4d16ccd42224d88a": "08-projectupdatevideo"
+    "23e8d2add587c9540c53a965ae4f44a2af96cd88cb6b0e4f4d16ccd42224d88a": "08-projectupdatevideo",
+    "7118d35aadaf1567f84b749bb8a330f56fe3c93a57022efe23f99e3753d3bc22": "09-projectupdatevideo"
   }
 }
