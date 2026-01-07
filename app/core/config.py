@@ -110,7 +110,11 @@ class Settings(BaseSettings):
     
     # Pipeline Configuration
     pipeline_lock_ttl: int = 1800  # 30 minutes
-    pipeline_history_dir: Path = Path("static/pipeline_history")
+    pipeline_history_dir: Path = Path("static/pipeline_history")  # DEPRECATED - using Redis now
+    
+    # Pipeline History Configuration (Redis-based)
+    pipeline_history_ttl: int = 86400         # 24 hours for completed runs
+    pipeline_history_max_runs: int = 50       # Max runs to keep per video
     
     # SCP Upload Configuration (DEPRECATED - using GCS now)
     # scp_remote_host: str = "naresh@85.234.64.44"

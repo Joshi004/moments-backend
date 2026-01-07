@@ -17,9 +17,9 @@ from app.models.pipeline_schemas import (
     PipelineStage,
     StageStatus,
 )
-from app.services.pipeline.status import initialize_status, get_status
+from app.services.pipeline.status import initialize_status, get_status, get_active_status
 from app.services.pipeline.lock import is_locked, set_cancellation_flag
-from app.services.pipeline.history import load_history
+from app.services.pipeline.redis_history import get_latest_run, get_all_runs
 from app.utils.video import get_video_by_id
 
 logger = logging.getLogger(__name__)
@@ -232,46 +232,14 @@ async def get_pipeline_status(video_id: str):
         Pipeline status response
     """
     # Check Redis for active pipeline
-    status_data = get_status(video_id)
+    status_data = get_active_status(video_id)
     if status_data:
         return _build_status_response(status_data)
     
-    # Not in Redis - check history for last run
-    history = await load_history(video_id)
-    if history:
-        latest = history[-1]
-        
-        # Build stages from history
-        stages = {}
-        for stage_name, stage_data in latest.get("stages", {}).items():
-            try:
-                stage_status = StageStatus(stage_data.get("status", "pending"))
-            except ValueError:
-                stage_status = StageStatus.PENDING
-            
-            stages[stage_name] = StageStatusResponse(
-                status=stage_status,
-                started_at=stage_data.get("started_at"),
-                completed_at=stage_data.get("completed_at"),
-                duration_seconds=stage_data.get("duration_seconds"),
-                skipped=stage_data.get("skipped", False),
-                skip_reason=stage_data.get("skip_reason"),
-                error=None,
-            )
-        
-        return PipelineStatusResponse(
-            request_id=latest.get("request_id", ""),
-            video_id=video_id,
-            status=latest.get("status", "not_running"),
-            model=latest.get("model", ""),
-            started_at=latest.get("started_at", 0),
-            completed_at=latest.get("completed_at"),
-            total_duration_seconds=latest.get("total_duration_seconds"),
-            current_stage=None,
-            stages=stages,
-            error_stage=latest.get("error_stage"),
-            error_message=latest.get("error_message"),
-        )
+    # Not active - check Redis history for last run
+    latest_run = get_latest_run(video_id)
+    if latest_run:
+        return _build_status_response(latest_run)
     
     # Never run
     return PipelineStatusResponse(
@@ -317,9 +285,9 @@ async def cancel_pipeline(video_id: str):
 
 
 @router.get("/{video_id}/history")
-async def get_pipeline_history(video_id: str):
+def get_pipeline_history(video_id: str):
     """
-    Get all historical pipeline runs for a video.
+    Get all historical pipeline runs for a video from Redis.
     
     Args:
         video_id: Video identifier
@@ -327,8 +295,38 @@ async def get_pipeline_history(video_id: str):
     Returns:
         History object with list of runs
     """
-    history = await load_history(video_id)
-    return {"video_id": video_id, "runs": history, "count": len(history)}
+    # Get all runs from Redis (newest first)
+    runs_data = get_all_runs(video_id)
+    
+    # Build response list from Redis data
+    runs = []
+    for run_data in runs_data:
+        # Build stages from Redis hash data
+        stages = {}
+        for stage in PipelineStage:
+            stages[stage.value] = _build_stage_status_response(run_data, stage)
+        
+        # Build run entry
+        run_entry = {
+            "request_id": run_data.get("request_id", ""),
+            "video_id": run_data.get("video_id", ""),
+            "status": run_data.get("status", "unknown"),
+            "model": run_data.get("model", ""),
+            "started_at": float(run_data.get("started_at", "0")),
+            "completed_at": float(run_data.get("completed_at", "0")) if run_data.get("completed_at") else None,
+            "total_duration_seconds": None,
+            "stages": stages,
+            "error_stage": run_data.get("error_stage") or None,
+            "error_message": run_data.get("error_message") or None,
+        }
+        
+        # Calculate total duration
+        if run_entry["started_at"] and run_entry["completed_at"]:
+            run_entry["total_duration_seconds"] = run_entry["completed_at"] - run_entry["started_at"]
+        
+        runs.append(run_entry)
+    
+    return {"video_id": video_id, "runs": runs, "count": len(runs)}
 
 
 

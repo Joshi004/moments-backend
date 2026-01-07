@@ -21,7 +21,7 @@ from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# Job repository for distributed job tracking
+# Job repository for distributed job tracking (kept for backward compatibility with API endpoints)
 job_repo = JobRepository()
 
 
@@ -724,7 +724,12 @@ def process_transcription_async(video_id: str, audio_signed_url: str) -> None:
             if not success:
                 raise Exception("Failed to save transcript file")
             
-            # Mark job as complete
+            # Mark pipeline stage as complete (import here to avoid circular dependency)
+            from app.services.pipeline.status import mark_stage_completed
+            from app.models.pipeline_schemas import PipelineStage
+            mark_stage_completed(video_id, PipelineStage.TRANSCRIPTION)
+            
+            # Also update job repo for backward compatibility with API endpoints
             job_repo.update_status(
                 JobType.TRANSCRIPTION,
                 video_id,
@@ -750,6 +755,12 @@ def process_transcription_async(video_id: str, audio_signed_url: str) -> None:
                 message="Error in async transcription processing",
                 context={"video_id": video_id}
             )
+            # Mark pipeline stage as failed (import here to avoid circular dependency)
+            from app.services.pipeline.status import mark_stage_failed
+            from app.models.pipeline_schemas import PipelineStage
+            mark_stage_failed(video_id, PipelineStage.TRANSCRIPTION, str(e))
+            
+            # Also update job repo for backward compatibility with API endpoints
             job_repo.update_status(
                 JobType.TRANSCRIPTION,
                 video_id,

@@ -15,7 +15,10 @@ from app.services.pipeline.status import (
     update_pipeline_status,
     update_current_stage,
     update_refinement_progress,
+    get_stage_status,
+    get_stage_error,
 )
+from app.models.pipeline_schemas import StageStatus
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
 
@@ -288,17 +291,12 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
     """
     video_filename = f"{video_id}.mp4"
     
-    # The transcription service runs async in a thread
-    # We need to wait for it to complete
-    from app.repositories.job_repository import JobRepository, JobType, JobStatus
-    job_repo = JobRepository()
-    
     logger.info(f"Starting transcription for {video_id} with GCS audio URL")
     
-    # Start transcription with signed URL
+    # Start transcription with signed URL (runs in background thread)
     process_transcription_async(video_id, audio_signed_url)
     
-    # Wait for completion
+    # Wait for completion by polling pipeline status
     max_wait = 600  # 10 minutes
     wait_interval = 2  # 2 seconds
     elapsed = 0
@@ -307,14 +305,15 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
         await asyncio.sleep(wait_interval)
         elapsed += wait_interval
         
-        job = job_repo.get(JobType.TRANSCRIPTION, video_id)
-        if job:
-            if job["status"] == JobStatus.COMPLETED.value:
-                logger.info(f"Transcription completed for {video_id}")
-                return
-            elif job["status"] == JobStatus.FAILED.value:
-                error = job.get("error", "Unknown error")
-                raise Exception(f"Transcription failed: {error}")
+        # Check stage status in pipeline hash
+        stage_status = get_stage_status(video_id, PipelineStage.TRANSCRIPTION)
+        
+        if stage_status == StageStatus.COMPLETED:
+            logger.info(f"Transcription completed for {video_id}")
+            return
+        elif stage_status == StageStatus.FAILED:
+            error = get_stage_error(video_id, PipelineStage.TRANSCRIPTION)
+            raise Exception(f"Transcription failed: {error or 'Unknown error'}")
     
     raise TimeoutError(f"Transcription timed out after {max_wait} seconds")
 
@@ -323,10 +322,7 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
     """Execute moment generation stage."""
     video_filename = f"{video_id}.mp4"
     
-    from app.repositories.job_repository import JobRepository, JobType, JobStatus
-    job_repo = JobRepository()
-    
-    # Start moment generation
+    # Start moment generation (runs in background thread)
     process_moments_generation_async(
         video_id=video_id,
         video_filename=video_filename,
@@ -339,7 +335,7 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
         temperature=config.get("temperature", 0.7),
     )
     
-    # Wait for completion
+    # Wait for completion by polling pipeline status
     max_wait = 900  # 15 minutes
     wait_interval = 3  # 3 seconds
     elapsed = 0
@@ -348,14 +344,15 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
         await asyncio.sleep(wait_interval)
         elapsed += wait_interval
         
-        job = job_repo.get(JobType.MOMENT_GENERATION, video_id)
-        if job:
-            if job["status"] == JobStatus.COMPLETED.value:
-                logger.info(f"Moment generation completed for {video_id}")
-                return
-            elif job["status"] == JobStatus.FAILED.value:
-                error = job.get("error", "Unknown error")
-                raise Exception(f"Moment generation failed: {error}")
+        # Check stage status in pipeline hash
+        stage_status = get_stage_status(video_id, PipelineStage.MOMENT_GENERATION)
+        
+        if stage_status == StageStatus.COMPLETED:
+            logger.info(f"Moment generation completed for {video_id}")
+            return
+        elif stage_status == StageStatus.FAILED:
+            error = get_stage_error(video_id, PipelineStage.MOMENT_GENERATION)
+            raise Exception(f"Moment generation failed: {error or 'Unknown error'}")
     
     raise TimeoutError(f"Moment generation timed out after {max_wait} seconds")
 

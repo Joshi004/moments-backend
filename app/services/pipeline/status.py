@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_status_key(video_id: str) -> str:
-    """Get Redis key for pipeline status."""
-    return f"pipeline:{video_id}:status"
+    """Get Redis key for ACTIVE pipeline status."""
+    return f"pipeline:{video_id}:active"
 
 
 def _get_stage_prefix(stage: PipelineStage) -> str:
@@ -292,6 +292,89 @@ def delete_status(video_id: str) -> None:
     status_key = _get_status_key(video_id)
     redis.delete(status_key)
     logger.info(f"Deleted pipeline status for {video_id}")
+
+
+def get_active_status(video_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get active pipeline status (alias for get_status for clarity).
+    
+    Args:
+        video_id: Video identifier
+        
+    Returns:
+        Status dictionary or None if not found
+    """
+    return get_status(video_id)
+
+
+def get_stage_status(video_id: str, stage: PipelineStage) -> Optional[StageStatus]:
+    """
+    Get current status of a specific pipeline stage.
+    
+    Args:
+        video_id: Video identifier
+        stage: Pipeline stage to check
+        
+    Returns:
+        Stage status or None if pipeline not found
+    """
+    redis = get_redis_client()
+    status_key = _get_status_key(video_id)
+    prefix = _get_stage_prefix(stage)
+    
+    status_str = redis.hget(status_key, f"{prefix}_status")
+    
+    if not status_str:
+        return None
+    
+    try:
+        return StageStatus(status_str)
+    except ValueError:
+        return None
+
+
+def get_stage_error(video_id: str, stage: PipelineStage) -> Optional[str]:
+    """
+    Get error message for a failed stage.
+    
+    Args:
+        video_id: Video identifier
+        stage: Pipeline stage to check
+        
+    Returns:
+        Error message or None if no error
+    """
+    redis = get_redis_client()
+    status_key = _get_status_key(video_id)
+    
+    # Check if this is the error stage
+    error_stage = redis.hget(status_key, "error_stage")
+    if error_stage == stage.value:
+        error_message = redis.hget(status_key, "error_message")
+        return error_message if error_message else None
+    
+    return None
+
+
+def set_stage_error(video_id: str, stage: PipelineStage, error: str) -> None:
+    """
+    Set error message on a stage (for use by service threads).
+    
+    Args:
+        video_id: Video identifier
+        stage: Pipeline stage that failed
+        error: Error message
+    """
+    redis = get_redis_client()
+    status_key = _get_status_key(video_id)
+    
+    updates = {
+        "error_stage": stage.value,
+        "error_message": error,
+    }
+    
+    redis.hset(status_key, mapping=updates)
+    logger.error(f"Set error on stage {stage.value} for {video_id}: {error}")
 
 
 

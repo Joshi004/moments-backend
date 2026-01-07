@@ -12,7 +12,7 @@ from app.core.redis import get_redis_client
 from app.core.config import get_settings
 from app.services.pipeline.orchestrator import execute_pipeline
 from app.services.pipeline.lock import acquire_lock, release_lock
-from app.services.pipeline.history import save_to_history
+from app.services.pipeline.redis_history import archive_active_to_history
 from app.services.pipeline.status import delete_status, get_current_stage
 
 logger = logging.getLogger(__name__)
@@ -163,25 +163,28 @@ class PipelineWorker:
             # Execute pipeline
             result = await execute_pipeline(video_id, config)
             
-            # Save to history and cleanup Redis
+            # Archive to Redis history with TTL
             try:
-                await save_to_history(video_id)
-                delete_status(video_id)
-                logger.info(f"Saved pipeline history and cleaned up status for {video_id}")
+                run_id = archive_active_to_history(video_id)
+                if run_id:
+                    logger.info(f"Archived pipeline run to Redis: {run_id}")
+                else:
+                    logger.warning(f"Failed to archive pipeline run for {video_id}")
             except Exception as e:
-                logger.error(f"Failed to save history for {video_id}: {e}")
+                logger.error(f"Failed to archive history for {video_id}: {e}")
             
             success = result.get("success", False)
             logger.info(f"Pipeline completed: {request_id}, success={success}")
             
         except Exception as e:
             logger.exception(f"Pipeline execution failed: {request_id}")
-            # Try to save history even on failure
+            # Try to archive history even on failure
             try:
-                await save_to_history(video_id)
-                delete_status(video_id)
+                run_id = archive_active_to_history(video_id)
+                if run_id:
+                    logger.info(f"Archived failed pipeline run to Redis: {run_id}")
             except Exception as hist_err:
-                logger.error(f"Failed to save history after error for {video_id}: {hist_err}")
+                logger.error(f"Failed to archive history after error for {video_id}: {hist_err}")
         finally:
             release_lock(video_id)
     

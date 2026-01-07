@@ -23,7 +23,7 @@ from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
 
-# Job repository for distributed job tracking
+# Job repository for distributed job tracking (kept for backward compatibility with API endpoints)
 job_repo = JobRepository()
 
 # Hardcoded max_tokens for all models
@@ -1630,7 +1630,12 @@ def process_moments_generation_async(
                     )
                     raise Exception("Failed to save moments to file")
                 
-                # Mark job as complete
+                # Mark pipeline stage as complete (import here to avoid circular dependency)
+                from app.services.pipeline.status import mark_stage_completed
+                from app.models.pipeline_schemas import PipelineStage
+                mark_stage_completed(video_id, PipelineStage.MOMENT_GENERATION)
+                
+                # Also update job repo for backward compatibility with API endpoints
                 job_repo.update_status(
                     JobType.MOMENT_GENERATION,
                     video_id,
@@ -1663,6 +1668,12 @@ def process_moments_generation_async(
                     "duration_seconds": duration
                 }
             )
+            # Mark pipeline stage as failed (import here to avoid circular dependency)
+            from app.services.pipeline.status import mark_stage_failed
+            from app.models.pipeline_schemas import PipelineStage
+            mark_stage_failed(video_id, PipelineStage.MOMENT_GENERATION, str(e))
+            
+            # Also update job repo for backward compatibility with API endpoints
             job_repo.update_status(
                 JobType.MOMENT_GENERATION,
                 video_id,

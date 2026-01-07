@@ -15,10 +15,28 @@
       "file_size": 358936990,
       "downloaded_at": "2026-01-07T10:00:01Z",
       "force_downloaded": false
+    },
+    {
+      "url": "gs://rumble-ai-bucket-1/Videos/03_ProjectUpdateVideo.mp4",
+      "url_hash": "382c439269a9b23b677c604559e4f7673b4b8ca7bfccb10dc7c67255f2b3f242",
+      "video_id": "03-projectupdatevideo",
+      "file_size": 358936990,
+      "downloaded_at": "2026-01-07T10:51:36Z",
+      "force_downloaded": false
+    },
+    {
+      "url": "gs://rumble-ai-bucket-1/Videos/04_ProjectUpdateVideo.mp4",
+      "url_hash": "238cb650f8126f7b87c1f97316680425c92f98e08d8c3435426413ef4bdfd309",
+      "video_id": "04-projectupdatevideo",
+      "file_size": 358936990,
+      "downloaded_at": "2026-01-07T10:57:34Z",
+      "force_downloaded": false
     }
   ],
   "url_to_latest_video_id": {
     "6cec2a368dbbc42688067ca9a11c0abf214f8306d4cf4d30dcd32897d1fd02e3": "01-projectupdatevideo",
-    "f0247acb76f3d78508f34248b1805363ae641764589a19b1a6dff9789634d349": "02-projectupdatevideo"
+    "f0247acb76f3d78508f34248b1805363ae641764589a19b1a6dff9789634d349": "02-projectupdatevideo",
+    "382c439269a9b23b677c604559e4f7673b4b8ca7bfccb10dc7c67255f2b3f242": "03-projectupdatevideo",
+    "238cb650f8126f7b87c1f97316680425c92f98e08d8c3435426413ef4bdfd309": "04-projectupdatevideo"
   }
 }

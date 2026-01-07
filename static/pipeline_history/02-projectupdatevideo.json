@@ -182,5 +182,56 @@
     },
     "error_stage": "transcript",
     "error_message": "Transcription timed out after 600 seconds"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767783460.275009,
+    "total_duration_seconds": null,
+    "stages": {
+      "download": {
+        "status": "pending",
+        "skipped": false
+      },
+      "audio": {
+        "status": "pending",
+        "skipped": false
+      },
+      "audio_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "transcript": {
+        "status": "failed",
+        "skipped": false,
+        "completed_at": 1767783460.274539
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "transcript",
+    "error_message": "Transcription timed out after 600 seconds"
   }
 ]

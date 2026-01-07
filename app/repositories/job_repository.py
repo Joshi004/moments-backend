@@ -1,6 +1,11 @@
 """
 Repository for managing job tracking with Redis.
 Provides distributed locking and automatic TTL-based cleanup.
+
+DEPRECATED: This module is being phased out in favor of the unified pipeline status system.
+- For pipeline operations, use app.services.pipeline.status module
+- This is maintained for backward compatibility with API endpoints only
+- New code should use the pipeline status module for all pipeline-related tracking
 """
 import json
 import time
@@ -64,6 +69,9 @@ class JobRepository:
         Create a new job with distributed locking.
         Uses Redis SET NX (set if not exists) for atomic lock acquisition.
         
+        DEPRECATED: For pipeline operations, use pipeline status module instead.
+        This is maintained for backward compatibility with API endpoints only.
+        
         Args:
             job_type: Type of the job
             video_id: Video ID the job is associated with
@@ -73,6 +81,14 @@ class JobRepository:
         Returns:
             Created job dictionary if successful, None if job already exists
         """
+        import warnings
+        warnings.warn(
+            "JobRepository is deprecated for pipeline operations. "
+            "Use app.services.pipeline.status module instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         job_key = self._get_job_key(job_type, video_id, moment_id)
         
         # Check if job already exists
