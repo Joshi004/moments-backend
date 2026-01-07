@@ -1,0 +1,186 @@
+[
+  {
+    "request_id": "pipeline:02-projectupdatevideo:1767779962047",
+    "video_id": "02-projectupdatevideo",
+    "status": "failed",
+    "model": "minimax",
+    "started_at": 1767779962.048432,
+    "completed_at": 1767780609.1996028,
+    "total_duration_seconds": 647.1511707305908,
+    "stages": {
+      "download": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767779962.114111,
+        "completed_at": 1767780001.1446211,
+        "duration_seconds": 39.03051018714905
+      },
+      "audio": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767780001.150157,
+        "completed_at": 1767780001.646226,
+        "duration_seconds": 0.49606895446777344
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767780001.647027,
+        "completed_at": 1767780008.3833458,
+        "duration_seconds": 6.736318826675415
+      },
+      "transcript": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767780008.38547,
+        "completed_at": 1767780609.197083,
+        "duration_seconds": 600.8116130828857
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "clip_upload": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "transcript",
+    "error_message": "Transcription timed out after 600 seconds"
+  },
+  {
+    "request_id": "",
+    "video_id": "",
+    "status": "failed",
+    "model": "",
+    "started_at": 0,
+    "completed_at": 1767781339.4111118,
+    "total_duration_seconds": null,
+    "stages": {
+      "download": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Video already exists locally"
+      },
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767780735.386539,
+        "completed_at": 1767780737.76937,
+        "duration_seconds": 2.38283109664917
+      },
+      "transcript": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767780737.770847,
+        "completed_at": 1767781339.4105191,
+        "duration_seconds": 601.6396720409393
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "clip_upload": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "transcript",
+    "error_message": "Transcription timed out after 600 seconds"
+  },
+  {
+    "request_id": "pipeline:02-projectupdatevideo:1767781455321",
+    "video_id": "02-projectupdatevideo",
+    "status": "failed",
+    "model": "minimax",
+    "started_at": 1767781455.321772,
+    "completed_at": 1767782059.240436,
+    "total_duration_seconds": 603.9186639785767,
+    "stages": {
+      "download": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Video already exists locally"
+      },
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767781455.3404858,
+        "completed_at": 1767781458.3874612,
+        "duration_seconds": 3.0469753742218018
+      },
+      "transcript": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767781458.391438,
+        "completed_at": 1767782059.239653,
+        "duration_seconds": 600.8482151031494
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "clip_upload": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Model does not support video"
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "transcript",
+    "error_message": "Transcription timed out after 600 seconds"
+  }
+]

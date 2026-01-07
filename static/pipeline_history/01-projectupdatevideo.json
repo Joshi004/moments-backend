@@ -403,5 +403,63 @@
     },
     "error_stage": "transcript",
     "error_message": "Transcription timed out after 600 seconds"
+  },
+  {
+    "request_id": "pipeline:01-projectupdatevideo:1767774226869",
+    "video_id": "01-projectupdatevideo",
+    "status": "failed",
+    "model": "qwen3_vl_fp8",
+    "started_at": 1767774226.8696902,
+    "completed_at": 1767774830.212359,
+    "total_duration_seconds": 603.3426687717438,
+    "stages": {
+      "download": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Video already exists locally"
+      },
+      "audio": {
+        "status": "skipped",
+        "skipped": true,
+        "skip_reason": "Audio file already exists"
+      },
+      "audio_upload": {
+        "status": "completed",
+        "skipped": false,
+        "started_at": 1767774226.92632,
+        "completed_at": 1767774229.4953,
+        "duration_seconds": 2.5689799785614014
+      },
+      "transcript": {
+        "status": "failed",
+        "skipped": false,
+        "started_at": 1767774229.498654,
+        "completed_at": 1767774830.209166,
+        "duration_seconds": 600.7105121612549
+      },
+      "generation": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clips": {
+        "status": "pending",
+        "skipped": false
+      },
+      "clip_upload": {
+        "status": "pending",
+        "skipped": false
+      },
+      "refinement": {
+        "status": "pending",
+        "skipped": false,
+        "moments_refined": 0,
+        "moments_total": 0
+      }
+    },
+    "result": {
+      "moments_refined": 0
+    },
+    "error_stage": "transcript",
+    "error_message": "Transcription timed out after 600 seconds"
   }
 ]

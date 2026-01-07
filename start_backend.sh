@@ -131,6 +131,32 @@ cleanup() {
     exit 0
 }
 
+# Kill existing processes before starting new ones
+kill_existing_processes() {
+    echo -e "${YELLOW}Checking for existing processes...${NC}"
+    
+    # Kill existing API server on this port
+    EXISTING_API=$(lsof -ti :${BACKEND_PORT} 2>/dev/null)
+    if [ ! -z "$EXISTING_API" ]; then
+        echo -e "${YELLOW}Killing existing API on port ${BACKEND_PORT} (PID: $EXISTING_API)${NC}"
+        kill -9 $EXISTING_API 2>/dev/null
+        sleep 1
+    fi
+    
+    # Kill ALL existing workers
+    EXISTING_WORKERS=$(pgrep -f "python.*run_worker.py" 2>/dev/null)
+    if [ ! -z "$EXISTING_WORKERS" ]; then
+        echo -e "${YELLOW}Killing existing workers: $EXISTING_WORKERS${NC}"
+        pkill -9 -f "python.*run_worker.py" 2>/dev/null
+        sleep 1
+    fi
+    
+    # Clean up stale PID files
+    rm -f "$API_PID_FILE" "$WORKER_PID_FILE"
+    
+    echo -e "${GREEN}Cleanup complete${NC}"
+}
+
 # Register cleanup on signals
 trap cleanup SIGINT SIGTERM EXIT
 
@@ -168,6 +194,9 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "Mode: ${YELLOW}${MODE}${NC}"
 echo -e "Port: ${YELLOW}${BACKEND_PORT}${NC}"
 echo -e "${GREEN}========================================${NC}"
+
+# Always cleanup before starting
+kill_existing_processes
 
 # Run based on mode
 case $MODE in

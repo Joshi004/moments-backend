@@ -351,3 +351,4 @@ class URLRegistry:
         # New URL, use base ID
         return (base_video_id, True)
 
+

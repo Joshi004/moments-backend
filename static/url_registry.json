@@ -7,9 +7,18 @@
       "file_size": 358936990,
       "downloaded_at": "2026-01-06T13:19:57Z",
       "force_downloaded": false
+    },
+    {
+      "url": "gs://rumble-ai-bucket-1/Videos/02_ProjectUpdateVideo.mp4",
+      "url_hash": "f0247acb76f3d78508f34248b1805363ae641764589a19b1a6dff9789634d349",
+      "video_id": "02-projectupdatevideo",
+      "file_size": 358936990,
+      "downloaded_at": "2026-01-07T10:00:01Z",
+      "force_downloaded": false
     }
   ],
   "url_to_latest_video_id": {
-    "6cec2a368dbbc42688067ca9a11c0abf214f8306d4cf4d30dcd32897d1fd02e3": "01-projectupdatevideo"
+    "6cec2a368dbbc42688067ca9a11c0abf214f8306d4cf4d30dcd32897d1fd02e3": "01-projectupdatevideo",
+    "f0247acb76f3d78508f34248b1805363ae641764589a19b1a6dff9789634d349": "02-projectupdatevideo"
   }
 }
