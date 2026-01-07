@@ -2,7 +2,7 @@
 Pydantic models for Pipeline API request/response validation.
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from enum import Enum
 
 
@@ -43,6 +43,14 @@ class PipelineStartRequest(BaseModel):
     override_existing_refinement: bool = Field(default=True)
 
 
+class MomentSummary(BaseModel):
+    """Minimal moment info for status response."""
+    id: str
+    title: str
+    start_time: float
+    end_time: float
+
+
 class StageStatusResponse(BaseModel):
     """Response model for a single stage status."""
     status: StageStatus
@@ -68,6 +76,8 @@ class PipelineStatusResponse(BaseModel):
     stages: Dict[str, StageStatusResponse]
     error_stage: Optional[str] = None
     error_message: Optional[str] = None
+    coarse_moments: List[MomentSummary] = []
+    refined_moments: List[MomentSummary] = []
 
 
 class PipelineStartResponse(BaseModel):

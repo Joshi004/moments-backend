@@ -14,12 +14,14 @@ from app.models.pipeline_schemas import (
     PipelineStartResponse,
     PipelineStatusResponse,
     StageStatusResponse,
+    MomentSummary,
     PipelineStage,
     StageStatus,
 )
 from app.services.pipeline.status import initialize_status, get_status, get_active_status
 from app.services.pipeline.lock import is_locked, set_cancellation_flag
 from app.services.pipeline.redis_history import get_latest_run, get_all_runs
+from app.services.moments_service import load_moments
 from app.utils.video import get_video_by_id
 
 logger = logging.getLogger(__name__)
@@ -152,6 +154,30 @@ def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusRespons
     for stage in PipelineStage:
         stages[stage.value] = _build_stage_status_response(status_data, stage)
     
+    # Load moments and separate by refinement status
+    video_filename = f"{video_id}.mp4"
+    moments = load_moments(video_filename) or []
+    
+    coarse_moments = [
+        MomentSummary(
+            id=m['id'],
+            title=m['title'],
+            start_time=m['start_time'],
+            end_time=m['end_time']
+        )
+        for m in moments if not m.get('is_refined', False)
+    ]
+    
+    refined_moments = [
+        MomentSummary(
+            id=m['id'],
+            title=m['title'],
+            start_time=m['start_time'],
+            end_time=m['end_time']
+        )
+        for m in moments if m.get('is_refined', False)
+    ]
+    
     return PipelineStatusResponse(
         request_id=request_id,
         video_id=video_id,
@@ -164,6 +190,8 @@ def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusRespons
         stages=stages,
         error_stage=error_stage if error_stage else None,
         error_message=error_message if error_message else None,
+        coarse_moments=coarse_moments,
+        refined_moments=refined_moments,
     )
 
 
@@ -254,6 +282,8 @@ async def get_pipeline_status(video_id: str):
         stages={},
         error_stage=None,
         error_message=None,
+        coarse_moments=[],
+        refined_moments=[],
     )
 
 
@@ -306,6 +336,30 @@ def get_pipeline_history(video_id: str):
         for stage in PipelineStage:
             stages[stage.value] = _build_stage_status_response(run_data, stage)
         
+        # Load moments and separate by refinement status
+        video_filename = f"{video_id}.mp4"
+        moments = load_moments(video_filename) or []
+        
+        coarse_moments = [
+            {
+                "id": m['id'],
+                "title": m['title'],
+                "start_time": m['start_time'],
+                "end_time": m['end_time']
+            }
+            for m in moments if not m.get('is_refined', False)
+        ]
+        
+        refined_moments = [
+            {
+                "id": m['id'],
+                "title": m['title'],
+                "start_time": m['start_time'],
+                "end_time": m['end_time']
+            }
+            for m in moments if m.get('is_refined', False)
+        ]
+        
         # Build run entry
         run_entry = {
             "request_id": run_data.get("request_id", ""),
@@ -318,6 +372,8 @@ def get_pipeline_history(video_id: str):
             "stages": stages,
             "error_stage": run_data.get("error_stage") or None,
             "error_message": run_data.get("error_message") or None,
+            "coarse_moments": coarse_moments,
+            "refined_moments": refined_moments,
         }
         
         # Calculate total duration
