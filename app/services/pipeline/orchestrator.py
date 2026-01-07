@@ -33,7 +33,7 @@ from app.services.transcript_service import (
     process_transcription_async,
 )
 from app.services.ai.generation_service import process_moments_generation_async
-from app.services.ai.refinement_service import process_moment_refinement_async
+from app.services.ai.refinement_service import process_moment_refinement
 from app.services.moments_service import load_moments, save_moments
 from app.services.video_clipping_service import (
     get_clip_path,
@@ -402,7 +402,15 @@ async def execute_clip_upload(video_id: str) -> None:
 
 
 async def execute_moment_refinement(video_id: str, config: dict) -> None:
-    """Execute moment refinement stage."""
+    """
+    Execute moment refinement stage using async/await.
+    
+    This function uses the new async process_moment_refinement() which:
+    - Directly awaits AI model calls (no polling)
+    - Uses asyncio.wait_for() for timeout handling
+    - Has native exception propagation
+    - No longer requires JobRepository
+    """
     video_filename = f"{video_id}.mp4"
     moments = load_moments(video_filename)
     
@@ -423,14 +431,12 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
     
     update_refinement_progress(video_id, len(moments_to_refine), 0)
     
-    from app.repositories.job_repository import JobRepository, JobType, JobStatus
-    job_repo = JobRepository()
-    
     # Refine moments with configured parallelism
     parallel_workers = config.get("refinement_parallel_workers", 2)
     semaphore = asyncio.Semaphore(parallel_workers)
     
     async def refine_one_moment(moment):
+        """Refine a single moment with semaphore-controlled concurrency."""
         async with semaphore:
             moment_id = moment['id']
             
@@ -444,37 +450,28 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                 else:
                     logger.warning(f"Failed to generate GCS signed URL for clip: {moment_id}")
             
-            # Start refinement
-            process_moment_refinement_async(
-                video_id=video_id,
-                moment_id=moment_id,
-                video_filename=video_filename,
-                user_prompt=config.get("refinement_prompt"),
-                model=config.get("model", "qwen3_vl_fp8"),
-                temperature=config.get("temperature", 0.7),
-                include_video=config.get("include_video_refinement", True),
-                video_clip_url=video_clip_url,
-            )
-            
-            # Wait for completion
-            max_wait = 600  # 10 minutes per moment
-            wait_interval = 2
-            elapsed = 0
-            
-            while elapsed < max_wait:
-                await asyncio.sleep(wait_interval)
-                elapsed += wait_interval
-                
-                job = job_repo.get(JobType.MOMENT_REFINEMENT, video_id, moment_id)
-                if job:
-                    if job["status"] == JobStatus.COMPLETED.value:
-                        return True
-                    elif job["status"] == JobStatus.FAILED.value:
-                        logger.error(f"Refinement failed for moment {moment_id}")
-                        return False
-            
-            logger.error(f"Refinement timed out for moment {moment_id}")
-            return False
+            try:
+                # Use asyncio.wait_for() for timeout handling - no more polling!
+                success = await asyncio.wait_for(
+                    process_moment_refinement(
+                        video_id=video_id,
+                        moment_id=moment_id,
+                        video_filename=video_filename,
+                        user_prompt=config.get("refinement_prompt"),
+                        model=config.get("model", "qwen3_vl_fp8"),
+                        temperature=config.get("temperature", 0.7),
+                        include_video=config.get("include_video_refinement", True),
+                        video_clip_url=video_clip_url,
+                    ),
+                    timeout=600  # 10 minutes per moment
+                )
+                return success
+            except asyncio.TimeoutError:
+                logger.error(f"Refinement timed out for moment {moment_id}")
+                return False
+            except Exception as e:
+                logger.error(f"Refinement failed for moment {moment_id}: {e}")
+                return False
     
     # Run refinements with progress tracking
     tasks = [refine_one_moment(m) for m in moments_to_refine]

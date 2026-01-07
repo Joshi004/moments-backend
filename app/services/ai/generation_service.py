@@ -61,67 +61,10 @@ def ssh_tunnel(model_key: str = "minimax"):
             close_ssh_tunnel(tunnel_process, model_key)
 
 
-def check_existing_tunnel(model_key: str = "minimax") -> bool:
-    """
-    Check if there's already an active SSH tunnel on the configured port.
-    Less restrictive: if port is accessible, assume tunnel exists and allow reuse.
-    
-    Args:
-        model_key: Model identifier ("minimax" or "qwen")
-    
-    Returns:
-        True if tunnel exists and port is accessible, False otherwise
-    """
-    import socket
-    try:
-        config = get_model_config(model_key)
-        ssh_host = config['ssh_host']
-        ssh_remote_host = config['ssh_remote_host']
-        ssh_local_port = config['ssh_local_port']
-        ssh_remote_port = config['ssh_remote_port']
-        
-        # Check if port is accessible
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', ssh_local_port))
-        sock.close()
-        
-        if result == 0:
-            # Port is accessible - check if we can find our SSH tunnel process
-            found_matching_tunnel = False
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    cmdline = proc.info.get('cmdline', [])
-                    if cmdline and 'ssh' in cmdline:
-                        cmd_str = ' '.join(cmdline)
-                        # More flexible matching: check for port forwarding patterns
-                        port_pattern = f'{ssh_local_port}:{ssh_remote_host}:{ssh_remote_port}'
-                        remote_pattern = f':{ssh_remote_host}:{ssh_remote_port}'
-                        
-                        if (port_pattern in cmd_str or remote_pattern in cmd_str) and ssh_host in cmd_str:
-                            logger.info(f"Found existing SSH tunnel (PID: {proc.info['pid']})")
-                            found_matching_tunnel = True
-                            break
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            
-            # If port is accessible, assume it's a working tunnel (less restrictive)
-            # This allows reuse of tunnels created manually or by other processes
-            if found_matching_tunnel:
-                logger.info(f"Port {ssh_local_port} is accessible and matches our tunnel configuration")
-            else:
-                logger.info(f"Port {ssh_local_port} is accessible - assuming existing tunnel (may be created manually)")
-            return True  # Port is accessible, allow reuse
-        
-        return False
-    except Exception as e:
-        logger.debug(f"Error checking existing tunnel: {str(e)}")
-        return False
-
-
 def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
     """
-    Create SSH tunnel to AI model service.
+    Create FRESH SSH tunnel to AI model service.
+    Always kills existing tunnels first to ensure clean state and correct config.
     
     Args:
         model_key: Model identifier ("minimax" or "qwen")
@@ -136,43 +79,15 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
         ssh_local_port = config['ssh_local_port']
         ssh_remote_port = config['ssh_remote_port']
         
-        # First, check if there's already an active tunnel we can reuse
-        if check_existing_tunnel(model_key):
-            logger.info("Reusing existing SSH tunnel")
-            # Return a dummy process - the tunnel is already running
-            return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
-        
-        # No existing tunnel found by check_existing_tunnel, check if port is in use by something else
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', ssh_local_port))
-        sock.close()
-        
-        if result == 0:
-            # Port is accessible - less restrictive: verify it works and reuse it
-            logger.info(f"Port {ssh_local_port} is accessible. Verifying it's working and reusing existing connection...")
-            
-            # Try to verify the port is actually forwarding correctly
-            # If port is accessible, assume it's a working tunnel and reuse it
-            try:
-                # Quick connectivity test
-                test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_sock.settimeout(2)
-                test_result = test_sock.connect_ex(('localhost', ssh_local_port))
-                test_sock.close()
-                
-                if test_result == 0:
-                    logger.info(f"Port {ssh_local_port} is accessible and appears to be working. Reusing existing tunnel.")
-                    # Return a dummy process - the tunnel is already running
-                    return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
-            except Exception as e:
-                logger.debug(f"Port connectivity test failed: {str(e)}")
-            
-            # If we get here, port is accessible but we couldn't verify it
-            # Still be lenient and try to reuse it
-            logger.info(f"Port {ssh_local_port} is accessible. Attempting to reuse (less restrictive mode).")
-            return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
+        # ALWAYS kill existing tunnel first to ensure fresh connection with correct config
+        logger.info(f"Killing any existing tunnel on port {ssh_local_port} for model {model_key}...")
+        killed = close_ssh_tunnel(None, model_key)  # Pass None to kill by port/config
+        if killed:
+            logger.info(f"Killed existing tunnel - will create fresh tunnel")
+            # Wait a moment for port to be released
+            time.sleep(0.5)
+        else:
+            logger.info(f"No existing tunnel found - will create fresh tunnel")
         
         cmd = [
             'ssh',
@@ -802,6 +717,239 @@ def call_ai_model(
             operation=operation,
             error=e,
             message="Unexpected error in AI model call",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "duration_seconds": duration
+            }
+        )
+        return None
+
+
+async def call_ai_model_async(
+    messages: List[Dict], 
+    model_key: str = "minimax", 
+    model_id: Optional[str] = None, 
+    temperature: float = 0.7,
+    video_url: Optional[str] = None
+) -> Optional[Dict]:
+    """
+    Call the AI model via tunnel asynchronously using httpx.
+    
+    This is the async version of call_ai_model() for use in async contexts.
+    The SSH tunnel must already be established before calling this function.
+    
+    Args:
+        messages: List of message dictionaries with 'role' and 'content'
+        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
+        model_id: Optional model ID to use in the request (if None, uses config default)
+        temperature: Temperature parameter for the model (default: 0.7)
+        video_url: Optional URL to video clip for multimodal requests
+    
+    Returns:
+        Dictionary with AI model response or None if failed
+    """
+    import httpx
+    
+    operation = "ai_model_call_async"
+    start_time = time.time()
+    model_url = None
+    
+    try:
+        model_url = get_model_url(model_key)
+        config = get_model_config(model_key)
+        
+        # Use provided model_id or get from config
+        if model_id is None:
+            model_id = config.get('model_id')
+        
+        # Transform messages to multimodal format if video_url is provided
+        if video_url:
+            logger.info(f"Building multimodal request with video URL: {video_url}")
+            transformed_messages = []
+            for msg in messages:
+                if msg.get('role') == 'user' and isinstance(msg.get('content'), str):
+                    # Convert text content to multimodal content array with video
+                    multimodal_content = [
+                        {"type": "video_url", "video_url": {"url": video_url}},
+                        {"type": "text", "text": msg['content']}
+                    ]
+                    transformed_messages.append({
+                        "role": msg['role'],
+                        "content": multimodal_content
+                    })
+                else:
+                    transformed_messages.append(msg)
+            messages = transformed_messages
+        
+        payload = {
+            "messages": messages,
+            "max_tokens": MAX_TOKENS,
+            "temperature": temperature
+        }
+        
+        # Only add model_id if it's specified (Qwen needs it, MiniMax might not)
+        if model_id:
+            payload["model"] = model_id
+        
+        # Add top_p and top_k if they're specified in the model config
+        if 'top_p' in config:
+            payload["top_p"] = config['top_p']
+        if 'top_k' in config:
+            payload["top_k"] = config['top_k']
+        
+        # Add response_format for models that support it (vLLM 0.10+)
+        response_format = get_response_format_param(model_key)
+        if response_format:
+            payload["response_format"] = response_format
+            logger.info(f"Using response_format enforcement: {response_format}")
+        
+        # Log prompt being sent (first message content, truncated)
+        first_content = messages[0].get('content', '') if messages else 'N/A'
+        if isinstance(first_content, list):
+            text_parts = [item.get('text', '') for item in first_content if item.get('type') == 'text']
+            prompt_preview = (text_parts[0][:500] if text_parts else 'N/A')
+            prompt_length = len(text_parts[0]) if text_parts else 0
+        else:
+            prompt_preview = first_content[:500] if first_content else 'N/A'
+            prompt_length = len(first_content) if first_content else 0
+        
+        log_operation_start(
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            message="Calling AI model (async)",
+            context={
+                "model_key": model_key,
+                "model_id": model_id,
+                "model_url": model_url,
+                "temperature": temperature,
+                "max_tokens": MAX_TOKENS,
+                "message_count": len(messages),
+                "prompt_preview": prompt_preview,
+                "prompt_length": prompt_length,
+                "video_url": video_url,
+                "is_multimodal": video_url is not None,
+                "request_id": get_request_id()
+            }
+        )
+        
+        # Use httpx AsyncClient for async HTTP requests
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            response = await client.post(
+                model_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+        
+        duration = time.time() - start_time
+        
+        log_event(
+            level="DEBUG",
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            event="model_call_complete",
+            message="Received response from AI model",
+            context={
+                "status_code": response.status_code,
+                "response_size_bytes": len(response.content) if response.content else 0,
+                "duration_seconds": duration
+            }
+        )
+        
+        response.raise_for_status()
+        
+        try:
+            result = response.json()
+            
+            log_operation_complete(
+                logger="app.services.ai.generation_service",
+                function="call_ai_model_async",
+                operation=operation,
+                message="AI model call completed successfully (async)",
+                context={
+                    "model_key": model_key,
+                    "model_id": model_id,
+                    "response_keys": list(result.keys()) if isinstance(result, dict) else None,
+                    "has_choices": "choices" in result if isinstance(result, dict) else False,
+                    "duration_seconds": duration
+                }
+            )
+            return result
+        except json.JSONDecodeError as e:
+            log_event(
+                level="ERROR",
+                logger="app.services.ai.generation_service",
+                function="call_ai_model_async",
+                operation=operation,
+                event="parse_error",
+                message="Failed to parse AI model response as JSON",
+                context={
+                    "error": str(e),
+                    "response_preview": response.text[:2000] if hasattr(response, 'text') else None,
+                    "duration_seconds": duration
+                }
+            )
+            raise
+        
+    except httpx.ConnectError as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            error=e,
+            message="Connection error calling AI model (async)",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "error": str(e),
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except httpx.TimeoutException as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            error=e,
+            message="Timeout calling AI model (async)",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "timeout_seconds": 600,
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except httpx.HTTPStatusError as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            error=e,
+            message="HTTP error calling AI model (async)",
+            context={
+                "model_key": model_key,
+                "model_url": model_url,
+                "status_code": e.response.status_code if e.response else None,
+                "response_preview": e.response.text[:500] if e.response and e.response.text else None,
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.ai.generation_service",
+            function="call_ai_model_async",
+            operation=operation,
+            error=e,
+            message="Unexpected error in AI model call (async)",
             context={
                 "model_key": model_key,
                 "model_url": model_url,

@@ -156,63 +156,6 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
         return False
 
 
-def check_existing_tunnel(service_key: str = "parakeet") -> bool:
-    """
-    Check if there's already an active SSH tunnel on the configured port.
-    Less restrictive: if port is accessible, assume tunnel exists and allow reuse.
-    
-    Args:
-        service_key: Service identifier ("parakeet")
-    
-    Returns:
-        True if tunnel exists and port is accessible, False otherwise
-    """
-    try:
-        config = get_model_config(service_key)
-        ssh_host = config['ssh_host']
-        ssh_remote_host = config['ssh_remote_host']
-        ssh_local_port = config['ssh_local_port']
-        ssh_remote_port = config['ssh_remote_port']
-        
-        # Check if port is accessible
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', ssh_local_port))
-        sock.close()
-        
-        if result == 0:
-            # Port is accessible - check if we can find our SSH tunnel process
-            found_matching_tunnel = False
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    cmdline = proc.info.get('cmdline', [])
-                    if cmdline and 'ssh' in cmdline:
-                        cmd_str = ' '.join(cmdline)
-                        # More flexible matching: check for port forwarding patterns
-                        port_pattern = f'{ssh_local_port}:{ssh_remote_host}:{ssh_remote_port}'
-                        remote_pattern = f':{ssh_remote_host}:{ssh_remote_port}'
-                        
-                        if (port_pattern in cmd_str or remote_pattern in cmd_str) and ssh_host in cmd_str:
-                            logger.info(f"Found existing SSH tunnel (PID: {proc.info['pid']})")
-                            found_matching_tunnel = True
-                            break
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            
-            # If port is accessible, assume it's a working tunnel (less restrictive)
-            # This allows reuse of tunnels created manually or by other processes
-            if found_matching_tunnel:
-                logger.info(f"Port {ssh_local_port} is accessible and matches our tunnel configuration")
-            else:
-                logger.info(f"Port {ssh_local_port} is accessible - assuming existing tunnel (may be created manually)")
-            return True  # Port is accessible, allow reuse
-        
-        return False
-    except Exception as e:
-        logger.debug(f"Error checking existing tunnel: {str(e)}")
-        return False
-
-
 @contextmanager
 def ssh_tunnel(service_key: str = "parakeet"):
     """
@@ -246,7 +189,8 @@ def ssh_tunnel(service_key: str = "parakeet"):
 
 def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Popen]:
     """
-    Create SSH tunnel to remote transcription service.
+    Create FRESH SSH tunnel to remote transcription service.
+    Always kills existing tunnels first to ensure clean state and correct config.
     
     Args:
         service_key: Service identifier ("parakeet")
@@ -268,7 +212,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             logger="app.services.transcript_service",
             function="create_ssh_tunnel",
             operation=operation,
-            message="Creating SSH tunnel to transcription service",
+            message="Creating FRESH SSH tunnel (killing any existing tunnel first)",
             context={
                 "ssh_host": ssh_host,
                 "local_port": ssh_local_port,
@@ -279,43 +223,17 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             }
         )
         
-        # First, check if there's already an active tunnel we can reuse
-        if check_existing_tunnel(service_key):
-            logger.info("Reusing existing SSH tunnel")
-            # Return a dummy process - the tunnel is already running
-            return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
+        # ALWAYS kill existing tunnel first to ensure fresh connection with correct config
+        logger.info(f"Killing any existing tunnel on port {ssh_local_port}...")
+        killed = close_ssh_tunnel(None, service_key)  # Pass None to kill by port/config
+        if killed:
+            logger.info(f"Killed existing tunnel - will create fresh tunnel")
+            # Wait a moment for port to be released
+            time.sleep(0.5)
+        else:
+            logger.info(f"No existing tunnel found - will create fresh tunnel")
         
-        # No existing tunnel found by check_existing_tunnel, check if port is in use by something else
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', ssh_local_port))
-        sock.close()
-        
-        if result == 0:
-            # Port is accessible - less restrictive: verify it works and reuse it
-            logger.info(f"Port {ssh_local_port} is accessible. Verifying it's working and reusing existing connection...")
-            
-            # Try to verify the port is actually forwarding correctly
-            # If port is accessible, assume it's a working tunnel and reuse it
-            try:
-                # Quick connectivity test
-                test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                test_sock.settimeout(2)
-                test_result = test_sock.connect_ex(('localhost', ssh_local_port))
-                test_sock.close()
-                
-                if test_result == 0:
-                    logger.info(f"Port {ssh_local_port} is accessible and appears to be working. Reusing existing tunnel.")
-                    # Return a dummy process - the tunnel is already running
-                    return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
-            except Exception as e:
-                logger.debug(f"Port connectivity test failed: {str(e)}")
-            
-            # If we get here, port is accessible but we couldn't verify it
-            # Still be lenient and try to reuse it
-            logger.info(f"Port {ssh_local_port} is accessible. Attempting to reuse (less restrictive mode).")
-            return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
-        
+        # Create fresh tunnel
         cmd = [
             'ssh',
             '-fN',  # Background, no command execution
@@ -336,7 +254,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             context={"command": " ".join(cmd)}
         )
         
-        logger.info(f"Creating SSH tunnel: {' '.join(cmd)}")
+        logger.info(f"Creating FRESH SSH tunnel: {' '.join(cmd)}")
         logger.info(f"Tunnel config: localhost:{ssh_local_port} -> {ssh_remote_host}:{ssh_remote_port} via {ssh_host}")
         
         process = subprocess.Popen(
@@ -350,27 +268,6 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         
         exit_code = process.returncode
         error_msg = stderr.decode().strip() if stderr else ''
-        
-        # Check for "Address already in use" - this means tunnel already exists, which is OK
-        if 'Address already in use' in error_msg or 'bind' in error_msg.lower():
-            logger.info("Port already in use - checking if existing tunnel is working...")
-            # Verify the existing tunnel works
-            time.sleep(1.0)
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('localhost', ssh_local_port))
-            sock.close()
-            
-            if result == 0:
-                logger.info("Existing tunnel is working, reusing it")
-                # Return a dummy process - the tunnel is already running
-                return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
-            else:
-                # Port was reported as in use but not accessible - this is unusual
-                # Still be lenient and log a warning but don't fail
-                logger.warning("Port reported as in use but not immediately accessible. Will attempt to use anyway.")
-                # Return dummy process - let the actual API call determine if it works
-                return subprocess.Popen(['echo'], stdout=subprocess.PIPE)
         
         # With -fN, SSH forks into background and parent exits immediately
         # Exit code 0 usually means success, non-zero means failure
@@ -393,27 +290,27 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
             logger.error(f"SSH tunnel failed with exit code {exit_code}: {error_msg}")
             return None
         
-        logger.info(f"SSH tunnel command executed (exit code: {exit_code})")
+        logger.info(f"SSH tunnel command executed successfully (exit code: {exit_code})")
         
         # Wait a moment for tunnel to establish
         time.sleep(2.0)
         
-        # Check if SSH tunnel process is actually running
-        tunnel_running = False
+        # Find the actual SSH tunnel process that was created
+        tunnel_pid = None
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 cmdline = proc.info.get('cmdline', [])
                 if cmdline and 'ssh' in cmdline:
                     cmd_str = ' '.join(cmdline)
                     if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
-                        logger.info(f"Found SSH tunnel process (PID: {proc.info['pid']})")
-                        tunnel_running = True
+                        tunnel_pid = proc.info['pid']
+                        logger.info(f"Found SSH tunnel process (PID: {tunnel_pid})")
                         break
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
-        if not tunnel_running:
-            logger.warning("SSH tunnel process not found, but command succeeded. Tunnel may have failed silently.")
+        if not tunnel_pid:
+            logger.warning("SSH tunnel process not found after creation. Tunnel may have failed silently.")
         
         # Verify the tunnel is actually working by checking if port is listening
         try:
@@ -431,15 +328,14 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
                     function="create_ssh_tunnel",
                     operation=operation,
                     event="ssh_tunnel_complete",
-                    message="SSH tunnel created successfully",
+                    message="✅ Fresh SSH tunnel created and verified successfully",
                     context={
-                        "pid": process.pid if tunnel_running else None,
+                        "tunnel_pid": tunnel_pid,
                         "duration_seconds": duration
                     }
                 )
-                logger.info(f"SSH tunnel verified: port {ssh_local_port} is listening and accessible")
-                # Return the process object (even though it exited, we have its PID for cleanup)
-                # The actual tunnel runs in a background SSH process
+                logger.info(f"✅ Fresh SSH tunnel verified: port {ssh_local_port} is listening and accessible")
+                # Return the process object (will be used for tracking, actual cleanup uses PID)
                 return process
             else:
                 log_event(
@@ -448,13 +344,13 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
                     function="create_ssh_tunnel",
                     operation=operation,
                     event="ssh_tunnel_error",
-                    message="SSH tunnel port not accessible",
+                    message="SSH tunnel port not accessible after creation",
                     context={
                         "duration_seconds": duration
                     }
                 )
-                logger.error(f"SSH tunnel port {ssh_local_port} is not accessible (connection test failed with code {result})")
-                if not tunnel_running:
+                logger.error(f"❌ SSH tunnel port {ssh_local_port} is not accessible (connection test failed with code {result})")
+                if not tunnel_pid:
                     logger.error("SSH tunnel process is not running. Check SSH configuration and remote service status.")
                 else:
                     logger.error("SSH tunnel process is running but port is not accessible. Check if remote service is running.")

@@ -69,7 +69,7 @@ MODELS = {
         # "ssh_host": "naresh@85.234.64.44", Primary
         "ssh_host": "naresh@85.234.64.146", # Secondry
         # "ssh_remote_host": "worker-9", # Primary
-        "ssh_remote_host": "worker-19", #secondr
+        "ssh_remote_host": "worker-5", #secondr
         "ssh_local_port": 6106,
         "ssh_remote_port": 8006,
     }
