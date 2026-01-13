@@ -28,7 +28,7 @@ from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 # Initialize job repository
 job_repo = JobRepository()
-from app.services.video_clipping_service import check_clip_exists, get_clip_gcs_signed_url
+from app.services.video_clipping_service import check_clip_exists, get_clip_gcs_signed_url_async
 from app.utils.model_config import model_supports_video
 from app.core.logging import (
     log_event,
@@ -432,7 +432,7 @@ Guidelines:
                     detail="Video clip not available. Extract clips first or disable video refinement."
                 )
             
-            video_clip_url = get_clip_gcs_signed_url(moment_id, video_file.name)
+            video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_file.name)
         
         # Start refinement job
         job = job_repo.create(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)

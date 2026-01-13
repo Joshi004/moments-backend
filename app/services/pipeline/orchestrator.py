@@ -443,8 +443,8 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
             # Generate GCS signed URL for video if needed
             video_clip_url = None
             if config.get("include_video_refinement", True):
-                from app.services.video_clipping_service import get_clip_gcs_signed_url
-                video_clip_url = get_clip_gcs_signed_url(moment_id, video_filename)
+                from app.services.video_clipping_service import get_clip_gcs_signed_url_async
+                video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_filename)
                 if video_clip_url:
                     logger.info(f"Generated GCS signed URL for clip refinement: {moment_id}")
                 else:

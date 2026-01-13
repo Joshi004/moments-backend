@@ -76,8 +76,55 @@ def get_clip_url(moment_id: str, video_filename: str) -> Optional[str]:
 
 def get_clip_gcs_signed_url(moment_id: str, video_filename: str) -> Optional[str]:
     """
-    Upload clip to GCS if not already uploaded, and return signed URL.
-    Used for AI model refinement with video.
+    Sync wrapper: Upload clip to GCS if not already uploaded, and return signed URL.
+    
+    DEPRECATED: Use get_clip_gcs_signed_url_async() in async contexts instead.
+    This sync version should only be called from synchronous code.
+    
+    Args:
+        moment_id: Moment identifier
+        video_filename: Video filename (e.g., "video123.mp4")
+    
+    Returns:
+        GCS signed URL if clip exists and upload succeeds, None otherwise
+    
+    Raises:
+        RuntimeError: If called from an async context (event loop already running)
+    """
+    import asyncio
+    
+    # Check if already in an event loop
+    try:
+        loop = asyncio.get_running_loop()
+        # If we get here, we're in an async context - this is an error
+        error_msg = (
+            f"Called sync get_clip_gcs_signed_url() from async context for moment {moment_id}. "
+            "Use get_clip_gcs_signed_url_async() instead."
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    except RuntimeError as e:
+        # Check if it's our error or the "no running loop" error
+        if "async context" in str(e):
+            raise
+        # No running loop - safe to proceed with sync version
+        pass
+    
+    # Safe to call async version using asyncio.run()
+    try:
+        return asyncio.run(get_clip_gcs_signed_url_async(moment_id, video_filename))
+    except Exception as e:
+        logger.error(f"Failed to get GCS signed URL for moment {moment_id}: {type(e).__name__}: {e}")
+        return None
+
+
+async def get_clip_gcs_signed_url_async(moment_id: str, video_filename: str) -> Optional[str]:
+    """
+    Async version: Upload clip to GCS if not already uploaded, and return signed URL.
+    Used for AI model refinement with video from async contexts.
+    
+    This is the preferred version when calling from async contexts (orchestrator, async endpoints).
+    It directly awaits the upload instead of creating a new event loop.
     
     Args:
         moment_id: Moment identifier
@@ -93,22 +140,14 @@ def get_clip_gcs_signed_url(moment_id: str, video_filename: str) -> Optional[str
     
     try:
         from app.services.pipeline.upload_service import GCSUploader
-        import asyncio
         
         video_id = Path(video_filename).stem
         uploader = GCSUploader()
         
-        # Run the async upload in a new event loop (since this is called from sync context)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            gcs_path, signed_url = loop.run_until_complete(
-                uploader.upload_clip(clip_path, video_id, moment_id)
-            )
-            logger.info(f"Generated GCS signed URL for clip: {moment_id}")
-            return signed_url
-        finally:
-            loop.close()
+        # Directly await since we're in async context
+        gcs_path, signed_url = await uploader.upload_clip(clip_path, video_id, moment_id)
+        logger.info(f"Generated GCS signed URL for clip: {moment_id}")
+        return signed_url
     
     except Exception as e:
         logger.error(f"Failed to upload clip to GCS for moment {moment_id}: {type(e).__name__}: {e}")
