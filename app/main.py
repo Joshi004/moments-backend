@@ -9,7 +9,7 @@ from app.core.logging import setup_logging
 from app.core.redis import get_redis_client, close_redis_client, health_check
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
-from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments
+from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments, delete
 from app.api.deps import cleanup_resources
 from app.workers.pipeline_worker import ensure_pipeline_consumer_group, start_pipeline_worker
 
@@ -38,6 +38,7 @@ app.include_router(transcripts.router, prefix="/api", tags=["transcripts"])
 app.include_router(clips.router, prefix="/api", tags=["clips"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(generate_moments.router, prefix="/api", tags=["generate_moments"])
+app.include_router(delete.router, prefix="/api", tags=["delete"])
 
 # Mount static files
 thumbnails_dir = Path(__file__).parent.parent / "static" / "thumbnails"

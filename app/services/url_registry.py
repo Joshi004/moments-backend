@@ -350,5 +350,58 @@ class URLRegistry:
         
         # New URL, use base ID
         return (base_video_id, True)
+    
+    def unregister(self, video_id: str) -> bool:
+        """
+        Remove registry entry by video_id.
+        
+        Args:
+            video_id: Video identifier to remove
+        
+        Returns:
+            True if entry was found and removed, False otherwise
+        """
+        found = False
+        
+        # Find and remove entries with this video_id
+        entries_to_remove = []
+        url_hashes_to_update = []
+        
+        for entry in self.entries:
+            if entry.video_id == video_id:
+                entries_to_remove.append(entry)
+                url_hashes_to_update.append(entry.url_hash)
+                found = True
+        
+        # Remove entries
+        for entry in entries_to_remove:
+            self.entries.remove(entry)
+        
+        # Update url_to_latest_video_id mapping
+        for url_hash in url_hashes_to_update:
+            if url_hash in self.url_to_latest_video_id:
+                if self.url_to_latest_video_id[url_hash] == video_id:
+                    # Find if there's an older entry for this URL hash
+                    older_entry = None
+                    for entry in reversed(self.entries):
+                        if entry.url_hash == url_hash:
+                            older_entry = entry
+                            break
+                    
+                    if older_entry:
+                        # Revert to older entry
+                        self.url_to_latest_video_id[url_hash] = older_entry.video_id
+                    else:
+                        # No other entry, remove from mapping
+                        del self.url_to_latest_video_id[url_hash]
+        
+        # Save changes
+        if found:
+            self._save()
+            logger.info(f"Unregistered video_id: {video_id}")
+        else:
+            logger.debug(f"Video_id not found in registry: {video_id}")
+        
+        return found
 
 
