@@ -332,8 +332,8 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
         max_moment_length=config.get("max_moment_length", 120),
         min_moments=config.get("min_moments", 3),
         max_moments=config.get("max_moments", 10),
-        model=config.get("model", "qwen3_vl_fp8"),
-        temperature=config.get("temperature", 0.7),
+        model=config.get("generation_model", "qwen3_vl_fp8"),
+        temperature=config.get("generation_temperature", 0.7),
     )
     
     # Wait for completion by polling pipeline status
@@ -459,8 +459,8 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                         moment_id=moment_id,
                         video_filename=video_filename,
                         user_prompt=DEFAULT_REFINEMENT_PROMPT,
-                        model=config.get("model", "qwen3_vl_fp8"),
-                        temperature=config.get("temperature", 0.7),
+                        model=config.get("refinement_model", "qwen3_vl_fp8"),
+                        temperature=config.get("refinement_temperature", 0.7),
                         include_video=config.get("include_video_refinement", True),
                         video_clip_url=video_clip_url,
                     ),
@@ -547,21 +547,27 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
     Returns:
         Result dictionary with success status and details
     """
-    model = config.get("model", "qwen3_vl_fp8")
-    model_supports_video = (model == "qwen3_vl_fp8")
+    generation_model = config.get("generation_model", "qwen3_vl_fp8")
+    refinement_model = config.get("refinement_model", "qwen3_vl_fp8")
     
-    logger.info(f"Starting pipeline for {video_id} with model {model}")
+    logger.info(f"Starting pipeline for {video_id} with generation_model={generation_model}, refinement_model={refinement_model}")
     
-    # Select stages based on model
-    if model_supports_video:
+    # Use existing helper from model_config.py
+    from app.utils.model_config import model_supports_video
+    refinement_needs_video = model_supports_video(refinement_model)
+    
+    # Select stages based on refinement model's video capability
+    if refinement_needs_video:
         stages = QWEN_STAGES
     else:
         stages = MINIMAX_STAGES
-        # Mark skipped stages for MiniMax
+        # Mark skipped stages for non-video models
         mark_stage_skipped(video_id, PipelineStage.CLIP_EXTRACTION, 
-                          "Model does not support video")
+                          "Refinement model does not support video")
         mark_stage_skipped(video_id, PipelineStage.CLIP_UPLOAD, 
-                          "Model does not support video")
+                          "Refinement model does not support video")
+        # Force disable video refinement
+        config["include_video_refinement"] = False
     
     update_pipeline_status(video_id, "processing")
     

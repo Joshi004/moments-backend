@@ -126,7 +126,8 @@ def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusRespons
     request_id = status_data.get("request_id", "")
     video_id = status_data.get("video_id", "")
     status = status_data.get("status", "unknown")
-    model = status_data.get("model", "")
+    generation_model = status_data.get("generation_model", "")
+    refinement_model = status_data.get("refinement_model", "")
     started_at_str = status_data.get("started_at", "0")
     completed_at_str = status_data.get("completed_at", "")
     current_stage = status_data.get("current_stage", "")
@@ -182,7 +183,8 @@ def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusRespons
         request_id=request_id,
         video_id=video_id,
         status=status,
-        model=model,
+        generation_model=generation_model,
+        refinement_model=refinement_model,
         started_at=started_at,
         completed_at=completed_at,
         total_duration_seconds=total_duration,
@@ -274,7 +276,8 @@ async def get_pipeline_status(video_id: str):
         request_id="",
         video_id=video_id,
         status="never_run",
-        model="",
+        generation_model="",
+        refinement_model="",
         started_at=0,
         completed_at=None,
         total_duration_seconds=None,
@@ -365,7 +368,8 @@ def get_pipeline_history(video_id: str):
             "request_id": run_data.get("request_id", ""),
             "video_id": run_data.get("video_id", ""),
             "status": run_data.get("status", "unknown"),
-            "model": run_data.get("model", ""),
+            "generation_model": run_data.get("generation_model", ""),
+            "refinement_model": run_data.get("refinement_model", ""),
             "started_at": float(run_data.get("started_at", "0")),
             "completed_at": float(run_data.get("completed_at", "0")) if run_data.get("completed_at") else None,
             "total_duration_seconds": None,

@@ -29,8 +29,11 @@ class StageStatus(str, Enum):
 
 class PipelineStartRequest(BaseModel):
     """Request model for starting a pipeline."""
-    model: str = Field(default="qwen3_vl_fp8", pattern="^(qwen3_vl_fp8|minimax)$")
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    # Per-phase model selection
+    generation_model: str = Field(default="qwen3_vl_fp8", pattern="^(qwen3_vl_fp8|minimax)$")
+    refinement_model: str = Field(default="qwen3_vl_fp8", pattern="^(qwen3_vl_fp8|minimax)$")
+    generation_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    refinement_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     min_moment_length: float = Field(default=60, ge=10, le=300)
     max_moment_length: float = Field(default=120, ge=30, le=600)
     min_moments: int = Field(default=3, ge=1, le=50)
@@ -67,7 +70,8 @@ class PipelineStatusResponse(BaseModel):
     request_id: str
     video_id: str
     status: str  # pending|processing|completed|failed|cancelled|not_running|never_run
-    model: str
+    generation_model: str
+    refinement_model: str
     started_at: float
     completed_at: Optional[float] = None
     total_duration_seconds: Optional[float] = None
