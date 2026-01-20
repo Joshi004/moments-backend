@@ -12,7 +12,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.services.ai.request_logger import log_ai_request_response
-from app.services.ai.prompt_config import get_refinement_prompt_config
+from app.services.ai.prompt_tasks import RefinementTask, extract_model_name, strip_think_tags
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
 from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
@@ -22,93 +22,7 @@ logger = logging.getLogger(__name__)
 job_repo = JobRepository()
 
 
-# Removed get_refinement_job_key - handled by JobRepository
-
-
-def extract_model_name(response: Dict) -> str:
-    """
-    Extract model name from AI API response.
-    
-    Args:
-        response: Dictionary containing AI model response
-    
-    Returns:
-        Model name string, or "Unknown Model" if not available
-    """
-    if not isinstance(response, dict):
-        return "Unknown Model"
-    
-    model_name = response.get('model', 'Unknown Model')
-    if not model_name or model_name == '':
-        return "Unknown Model"
-    
-    return str(model_name)
-
-
-def strip_think_tags(content: str) -> str:
-    """
-    Remove <think>...</think> tags and their content from AI model responses.
-    
-    Some AI models wrap their reasoning process in <think> tags, which need to be
-    stripped before parsing JSON responses.
-    
-    Args:
-        content: Raw content string from AI model response
-        
-    Returns:
-        Content with think tags removed and stripped
-    """
-    logger.debug(f"strip_think_tags called with content length: {len(content) if isinstance(content, str) else 'N/A'}")
-    
-    if not isinstance(content, str):
-        logger.warning(f"strip_think_tags: content is not a string, type: {type(content)}")
-        return content
-    
-    # Log content preview before processing
-    content_preview = content[:300] if len(content) > 300 else content
-    logger.debug(f"strip_think_tags: Content before processing (first 300 chars): {content_preview}")
-    
-    # Pattern to match <think>...</think> tags (non-greedy, handles multiline with DOTALL)
-    # Also handle variations like <think>, <thinking>, etc.
-    # Note: Matching <think> tags as that's what the AI models actually return
-    think_pattern = r'<think[^>]*>.*?</think>'
-    logger.debug(f"strip_think_tags: Using pattern: {think_pattern}")
-    
-    # Count occurrences before removal for logging
-    matches = re.findall(think_pattern, content, re.DOTALL | re.IGNORECASE)
-    logger.info(f"strip_think_tags: Found {len(matches)} think tag block(s) using pattern")
-    
-    if matches:
-        # Log what was matched
-        for i, match in enumerate(matches[:3]):  # Log first 3 matches
-            match_preview = match[:200] if len(match) > 200 else match
-            logger.debug(f"strip_think_tags: Match {i+1} preview (first 200 chars): {match_preview}")
-        
-        if len(matches) > 3:
-            logger.debug(f"strip_think_tags: ... and {len(matches) - 3} more matches")
-        
-        logger.info(f"strip_think_tags: Stripping {len(matches)} think tag block(s) from content")
-        content_length_before = len(content)
-        content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE)
-        # Strip extra whitespace that may have been left behind
-        content = content.strip()
-        
-        # Log result after stripping
-        content_after_preview = content[:300] if len(content) > 300 else content
-        logger.info(f"strip_think_tags: Content after stripping (first 300 chars): {content_after_preview}")
-        logger.debug(f"strip_think_tags: Content length changed from {content_length_before} to {len(content)} chars")
-    else:
-        logger.warning(f"strip_think_tags: No think tags found with pattern '{think_pattern}'")
-        # Try to find what tags ARE in the content
-        opening_tags = re.findall(r'<([^/>\s]+)[^>]*>', content)
-        closing_tags = re.findall(r'</([^/>\s]+)>', content)
-        if opening_tags or closing_tags:
-            logger.debug(f"strip_think_tags: Found opening tags: {set(opening_tags)}")
-            logger.debug(f"strip_think_tags: Found closing tags: {set(closing_tags)}")
-        else:
-            logger.debug(f"strip_think_tags: No XML/HTML-like tags found in content")
-    
-    return content
+# extract_model_name and strip_think_tags are now imported from prompt_tasks.utils
 
 
 def extract_word_timestamps_for_range(
@@ -169,384 +83,7 @@ def extract_word_timestamps_for_range(
     return extracted_words, clip_start, clip_end
 
 
-def build_refinement_prompt(
-    user_prompt: str,
-    words: List[Dict],
-    clip_start: float,
-    clip_end: float,
-    original_start: float,
-    original_end: float,
-    original_title: str,
-    model_key: str = "minimax",
-    include_video: bool = False,
-    video_clip_url: Optional[str] = None
-) -> str:
-    """
-    Build the complete prompt for moment refinement.
-    
-    Args:
-        user_prompt: User-provided prompt (editable, visible in UI)
-        words: List of word dictionaries with 'word', 'start', and 'end' fields
-        clip_start: Clip start time (0 if normalized, or actual clip_start if absolute)
-        clip_end: Clip end time (duration if normalized, or actual clip_end if absolute)
-        original_start: Original moment start time (absolute, for context)
-        original_end: Original moment end time (absolute, for context)
-        original_title: Title of the moment being refined
-        model_key: Model identifier for model-specific prompting
-        include_video: Whether video is included in this refinement request
-        video_clip_url: URL of the video clip (if include_video is True)
-        
-    Returns:
-        Complete prompt string with all sections assembled
-    """
-    # Get model-specific prompt configuration for refinement (requires JSON object, not array)
-    prompt_config = get_refinement_prompt_config(model_key)
-    json_header = prompt_config["json_header"]
-    json_footer = prompt_config.get("json_footer", "")
-    # Format words as [start-end] word
-    words_text = "\n".join([
-        f"[{word['start']:.2f}-{word['end']:.2f}] {word['word']}"
-        for word in words
-    ])
-    
-    # Video context section (only when video is included)
-    video_context = ""
-    if include_video and video_clip_url:
-        video_context = f"""VIDEO INPUT:
-A video clip is provided along with this request. The video clip is precisely aligned with the transcript below:
-- The video starts at 0.00 seconds
-- The transcript starts at 0.00 seconds
-- Both are synchronized in the same normalized time coordinate system
-
-IMPORTANT: Use the video frames to visually identify the exact moment boundaries. Look for:
-- Visual cues that indicate the start of the topic/segment
-- Scene changes, speaker changes, or visual transitions
-- The exact frame where the engaging content begins and ends
-- Correlation between what you see and what you hear in the transcript
-
-Analyze BOTH the video frames and the word-level transcript to determine the most accurate timestamps. The timestamps you output should match this normalized coordinate system (starting from 0.00).
-
-"""
-    
-    # Context explanation (backend-only, not editable)
-    context_explanation = f"""TASK CONTEXT:
-You are refining the timestamps for an existing video moment. The moment currently has the following information:
-- Title: "{original_title}"
-- Current start time: {original_start:.2f} seconds
-- Current end time: {original_end:.2f} seconds
-
-IMPORTANT - COORDINATE SYSTEM:
-All timestamps (transcript, video, and the current moment times above) are in the SAME normalized coordinate system:
-- The clip starts at 0.00 seconds
-- The clip ends at {clip_end:.2f} seconds
-- Both the transcript and{' video' if include_video else ' audio'} are aligned to this coordinate system
-- Your output timestamps must also be in this coordinate system (0.00 to {clip_end:.2f})
-
-The current timestamps may not be precisely aligned with where the content actually begins and ends. Your task is to analyze the word-level transcript{' and video' if include_video else ''} and determine the exact timestamps where this moment should start and end."""
-    
-    # Input format explanation (backend-only, not editable)
-    input_format_explanation = """INPUT FORMAT:
-You are provided with word-level timestamps. Each line shows:
-- The start and end time of a specific word in seconds (starting from 0.00)
-- The word itself
-
-Format: [start_time-end_time] word
-
-Example:
-[5.12-5.48] rather
-[5.48-5.76] than
-[5.76-5.92] be
-[5.92-6.24] scared
-
-The first word in the transcript starts at or near 0.00 seconds."""
-    
-    # Response format specification (backend-only, not editable)
-    response_format_specification = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
-
-You MUST respond with ONLY a valid JSON object. Nothing else. No exceptions.
-
-CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
-- Your response MUST start with { and MUST end with }
-- Do NOT output a JSON array [ ] - ONLY an object { }
-- Do NOT wrap the object in an array
-- Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", etc.
-- Do NOT include any thinking, reasoning, or explanation
-- NO text before the {
-- NO text after the }
-- NO markdown code blocks (no ```json or ```)
-- NO comments or notes
-
-REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
-{
-  "start_time": 5.12,
-  "end_time": 67.84
-}
-
-RULES:
-- Must have exactly 2 fields: start_time (float), end_time (float)
-- Timestamps must be in the normalized coordinate system (starting from 0.00)
-- The start_time and end_time must correspond to word boundaries from the provided transcript
-- The start_time must be >= 0.00 and < end_time
-- The end_time must be <= {clip_end:.2f}
-- Do not add any other fields
-
-FINAL REMINDER: Output ONLY the JSON object { ... }. Nothing else."""
-    
-    # Assemble complete prompt with model-specific JSON header
-    # For Qwen models, JSON header MUST be at the very top
-    complete_prompt = f"""{json_header}{video_context}{context_explanation}
-
-{user_prompt}
-
-{input_format_explanation}
-
-Word-level transcript:
-{words_text}
-
-{response_format_specification}{json_footer}"""
-    
-    return complete_prompt
-
-
-def parse_refinement_response(response: Dict) -> Tuple[float, float]:
-    """
-    Parse the AI model response to extract refined timestamps.
-    
-    Args:
-        response: Dictionary containing AI model response
-        
-    Returns:
-        Tuple of (start_time, end_time)
-    """
-    operation = "parse_refinement_response"
-    start_time = time.time()
-    
-    log_operation_start(
-        logger="app.services.ai.refinement_service",
-        function="parse_refinement_response",
-        operation=operation,
-        message="Parsing refinement response",
-        context={
-            "response_keys": list(response.keys()) if isinstance(response, dict) else None,
-            "request_id": get_request_id()
-        }
-    )
-    
-    try:
-        # Validate response is not None and is a dictionary
-        if response is None:
-            logger.error("Response is None")
-            raise ValueError("Response is None")
-        
-        if not isinstance(response, dict):
-            logger.error(f"Response is not a dictionary. Type: {type(response)}, Value: {str(response)[:200]}")
-            raise ValueError(f"Response is not a dictionary, got {type(response).__name__}")
-        
-        # Log the full response structure for debugging
-        logger.debug(f"Full AI response structure: {json.dumps(response, indent=2)[:1000]}")
-        
-        # Check if response has error structure (some APIs return errors in different formats)
-        if 'error' in response:
-            error_msg = response.get('error', {})
-            if isinstance(error_msg, dict):
-                error_msg = error_msg.get('message', str(error_msg))
-            logger.error(f"Response contains error: {error_msg}")
-            raise ValueError(f"AI model returned an error: {error_msg}")
-        
-        # Extract content from response
-        if 'choices' not in response:
-            logger.error(f"No 'choices' key in response. Response keys: {list(response.keys())}")
-            logger.error(f"Response content: {json.dumps(response, indent=2)[:500]}")
-            raise ValueError("No 'choices' key in response")
-        
-        if not isinstance(response['choices'], list) or len(response['choices']) == 0:
-            logger.error(f"Choices is empty or not a list. Choices: {response.get('choices', 'N/A')}")
-            raise ValueError("No choices in response")
-        
-        # Validate choice structure
-        first_choice = response['choices'][0]
-        if not isinstance(first_choice, dict):
-            logger.error(f"First choice is not a dictionary. Type: {type(first_choice)}")
-            raise ValueError("Invalid choice structure in response")
-        
-        if 'message' not in first_choice:
-            logger.error(f"No 'message' key in choice. Choice keys: {list(first_choice.keys())}")
-            raise ValueError("No 'message' key in choice")
-        
-        message = first_choice['message']
-        if not isinstance(message, dict):
-            logger.error(f"Message is not a dictionary. Type: {type(message)}")
-            raise ValueError("Invalid message structure in response")
-        
-        content = message.get('content', '')
-        if not content:
-            logger.error(f"No content in response. Choices structure: {first_choice}")
-            logger.error(f"Message structure: {message}")
-            raise ValueError("No content in response")
-        
-        logger.info(f"Extracted content from response (length: {len(content)} chars)")
-        logger.debug(f"Content preview: {content[:500]}")
-        
-        # Log the FULL extracted content string for debugging
-        logger.info(f"=== FULL EXTRACTED CONTENT STRING (length: {len(content)} chars) ===")
-        logger.info(content)
-        logger.info("=== END OF FULL EXTRACTED CONTENT STRING ===")
-        
-        # Also log to structured JSON log
-        log_event(
-            level="INFO",
-            logger="app.services.ai.refinement_service",
-            function="parse_refinement_response",
-            operation="parse_refinement_response",
-            event="content_extracted",
-            message="Full extracted content string from AI response",
-            context={
-                "content_length": len(content),
-                "full_content": content
-            }
-        )
-        
-        # Validate content is a string
-        if not isinstance(content, str):
-            logger.error(f"Content is not a string. Type: {type(content)}, Value: {str(content)[:200]}")
-            raise ValueError(f"Content is not a string, got {type(content).__name__}")
-        
-        # Strip think tags before processing
-        logger.info("parse_refinement_response: About to call strip_think_tags")
-        content = strip_think_tags(content)
-        logger.info(f"parse_refinement_response: After strip_think_tags, content length: {len(content)} chars")
-        logger.debug(f"parse_refinement_response: Content after strip_think_tags (first 300 chars): {content[:300]}")
-        
-        # Try to extract JSON from content (handle markdown code blocks)
-        json_str = content.strip()
-        
-        if not json_str:
-            logger.error("Content is empty after stripping")
-            logger.error(f"Original content (first 500 chars): {content[:500]}")
-            raise ValueError("Empty content in response")
-        
-        # Remove markdown code blocks if present
-        if json_str.startswith('```'):
-            # Extract content between ```json and ```
-            match = re.search(r'```(?:json)?\s*(.*?)\s*```', json_str, re.DOTALL)
-            if match:
-                json_str = match.group(1).strip()
-                logger.info("Extracted JSON from markdown code block")
-            else:
-                logger.warning("Content starts with ``` but no closing ``` found, attempting to parse as-is")
-        
-        if not json_str:
-            logger.error("JSON string is empty after processing markdown code blocks")
-            logger.error(f"Original content (first 500 chars): {content[:500]}")
-            raise ValueError("Empty JSON string in response after processing")
-        
-        # Additional validation: check if json_str looks like JSON
-        json_str_trimmed = json_str.strip()
-        if not (json_str_trimmed.startswith('{') and json_str_trimmed.endswith('}')):
-            logger.warning(f"JSON string doesn't start with {{ and end with }}. Content: {json_str[:200]}")
-            # Try to find JSON object in the string
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', json_str, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0).strip()
-                logger.info("Extracted JSON object from content")
-            else:
-                logger.error(f"Could not find valid JSON object in content: {json_str[:500]}")
-                raise ValueError(f"Content does not appear to be valid JSON: {json_str[:200]}")
-        
-        logger.debug(f"Attempting to parse JSON (length: {len(json_str)} chars): {json_str[:500]}")
-        
-        # Parse JSON with better error handling
-        try:
-            result = json.loads(json_str)
-        except json.JSONDecodeError as json_err:
-            logger.error(f"JSON decode error: {str(json_err)}")
-            logger.error(f"JSON string that failed to parse (first 1000 chars): {json_str[:1000]}")
-            logger.error(f"JSON string length: {len(json_str)}")
-            # Try to provide more helpful error message
-            if len(json_str) == 0:
-                raise ValueError("Empty JSON string in response")
-            elif json_str.strip() == '':
-                raise ValueError("JSON string contains only whitespace")
-            else:
-                raise ValueError(f"Invalid JSON in response: {str(json_err)}. Content preview: {json_str[:200]}")
-        
-        # Validate it's a dictionary with required fields
-        if not isinstance(result, dict):
-            raise ValueError("Response is not a dictionary")
-        
-        if 'start_time' not in result or 'end_time' not in result:
-            raise ValueError("Response missing start_time or end_time fields")
-        
-        start_time = float(result['start_time'])
-        end_time = float(result['end_time'])
-        
-        # Validate times
-        if end_time <= start_time:
-            raise ValueError(f"Invalid times: end_time ({end_time}) must be > start_time ({start_time})")
-        
-        duration = time.time() - start_time
-        
-        log_operation_complete(
-            logger="app.services.ai.refinement_service",
-            function="parse_refinement_response",
-            operation=operation,
-            message="Successfully parsed refinement timestamps",
-            context={
-                "start_time": start_time,
-                "end_time": end_time
-            },
-            duration=duration
-        )
-        
-        return start_time, end_time
-        
-    except ValueError as e:
-        duration = time.time() - start_time
-        log_event(
-            level="ERROR",
-            logger="app.services.ai.refinement_service",
-            function="parse_refinement_response",
-            operation=operation,
-            event="parse_error",
-            message="Validation error parsing refinement response",
-            context={
-                "error": str(e),
-                "duration_seconds": duration
-            }
-        )
-        raise
-    except json.JSONDecodeError as e:
-        duration = time.time() - start_time
-        json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
-        log_event(
-            level="ERROR",
-            logger="app.services.ai.refinement_service",
-            function="parse_refinement_response",
-            operation=operation,
-            event="parse_error",
-            message="JSON decode error parsing refinement response",
-            context={
-                "error": str(e),
-                "json_string_preview": json_str_preview,
-                "duration_seconds": duration
-            }
-        )
-        raise ValueError(f"Invalid JSON in response: {str(e)}")
-    except Exception as e:
-        duration = time.time() - start_time
-        log_operation_error(
-            logger="app.services.ai.refinement_service",
-            function="parse_refinement_response",
-            operation=operation,
-            error=e,
-            message="Unexpected error parsing refinement response",
-            context={
-                "response_type": type(response).__name__ if 'response' in locals() else 'N/A',
-                "response_keys": list(response.keys()) if 'response' in locals() and isinstance(response, dict) else None,
-                "duration_seconds": duration
-            }
-        )
-        raise ValueError(f"Error parsing response: {str(e)}")
+# build_refinement_prompt and parse_refinement_response have been moved to RefinementTask class
 
 
 # Job management functions now handled by JobRepository
@@ -673,18 +210,21 @@ async def process_moment_refinement(
             f"normalized=[{normalized_original_start:.2f}s - {normalized_original_end:.2f}s]"
         )
         
-        # Build refinement prompt
-        complete_prompt = build_refinement_prompt(
-            user_prompt=user_prompt,
-            words=normalized_words,
-            clip_start=normalized_clip_start,
-            clip_end=normalized_clip_end,
-            original_start=normalized_original_start,
-            original_end=normalized_original_end,
-            original_title=moment['title'],
+        # Create refinement task and build prompt
+        task = RefinementTask()
+        complete_prompt = task.build_prompt(
             model_key=model,
-            include_video=include_video,
-            video_clip_url=video_clip_url
+            context={
+                "user_prompt": user_prompt,
+                "words": normalized_words,
+                "clip_start": normalized_clip_start,
+                "clip_end": normalized_clip_end,
+                "original_start": normalized_original_start,
+                "original_end": normalized_original_end,
+                "original_title": moment['title'],
+                "include_video": include_video,
+                "video_clip_url": video_clip_url,
+            }
         )
         
         if include_video:
@@ -781,7 +321,7 @@ async def process_moment_refinement(
             
             try:
                 # Model returns normalized timestamps (relative to 0)
-                refined_start_normalized, refined_end_normalized = parse_refinement_response(ai_response)
+                refined_start_normalized, refined_end_normalized = task.parse_response(ai_response)
                 
                 # Denormalize timestamps to get absolute times
                 refined_start = denormalize_timestamp(refined_start_normalized, offset)
@@ -999,19 +539,22 @@ def process_moment_refinement_async(
                 f"normalized=[{normalized_original_start:.2f}s - {normalized_original_end:.2f}s]"
             )
             
-            # Build refinement prompt with normalized clip boundaries and words
+            # Create refinement task and build prompt
             # The model will receive ALL timestamps starting from 0 (normalized coordinate system)
-            complete_prompt = build_refinement_prompt(
-                user_prompt=user_prompt,
-                words=normalized_words,  # Use normalized words (starting from 0)
-                clip_start=normalized_clip_start,  # 0.0
-                clip_end=normalized_clip_end,  # Duration of clip
-                original_start=normalized_original_start,  # Normalized to match transcript/video
-                original_end=normalized_original_end,  # Normalized to match transcript/video
-                original_title=moment['title'],
-                model_key=model,  # Pass model key for model-specific prompting
-                include_video=include_video,
-                video_clip_url=video_clip_url
+            task = RefinementTask()
+            complete_prompt = task.build_prompt(
+                model_key=model,
+                context={
+                    "user_prompt": user_prompt,
+                    "words": normalized_words,
+                    "clip_start": normalized_clip_start,
+                    "clip_end": normalized_clip_end,
+                    "original_start": normalized_original_start,
+                    "original_end": normalized_original_end,
+                    "original_title": moment['title'],
+                    "include_video": include_video,
+                    "video_clip_url": video_clip_url,
+                }
             )
             
             if include_video:

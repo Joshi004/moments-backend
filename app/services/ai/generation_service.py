@@ -9,7 +9,6 @@ from typing import Optional, Dict, List
 from contextlib import contextmanager
 import logging
 from app.utils.model_config import get_model_config, get_model_url
-from app.services.ai.refinement_service import strip_think_tags
 from app.utils.logging_config import (
     log_event,
     log_operation_start,
@@ -18,7 +17,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.services.ai.request_logger import log_ai_request_response
-from app.services.ai.prompt_config import get_model_prompt_config, get_response_format_param
+from app.services.ai.prompt_tasks import GenerationTask, get_response_format_param, extract_model_name
 from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -959,26 +958,6 @@ async def call_ai_model_async(
         return None
 
 
-def extract_model_name(response: Dict) -> str:
-    """
-    Extract model name from AI API response.
-    
-    Args:
-        response: Dictionary containing AI model response
-    
-    Returns:
-        Model name string, or "Unknown Model" if not available
-    """
-    if not isinstance(response, dict):
-        return "Unknown Model"
-    
-    model_name = response.get('model', 'Unknown Model')
-    if not model_name or model_name == '':
-        return "Unknown Model"
-    
-    return str(model_name)
-
-
 def extract_segment_data(transcript: Dict) -> List[Dict]:
     """
     Extract segment timestamps from transcript, returning only start time and text.
@@ -1010,462 +989,7 @@ def extract_segment_data(transcript: Dict) -> List[Dict]:
     return extracted
 
 
-def build_prompt(
-    user_prompt: str,
-    segments: List[Dict],
-    video_duration: float,
-    min_moment_length: float,
-    max_moment_length: float,
-    min_moments: int,
-    max_moments: int,
-    model_key: str = "minimax"
-) -> str:
-    """
-    Build the complete prompt for the AI model.
-    
-    Args:
-        user_prompt: User-provided prompt (editable, visible in UI)
-        segments: List of segment dictionaries with 'start' (float) and 'text' (string)
-        video_duration: Total duration of the video in seconds
-        min_moment_length: Minimum moment length in seconds
-        max_moment_length: Maximum moment length in seconds
-        min_moments: Minimum number of moments to generate
-        max_moments: Maximum number of moments to generate
-        model_key: Model identifier for model-specific prompting
-    
-    Returns:
-        Complete prompt string with all sections assembled
-    """
-    operation = "prompt_generation"
-    
-    log_event(
-        level="DEBUG",
-        logger="app.services.ai.generation_service",
-        function="build_prompt",
-        operation=operation,
-        event="prompt_generation",
-        message="Building complete prompt for AI model",
-        context={
-            "user_prompt_length": len(user_prompt),
-            "segment_count": len(segments),
-            "video_duration": video_duration,
-            "min_moment_length": min_moment_length,
-            "max_moment_length": max_moment_length,
-            "min_moments": min_moments,
-            "max_moments": max_moments,
-            "model_key": model_key
-        }
-    )
-    
-    # Get model-specific prompt configuration
-    prompt_config = get_model_prompt_config(model_key)
-    json_header = prompt_config["json_header"]
-    json_footer = prompt_config.get("json_footer", "")
-    # Format segments as [timestamp] text (only start timestamp and text)
-    segments_text = "\n".join([
-        f"[{seg['start']:.2f}] {seg['text']}"
-        for seg in segments
-    ])
-    
-    # Input format explanation (backend-only, not editable)
-    input_format_explanation = """INPUT FORMAT:
-The transcript is provided as a series of segments. Each segment has:
-- A timestamp (in seconds) indicating when that segment starts in the video
-- The text content spoken during that segment
-
-Format: [timestamp_in_seconds] text_content
-
-Example:
-[0.24] You know, rather than be scared by a jobless future
-[2.56] I started to rethink it and I said
-[5.12] I could really be excited by a jobless future"""
-    
-    # Response format specification (backend-only, not editable)
-    response_format_specification = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
-
-You MUST respond with ONLY a valid JSON array. Nothing else. No exceptions.
-
-CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
-- Your response MUST start with [ and MUST end with ]
-- Do NOT output a JSON object { } - ONLY an array [ ]
-- Do NOT wrap the array in an object
-- Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", "final_output", etc.
-- Do NOT repeat the same data multiple times
-- Do NOT include any thinking, reasoning, or explanation
-- NO text before the [
-- NO text after the ]
-- NO markdown code blocks (no ```json or ```)
-- NO comments or notes
-
-REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
-[
-  {
-    "start_time": 0.24,
-    "end_time": 15.5,
-    "title": "Introduction to jobless future concept"
-  },
-  {
-    "start_time": 45.2,
-    "end_time": 78.8,
-    "title": "Discussion about human potential"
-  }
-]
-
-RULES:
-- Each object needs exactly 3 fields: start_time (float), end_time (float), title (string)
-- Do not add any other fields to the objects
-- Do not add any fields outside the array
-
-FINAL REMINDER: Output ONLY the JSON array [ ... ]. Nothing else."""
-    
-    # Constraints section (backend-only, dynamically generated)
-    constraints = f"""CONSTRAINTS:
-- Video duration: {video_duration:.2f} seconds
-- Moment length: Between {min_moment_length:.2f} and {max_moment_length:.2f} seconds
-- Number of moments: Between {min_moments} and {max_moments}
-- All moments must be non-overlapping
-- All start_time values must be >= 0
-- All end_time values must be <= {video_duration:.2f}
-- Each moment's end_time must be > start_time"""
-    
-    # Assemble complete prompt with model-specific JSON header
-    # For Qwen models, JSON header MUST be at the very top
-    complete_prompt = f"""{json_header}{user_prompt}
-
-{input_format_explanation}
-
-Transcript segments:
-{segments_text}
-
-{response_format_specification}
-
-{constraints}{json_footer}"""
-    
-    log_event(
-        level="INFO",
-        logger="app.services.ai.generation_service",
-        function="build_prompt",
-        operation=operation,
-        event="prompt_generation",
-        message="Complete prompt generated",
-        context={
-            "complete_prompt_length": len(complete_prompt),
-            "complete_prompt": complete_prompt,  # Log the full prompt for LLM analysis
-            "segment_count": len(segments),
-            "video_duration": video_duration
-        }
-    )
-    
-    return complete_prompt
-
-
-def parse_moments_response(response: Dict) -> List[Dict]:
-    """
-    Parse the AI model response to extract moments.
-    
-    Args:
-        response: Dictionary containing AI model response
-    
-    Returns:
-        List of moment dictionaries with start_time, end_time, and title
-    """
-    operation = "parse_moments_response"
-    start_time = time.time()
-    
-    log_operation_start(
-        logger="app.services.ai.generation_service",
-        function="parse_moments_response",
-        operation=operation,
-        message="Parsing AI model response to extract moments",
-        context={
-            "response_keys": list(response.keys()) if isinstance(response, dict) else None,
-            "request_id": get_request_id()
-        }
-    )
-    
-    try:
-        # Log the full response structure for debugging
-        log_event(
-            level="DEBUG",
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            event="parse_start",
-            message="Full AI response structure",
-            context={"response_preview": json.dumps(response, indent=2)[:2000]}
-        )
-        
-        # Extract content from response
-        if 'choices' not in response or len(response['choices']) == 0:
-            log_event(
-                level="ERROR",
-                logger="app.services.ai.generation_service",
-                function="parse_moments_response",
-                operation=operation,
-                event="parse_error",
-                message="No choices in response",
-                context={"response_keys": list(response.keys())}
-            )
-            raise ValueError("No choices in response")
-        
-        content = response['choices'][0].get('message', {}).get('content', '')
-        if not content:
-            log_event(
-                level="ERROR",
-                logger="app.services.ai.generation_service",
-                function="parse_moments_response",
-                operation=operation,
-                event="parse_error",
-                message="No content in response",
-                context={"choices_structure": response['choices'][0]}
-            )
-            raise ValueError("No content in response")
-        
-        log_event(
-            level="DEBUG",
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            event="parse_start",
-            message="Extracted content from response",
-            context={
-                "content_length": len(content),
-                "content_preview": content[:500]
-            }
-        )
-        
-        # Strip think tags before processing
-        log_event(
-            level="DEBUG",
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            event="parse_start",
-            message="Stripping think tags",
-            context={"content_length_before": len(content)}
-        )
-        content = strip_think_tags(content)
-        
-        log_event(
-            level="DEBUG",
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            event="parse_start",
-            message="Think tags stripped",
-            context={
-                "content_length_after": len(content),
-                "content_preview": content[:300]
-            }
-        )
-        
-        # Try to extract JSON from content (handle markdown code blocks)
-        json_str = content.strip()
-        
-        if not json_str:
-            logger.error("Content is empty after stripping")
-            raise ValueError("Empty content in response")
-        
-        # Remove markdown code blocks if present
-        if json_str.startswith('```'):
-            # Extract content between ```json and ```
-            match = re.search(r'```(?:json)?\s*(.*?)\s*```', json_str, re.DOTALL)
-            if match:
-                json_str = match.group(1).strip()
-                logger.info("Extracted JSON from markdown code block")
-        
-        if not json_str:
-            logger.error("JSON string is empty after processing")
-            raise ValueError("Empty JSON string in response")
-        
-        logger.debug(f"Attempting to parse JSON: {json_str[:500]}")
-        
-        # Parse JSON - try full parse first
-        try:
-            parsed_data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            # If JSON is malformed (possibly truncated), try to extract moments from partial JSON
-            logger.warning(f"JSON parse error: {str(e)}. Attempting to extract moments from partial/truncated JSON...")
-            
-            # First, try to extract moments arrays from the string using regex
-            # Look for arrays containing moment objects with start_time, end_time, title
-            moments_pattern = r'"moments"\s*:\s*(\[[^\]]*(?:\{[^\}]*"start_time"[^\}]*"end_time"[^\}]*"title"[^\}]*\}[^\]]*)*\])'
-            moments_match = re.search(moments_pattern, json_str, re.DOTALL)
-            
-            if not moments_match:
-                # Try other common field names
-                for field_name in ["output", "final_output", "response", "final_json_output", "json_output"]:
-                    field_pattern = f'"{field_name}"\\s*:\\s*(\\[[^\\]]*(?:\\{{[^\\}}]*"start_time"[^\\}}]*"end_time"[^\\}}]*"title"[^\\}}]*\\}}[^\\]]*)*\\])'
-                    moments_match = re.search(field_pattern, json_str, re.DOTALL)
-                    if moments_match:
-                        logger.info(f"Found moments array in field '{field_name}'")
-                        break
-            
-            if moments_match:
-                try:
-                    array_str = moments_match.group(1)
-                    parsed_data = json.loads(array_str)
-                    logger.info("Successfully extracted moments array from partial JSON")
-                except json.JSONDecodeError:
-                    # Try to find the last complete moments array by searching backwards
-                    logger.warning("Failed to parse extracted array, trying to find last complete array...")
-                    # Find all potential moments arrays
-                    all_arrays = []
-                    for field_name in ["moments", "output", "final_output", "response", "final_json_output"]:
-                        pattern = f'"{field_name}"\\s*:\\s*\\['
-                        for match in re.finditer(pattern, json_str):
-                            start_pos = match.end() - 1  # Include the [
-                            # Try to find the matching closing bracket
-                            bracket_count = 0
-                            for i in range(start_pos, len(json_str)):
-                                if json_str[i] == '[':
-                                    bracket_count += 1
-                                elif json_str[i] == ']':
-                                    bracket_count -= 1
-                                    if bracket_count == 0:
-                                        try:
-                                            array_str = json_str[start_pos:i+1]
-                                            test_parse = json.loads(array_str)
-                                            if isinstance(test_parse, list) and len(test_parse) > 0:
-                                                if isinstance(test_parse[0], dict) and 'start_time' in test_parse[0]:
-                                                    all_arrays.append((i, test_parse))
-                                        except:
-                                            pass
-                                        break
-                    
-                    if all_arrays:
-                        # Use the last (most complete) array
-                        _, parsed_data = max(all_arrays, key=lambda x: x[0])
-                        logger.info(f"Found {len(parsed_data)} moments in last complete array")
-                    else:
-                        raise ValueError(f"Could not extract valid moments array from partial JSON")
-            else:
-                # Try a simpler approach - find first [ and last ]
-                first_bracket = json_str.find('[')
-                last_bracket = json_str.rfind(']')
-                if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
-                    try:
-                        array_str = json_str[first_bracket:last_bracket+1]
-                        parsed_data = json.loads(array_str)
-                        logger.info("Successfully extracted array using bracket matching")
-                    except json.JSONDecodeError:
-                        # Last resort: try to extract from partial JSON by finding complete moment objects
-                        logger.warning("Trying to extract complete moment objects from truncated JSON...")
-                        moment_objects = []
-                        # Find all complete moment objects: {"start_time": ..., "end_time": ..., "title": ...}
-                        moment_pattern = r'\{\s*"start_time"\s*:\s*[\d.]+\s*,\s*"end_time"\s*:\s*[\d.]+\s*,\s*"title"\s*:\s*"[^"]*"\s*\}'
-                        for match in re.finditer(moment_pattern, json_str):
-                            try:
-                                moment_obj = json.loads(match.group(0))
-                                moment_objects.append(moment_obj)
-                            except:
-                                pass
-                        
-                        if moment_objects:
-                            parsed_data = moment_objects
-                            logger.info(f"Extracted {len(moment_objects)} complete moment objects from truncated JSON")
-                        else:
-                            raise ValueError(f"Invalid JSON in response: {str(e)}. Could not extract valid array or moments.")
-                else:
-                    raise ValueError(f"Invalid JSON in response: {str(e)}. Could not find array brackets.")
-        
-        # Handle case where model returns an object instead of array
-        # Try to extract the array from common field names
-        if isinstance(parsed_data, dict):
-            logger.warning("Model returned a JSON object instead of array. Attempting to extract array from common fields...")
-            
-            # Try common field names that might contain the moments array
-            possible_fields = ["moments", "output", "final_output", "response", "final_json", 
-                             "json_output", "final_json_output", "final", "final_output"]
-            
-            moments = None
-            for field in possible_fields:
-                if field in parsed_data and isinstance(parsed_data[field], list):
-                    moments = parsed_data[field]
-                    logger.info(f"Found moments array in field '{field}'")
-                    break
-            
-            if moments is None:
-                # Try to find any list field
-                for key, value in parsed_data.items():
-                    if isinstance(value, list) and len(value) > 0:
-                        # Check if it looks like moments (has objects with start_time/end_time)
-                        if isinstance(value[0], dict) and 'start_time' in value[0]:
-                            moments = value
-                            logger.info(f"Found moments array in field '{key}'")
-                            break
-            
-            if moments is None:
-                raise ValueError("Response is a JSON object but no moments array found in common fields (moments, output, final_output, response, etc.)")
-        elif isinstance(parsed_data, list):
-            moments = parsed_data
-        else:
-            raise ValueError(f"Response is not a list or object, got {type(parsed_data).__name__}")
-        
-        # Validate each moment has required fields
-        validated_moments = []
-        for i, moment in enumerate(moments):
-            if not isinstance(moment, dict):
-                logger.warning(f"Moment {i} is not a dictionary, skipping")
-                continue
-            
-            if 'start_time' not in moment or 'end_time' not in moment or 'title' not in moment:
-                logger.warning(f"Moment {i} missing required fields, skipping")
-                continue
-            
-            try:
-                validated_moments.append({
-                    'start_time': float(moment['start_time']),
-                    'end_time': float(moment['end_time']),
-                    'title': str(moment['title']).strip()
-                })
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Moment {i} has invalid types: {e}, skipping")
-                continue
-        
-        duration = time.time() - start_time
-        
-        log_operation_complete(
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            message="Successfully parsed moments from response",
-            context={
-                "moment_count": len(validated_moments)
-            },
-            duration=duration
-        )
-        
-        return validated_moments
-        
-    except json.JSONDecodeError as e:
-        duration = time.time() - start_time
-        json_str_preview = json_str[:1000] if 'json_str' in locals() else 'N/A'
-        log_event(
-            level="ERROR",
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            event="parse_error",
-            message="Error parsing JSON from response",
-            context={
-                "error": str(e),
-                "json_string_preview": json_str_preview,
-                "duration_seconds": duration
-            }
-        )
-        raise ValueError(f"Invalid JSON in response: {str(e)}")
-    except Exception as e:
-        duration = time.time() - start_time
-        log_operation_error(
-            logger="app.services.ai.generation_service",
-            function="parse_moments_response",
-            operation=operation,
-            error=e,
-            message="Error parsing moments response",
-            context={"duration_seconds": duration}
-        )
-        raise ValueError(f"Error parsing response: {str(e)}")
+# build_prompt and parse_moments_response functions have been moved to GenerationTask class
 
 
 # Job management functions now handled by JobRepository
@@ -1596,16 +1120,19 @@ def process_moments_generation_async(
             
             logger.info(f"Video duration: {video_duration:.2f} seconds, Segments: {len(segments)}")
             
-            # Build complete prompt
-            complete_prompt = build_prompt(
-                user_prompt=user_prompt,
-                segments=segments,
-                video_duration=video_duration,
-                min_moment_length=min_moment_length,
-                max_moment_length=max_moment_length,
-                min_moments=min_moments,
-                max_moments=max_moments,
-                model_key=model  # Pass model key for model-specific prompting
+            # Create generation task and build complete prompt
+            task = GenerationTask()
+            complete_prompt = task.build_prompt(
+                model_key=model,
+                context={
+                    "user_prompt": user_prompt,
+                    "segments": segments,
+                    "video_duration": video_duration,
+                    "min_moment_length": min_moment_length,
+                    "max_moment_length": max_moment_length,
+                    "min_moments": min_moments,
+                    "max_moments": max_moments,
+                }
             )
             
             logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
@@ -1643,7 +1170,7 @@ def process_moments_generation_async(
                 moments = []
                 
                 try:
-                    moments = parse_moments_response(ai_response)
+                    moments = task.parse_response(ai_response)
                     parsing_success = True
                     
                     if not moments:
