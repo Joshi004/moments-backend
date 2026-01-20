@@ -21,6 +21,7 @@ from app.services.pipeline.status import (
 from app.models.pipeline_schemas import StageStatus
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
+from app.services.ai.prompt_defaults import DEFAULT_REFINEMENT_PROMPT
 
 # Import existing services
 from app.services.audio_service import (
@@ -457,7 +458,7 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                         video_id=video_id,
                         moment_id=moment_id,
                         video_filename=video_filename,
-                        user_prompt=config.get("refinement_prompt"),
+                        user_prompt=DEFAULT_REFINEMENT_PROMPT,
                         model=config.get("model", "qwen3_vl_fp8"),
                         temperature=config.get("temperature", 0.7),
                         include_video=config.get("include_video_refinement", True),

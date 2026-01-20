@@ -68,7 +68,11 @@ class GenerateMomentsRequest(BaseModel):
 
 class RefineMomentRequest(BaseModel):
     """Request model for moment refinement."""
-    user_prompt: Optional[str] = None
+    user_prompt: Optional[str] = Field(
+        default=None,
+        deprecated=True,
+        description="DEPRECATED: Refinement prompt is now backend-managed and this field is ignored"
+    )
     model: str = Field(default="minimax")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     include_video: bool = Field(default=False)

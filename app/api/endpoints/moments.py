@@ -24,6 +24,7 @@ from app.services.ai.generation_service import (
 from app.services.ai.refinement_service import (
     process_moment_refinement_async
 )
+from app.services.ai.prompt_defaults import DEFAULT_REFINEMENT_PROMPT
 from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 # Initialize job repository
@@ -399,19 +400,8 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
         if job_repo.is_processing(JobType.MOMENT_REFINEMENT, video_id, moment_id):
             raise HTTPException(status_code=409, detail="Moment refinement already in progress")
         
-        # Default prompt
-        default_prompt = """Before refining the timestamps, let's define what a moment is: A moment is a segment of a video (with its corresponding transcript) that represents something engaging, meaningful, or valuable to the viewer. A moment should be a complete, coherent thought or concept that makes sense on its own.
-
-Now, analyze the word-level transcript and identify the precise start and end timestamps for this moment. The current timestamps may be slightly off. Find the exact point where this topic/segment naturally begins and ends.
-
-Guidelines:
-- Start the moment at the first word that introduces the topic or begins the engaging segment
-- End the moment at the last word that concludes the thought or completes the concept
-- Be precise with word boundaries
-- Ensure the moment captures complete sentences or phrases
-- The refined moment should represent a coherent, engaging segment that makes complete sense on its own"""
-        
-        user_prompt = request.user_prompt if request.user_prompt else default_prompt
+        # Always use the centralized refinement prompt (user_prompt is ignored)
+        user_prompt = DEFAULT_REFINEMENT_PROMPT
         
         # Handle video inclusion
         include_video = request.include_video

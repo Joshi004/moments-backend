@@ -30,7 +30,6 @@ class GenerateMomentsRequest(BaseModel):
     refinement_parallel_workers: int = Field(default=2, ge=1, le=5)
     include_video_refinement: bool = Field(default=True)
     generation_prompt: Optional[str] = None
-    refinement_prompt: Optional[str] = None
     override_existing_moments: bool = Field(default=True)
     override_existing_refinement: bool = Field(default=True)
     
