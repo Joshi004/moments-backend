@@ -438,7 +438,8 @@ def call_ai_model(
     model_key: str = "minimax", 
     model_id: Optional[str] = None, 
     temperature: float = 0.7,
-    video_url: Optional[str] = None
+    video_url: Optional[str] = None,
+    output_type: str = "array"
 ) -> Optional[Dict]:
     """
     Call the AI model via tunnel.
@@ -449,6 +450,7 @@ def call_ai_model(
         model_id: Optional model ID to use in the request (if None, uses config default)
         temperature: Temperature parameter for the model (default: 0.7)
         video_url: Optional URL to video clip for multimodal requests
+        output_type: Output type for response format ("array" or "object"), defaults to "array"
     
     Returns:
         Dictionary with AI model response or None if failed
@@ -500,7 +502,7 @@ def call_ai_model(
             payload["top_k"] = config['top_k']
         
         # Add response_format for models that support it (vLLM 0.10+)
-        response_format = get_response_format_param(model_key)
+        response_format = get_response_format_param(model_key, output_type)
         if response_format:
             payload["response_format"] = response_format
             logger.info(f"Using response_format enforcement: {response_format}")
@@ -730,7 +732,8 @@ async def call_ai_model_async(
     model_key: str = "minimax", 
     model_id: Optional[str] = None, 
     temperature: float = 0.7,
-    video_url: Optional[str] = None
+    video_url: Optional[str] = None,
+    output_type: str = "array"
 ) -> Optional[Dict]:
     """
     Call the AI model via tunnel asynchronously using httpx.
@@ -744,6 +747,7 @@ async def call_ai_model_async(
         model_id: Optional model ID to use in the request (if None, uses config default)
         temperature: Temperature parameter for the model (default: 0.7)
         video_url: Optional URL to video clip for multimodal requests
+        output_type: Output type for response format ("array" or "object"), defaults to "array"
     
     Returns:
         Dictionary with AI model response or None if failed
@@ -798,7 +802,7 @@ async def call_ai_model_async(
             payload["top_k"] = config['top_k']
         
         # Add response_format for models that support it (vLLM 0.10+)
-        response_format = get_response_format_param(model_key)
+        response_format = get_response_format_param(model_key, output_type)
         if response_format:
             payload["response_format"] = response_format
             logger.info(f"Using response_format enforcement: {response_format}")
@@ -1256,7 +1260,7 @@ def process_moments_generation_async(
                 
                 # Check number of moments constraint
                 if len(validated_moments) < min_moments:
-                    logger.warning(f"Only {len(validated_moments)} valid moments found, but minimum is {min_moments}")
+                    logger.info(f"Generated {len(validated_moments)} moments (requested minimum: {min_moments})")
                 elif len(validated_moments) > max_moments:
                     logger.warning(f"{len(validated_moments)} valid moments found, but maximum is {max_moments}. Truncating to {max_moments}")
                     validated_moments = validated_moments[:max_moments]
@@ -1278,20 +1282,23 @@ def process_moments_generation_async(
                 validated_moments = non_overlapping
                 
                 if not validated_moments:
-                    raise Exception("No valid moments after validation")
+                    logger.warning("No valid moments after validation - returning empty result")
                 
-                log_event(
-                    level="INFO",
-                    logger="app.services.ai.generation_service",
-                    function="process_moments_generation_async",
-                    operation=operation,
-                    event="file_operation_start",
-                    message="Saving validated moments",
-                    context={"moment_count": len(validated_moments)}
-                )
-                
-                # Save moments (replaces existing)
-                success = save_moments(video_filename, validated_moments)
+                # Save moments (replaces existing) - handle empty list gracefully
+                if validated_moments:
+                    log_event(
+                        level="INFO",
+                        logger="app.services.ai.generation_service",
+                        function="process_moments_generation_async",
+                        operation=operation,
+                        event="file_operation_start",
+                        message="Saving validated moments",
+                        context={"moment_count": len(validated_moments)}
+                    )
+                    success = save_moments(video_filename, validated_moments)
+                else:
+                    logger.warning(f"No moments to save for {video_filename}")
+                    success = True  # Consider empty result as success
                 
                 if not success:
                     log_event(
