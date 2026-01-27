@@ -24,14 +24,12 @@ from app.services.ai.prompt_tasks import (
 
 # AI orchestration services
 from app.services.ai.generation_service import (
-    process_moments_generation_async,
     ssh_tunnel,
     call_ai_model,
     call_ai_model_async
 )
 
 from app.services.ai.refinement_service import (
-    process_moment_refinement_async,
     process_moment_refinement
 )
 
@@ -57,13 +55,11 @@ __all__ = [
     "strip_think_tags",
     
     # Generation service
-    "process_moments_generation_async",
     "ssh_tunnel",
     "call_ai_model",
     "call_ai_model_async",
     
     # Refinement service
-    "process_moment_refinement_async",
     "process_moment_refinement",
     
     # Request logging

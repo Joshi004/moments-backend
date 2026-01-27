@@ -51,15 +51,9 @@ class PipelineWorker:
                 id="0",
                 mkstream=True
             )
-            # #region agent log
-            import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "B", "location": "pipeline_worker.py:54", "message": "Consumer group created", "data": {"stream_key": self.STREAM_KEY, "group_name": self.GROUP_NAME}, "timestamp": __import__('time').time() * 1000}) + '\n')
-            # #endregion
             logger.info(f"Created consumer group '{self.GROUP_NAME}' on stream '{self.STREAM_KEY}'")
         except Exception as e:
             if "BUSYGROUP" in str(e):
-                # #region agent log
-                import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "B", "location": "pipeline_worker.py:57", "message": "Consumer group already exists", "data": {"stream_key": self.STREAM_KEY, "group_name": self.GROUP_NAME}, "timestamp": __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 logger.debug("Consumer group already exists")
             else:
                 logger.error(f"Error creating consumer group: {e}")
@@ -95,9 +89,6 @@ class PipelineWorker:
     
     async def _read_new_message(self) -> Optional[Dict[str, Any]]:
         """Read new message from stream."""
-        # #region agent log
-        import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "A,D", "location": "pipeline_worker.py:93", "message": "Before xreadgroup", "data": {"stream_key": self.STREAM_KEY, "group_name": self.GROUP_NAME, "consumer_name": self.consumer_name, "block_timeout_ms": self.BLOCK_TIMEOUT_MS}, "timestamp": __import__('time').time() * 1000}) + '\n')
-        # #endregion
         try:
             result = self.redis.xreadgroup(
                 groupname=self.GROUP_NAME,
@@ -107,20 +98,11 @@ class PipelineWorker:
                 block=self.BLOCK_TIMEOUT_MS
             )
             
-            # #region agent log
-            import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "C", "location": "pipeline_worker.py:101", "message": "xreadgroup result", "data": {"result_type": str(type(result)), "result_bool": bool(result), "result_len": len(result) if result else 0}, "timestamp": __import__('time').time() * 1000}) + '\n')
-            # #endregion
             if result:
                 # result = [(stream_name, [(message_id, message_data), ...])]
                 stream_name, messages = result[0]
-                # #region agent log
-                import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "C", "location": "pipeline_worker.py:104", "message": "Stream data parsed", "data": {"stream_name": stream_name, "messages_count": len(messages), "has_messages": bool(messages)}, "timestamp": __import__('time').time() * 1000}) + '\n')
-                # #endregion
                 if messages:
                     message_id, message_data = messages[0]
-                    # #region agent log
-                    import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "C", "location": "pipeline_worker.py:106", "message": "Message extracted", "data": {"message_id": message_id, "video_id": message_data.get("video_id"), "request_id": message_data.get("request_id"), "has_config": bool(message_data.get("config"))}, "timestamp": __import__('time').time() * 1000}) + '\n')
-                    # #endregion
                     return {
                         "id": message_id,
                         "video_id": message_data.get("video_id"),
@@ -128,9 +110,6 @@ class PipelineWorker:
                         "config": message_data.get("config"),
                     }
         except Exception as e:
-            # #region agent log
-            import json; open('/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/.cursor/debug.log', 'a').write(json.dumps({"sessionId": "debug-session", "runId": "pre-fix", "hypothesisId": "A,E", "location": "pipeline_worker.py:113", "message": "xreadgroup exception", "data": {"error_type": type(e).__name__, "error_msg": str(e), "is_timeout": "timeout" in str(e).lower()}, "timestamp": __import__('time').time() * 1000}) + '\n')
-            # #endregion
             logger.error(f"Error reading from stream: {e}")
         
         return None

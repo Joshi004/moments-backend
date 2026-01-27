@@ -1,5 +1,4 @@
 import subprocess
-import threading
 import time
 import json
 import requests
@@ -18,12 +17,8 @@ from app.utils.logging_config import (
 )
 from app.services.ai.request_logger import log_ai_request_response
 from app.services.ai.prompt_tasks import GenerationTask, get_response_format_param, extract_model_name
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
-
-# Job repository for distributed job tracking (kept for backward compatibility with API endpoints)
-job_repo = JobRepository()
 
 # Hardcoded max_tokens for all models
 MAX_TOKENS = 15000
@@ -999,7 +994,7 @@ def extract_segment_data(transcript: Dict) -> List[Dict]:
 # Job management functions now handled by JobRepository
 
 
-def process_moments_generation_async(
+async def process_moments_generation(
     video_id: str,
     video_filename: str,
     user_prompt: str,
@@ -1009,9 +1004,15 @@ def process_moments_generation_async(
     max_moments: int,
     model: str = "minimax",
     temperature: float = 0.7
-) -> None:
+) -> List[Dict]:
     """
-    Process moment generation asynchronously in a background thread.
+    Process moment generation as an async coroutine.
+    
+    This is the recommended async version that integrates with the pipeline orchestrator.
+    Unlike the deprecated thread-based version, this function:
+    - Returns moments list directly (no Redis polling needed)
+    - Raises exceptions on errors (native exception handling)
+    - Can be used with asyncio.wait_for() for timeout handling
     
     Args:
         video_id: ID of the video (filename stem)
@@ -1023,349 +1024,297 @@ def process_moments_generation_async(
         max_moments: Maximum number of moments to generate
         model: Model identifier ("minimax", "qwen", or "qwen3_omni"), default: "minimax"
         temperature: Temperature parameter for the model, default: 0.7
+    
+    Returns:
+        List of validated moment dictionaries
+    
+    Raises:
+        Exception: If generation fails with an error that should stop processing
     """
-    def generate():
-        tunnel_process = None
-        operation = "moment_generation_async"
-        start_time = time.time()
+    operation = "moment_generation"
+    start_time = time.time()
+    
+    try:
+        # Import here to avoid circular imports
+        from app.services.transcript_service import load_transcript
+        from app.utils.video import get_video_by_filename
+        import cv2
         
-        try:
-            # Import here to avoid circular imports
-            from app.services.transcript_service import load_transcript
-            from app.services.moments_service import save_moments, load_moments
-            from app.utils.video import get_video_by_filename
-            import cv2
-            
-            log_operation_start(
-                logger="app.services.ai.generation_service",
-                function="process_moments_generation_async",
-                operation=operation,
-                message=f"Starting moment generation for {video_id}",
-                context={
-                    "video_id": video_id,
-                    "video_filename": video_filename,
-                    "model": model,
-                    "temperature": temperature,
-                    "min_moment_length": min_moment_length,
-                    "max_moment_length": max_moment_length,
-                    "min_moments": min_moments,
-                    "max_moments": max_moments,
-                    "request_id": get_request_id()
-                }
-            )
-            
-            # Load transcript
-            audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
-            
+        log_operation_start(
+            logger="app.services.ai.generation_service",
+            function="process_moments_generation",
+            operation=operation,
+            message=f"Starting moment generation (async) for {video_id}",
+            context={
+                "video_id": video_id,
+                "video_filename": video_filename,
+                "model": model,
+                "temperature": temperature,
+                "min_moment_length": min_moment_length,
+                "max_moment_length": max_moment_length,
+                "min_moments": min_moments,
+                "max_moments": max_moments,
+                "request_id": get_request_id()
+            }
+        )
+        
+        # Load transcript
+        audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
+        
+        log_event(
+            level="DEBUG",
+            logger="app.services.ai.generation_service",
+            function="process_moments_generation",
+            operation=operation,
+            event="file_operation_start",
+            message="Loading transcript",
+            context={"audio_filename": audio_filename}
+        )
+        
+        transcript_data = load_transcript(audio_filename)
+        
+        if transcript_data is None:
             log_event(
-                level="DEBUG",
+                level="ERROR",
                 logger="app.services.ai.generation_service",
-                function="process_moments_generation_async",
+                function="process_moments_generation",
                 operation=operation,
-                event="file_operation_start",
-                message="Loading transcript",
+                event="file_operation_error",
+                message="Transcript not found",
                 context={"audio_filename": audio_filename}
             )
-            
-            transcript_data = load_transcript(audio_filename)
-            
-            if transcript_data is None:
-                log_event(
-                    level="ERROR",
-                    logger="app.services.ai.generation_service",
-                    function="process_moments_generation_async",
-                    operation=operation,
-                    event="file_operation_error",
-                    message="Transcript not found",
-                    context={"audio_filename": audio_filename}
-                )
-                raise Exception(f"Transcript not found for {audio_filename}")
-            
-            # Extract segments (only start timestamp and text)
-            segments = extract_segment_data(transcript_data)
-            
+            raise Exception(f"Transcript not found for {audio_filename}")
+        
+        # Extract segments (only start timestamp and text)
+        segments = extract_segment_data(transcript_data)
+        
+        log_event(
+            level="DEBUG",
+            logger="app.services.ai.generation_service",
+            function="process_moments_generation",
+            operation=operation,
+            event="operation_start",
+            message="Extracted segments from transcript",
+            context={"segment_count": len(segments)}
+        )
+        
+        if not segments:
             log_event(
-                level="DEBUG",
+                level="ERROR",
                 logger="app.services.ai.generation_service",
-                function="process_moments_generation_async",
+                function="process_moments_generation",
                 operation=operation,
-                event="operation_start",
-                message="Extracted segments from transcript",
-                context={"segment_count": len(segments)}
+                event="validation_error",
+                message="No segments found in transcript",
             )
+            raise Exception("No segments found in transcript")
+        
+        # Get video duration
+        video_file = get_video_by_filename(video_filename)
+        if not video_file:
+            raise Exception(f"Video file not found: {video_filename}")
+        
+        cap = cv2.VideoCapture(str(video_file))
+        if not cap.isOpened():
+            raise Exception(f"Could not open video file: {video_filename}")
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        video_duration = frame_count / fps if fps > 0 else 0.0
+        cap.release()
+        
+        if video_duration <= 0:
+            raise Exception(f"Could not determine video duration for {video_filename}")
+        
+        logger.info(f"Video duration: {video_duration:.2f} seconds, Segments: {len(segments)}")
+        
+        # Create generation task and build complete prompt
+        task = GenerationTask()
+        complete_prompt = task.build_prompt(
+            model_key=model,
+            context={
+                "user_prompt": user_prompt,
+                "segments": segments,
+                "video_duration": video_duration,
+                "min_moment_length": min_moment_length,
+                "max_moment_length": max_moment_length,
+                "min_moments": min_moments,
+                "max_moments": max_moments,
+            }
+        )
+        
+        logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
+        
+        # Get model configuration
+        model_config = get_model_config(model)
+        model_id = model_config.get('model_id')
+        
+        # Create SSH tunnel and call AI model
+        with ssh_tunnel(model):
+            # Prepare messages for AI model
+            messages = [{
+                "role": "user",
+                "content": complete_prompt
+            }]
             
-            if not segments:
-                log_event(
-                    level="ERROR",
-                    logger="app.services.ai.generation_service",
-                    function="process_moments_generation_async",
-                    operation=operation,
-                    event="validation_error",
-                    message="No segments found in transcript",
-                )
-                raise Exception("No segments found in transcript")
+            # Call AI model asynchronously
+            logger.info(f"Calling AI model ({model}) for moment generation (async)...")
+            ai_response = await call_ai_model_async(messages, model_key=model, model_id=model_id, temperature=temperature)
             
-            # Get video duration
-            video_file = get_video_by_filename(video_filename)
-            if not video_file:
-                raise Exception(f"Video file not found: {video_filename}")
+            if ai_response is None:
+                raise Exception("AI model call failed or returned no response")
             
-            cap = cv2.VideoCapture(str(video_file))
-            if not cap.isOpened():
-                raise Exception(f"Could not open video file: {video_filename}")
+            # Extract model name from response
+            model_name = extract_model_name(ai_response)
+            logger.info(f"Using AI model: {model_name}")
             
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-            video_duration = frame_count / fps if fps > 0 else 0.0
-            cap.release()
+            # Extract response content for logging
+            response_content = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '')
             
-            if video_duration <= 0:
-                raise Exception(f"Could not determine video duration for {video_filename}")
+            # Parse response to extract moments
+            logger.info("Parsing AI model response...")
+            parsing_success = False
+            parsing_error = None
+            moments = []
             
-            logger.info(f"Video duration: {video_duration:.2f} seconds, Segments: {len(segments)}")
-            
-            # Create generation task and build complete prompt
-            task = GenerationTask()
-            complete_prompt = task.build_prompt(
-                model_key=model,
-                context={
-                    "user_prompt": user_prompt,
-                    "segments": segments,
-                    "video_duration": video_duration,
-                    "min_moment_length": min_moment_length,
-                    "max_moment_length": max_moment_length,
-                    "min_moments": min_moments,
-                    "max_moments": max_moments,
+            try:
+                moments = task.parse_response(ai_response)
+                parsing_success = True
+                
+                if not moments:
+                    raise Exception("No moments found in AI model response")
+                
+                logger.info(f"Parsed {len(moments)} moments from AI response")
+            except Exception as parse_err:
+                parsing_error = str(parse_err)
+                logger.error(f"Error parsing moments: {parsing_error}")
+                raise
+            finally:
+                # Log request/response for debugging
+                model_url = get_model_url(model)
+                payload = {
+                    "messages": messages,
+                    "max_tokens": MAX_TOKENS,
+                    "temperature": temperature
                 }
-            )
-            
-            logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
-            
-            # Get model configuration
-            model_config = get_model_config(model)
-            model_id = model_config.get('model_id')
-            
-            # Create SSH tunnel and call AI model
-            with ssh_tunnel(model):
-                # Prepare messages for AI model
-                messages = [{
-                    "role": "user",
-                    "content": complete_prompt
-                }]
+                if model_id:
+                    payload["model"] = model_id
+                if 'top_p' in model_config:
+                    payload["top_p"] = model_config['top_p']
+                if 'top_k' in model_config:
+                    payload["top_k"] = model_config['top_k']
                 
-                # Call AI model
-                logger.info(f"Calling AI model ({model}) for moment generation...")
-                ai_response = call_ai_model(messages, model_key=model, model_id=model_id, temperature=temperature)
-                
-                if ai_response is None:
-                    raise Exception("AI model call failed or returned no response")
-                
-                # Extract model name from response
-                model_name = extract_model_name(ai_response)
-                logger.info(f"Using AI model: {model_name}")
-                
-                # Extract response content for logging
-                response_content = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '')
-                
-                # Parse response to extract moments
-                logger.info("Parsing AI model response...")
-                parsing_success = False
-                parsing_error = None
-                moments = []
-                
-                try:
-                    moments = task.parse_response(ai_response)
-                    parsing_success = True
-                    
-                    if not moments:
-                        raise Exception("No moments found in AI model response")
-                    
-                    logger.info(f"Parsed {len(moments)} moments from AI response")
-                except Exception as parse_err:
-                    parsing_error = str(parse_err)
-                    logger.error(f"Error parsing moments: {parsing_error}")
-                    raise
-                finally:
-                    # Log request/response for debugging
-                    model_url = get_model_url(model)
-                    payload = {
-                        "messages": messages,
-                        "max_tokens": MAX_TOKENS,
-                        "temperature": temperature
-                    }
-                    if model_id:
-                        payload["model"] = model_id
-                    if 'top_p' in model_config:
-                        payload["top_p"] = model_config['top_p']
-                    if 'top_k' in model_config:
-                        payload["top_k"] = model_config['top_k']
-                    
-                    log_ai_request_response(
-                        operation="moment_generation",
-                        video_id=video_id,
-                        model_key=model,
-                        model_name=model_name,
-                        model_id=model_id,
-                        model_url=model_url,
-                        request_payload=payload,
-                        response_status_code=200,  # If we got here, status was 200
-                        response_data=ai_response,
-                        response_content=response_content,
-                        duration_seconds=time.time() - start_time,
-                        parsing_success=parsing_success,
-                        parsing_error=parsing_error,
-                        extracted_data=moments if parsing_success else None,
-                        request_id=get_request_id(),
-                    )
-                
-                # Create generation_config dictionary with all parameters
-                generation_config = {
-                    "model": model,
-                    "temperature": temperature,
-                    "user_prompt": user_prompt,
-                    "complete_prompt": complete_prompt,
-                    "min_moment_length": min_moment_length,
-                    "max_moment_length": max_moment_length,
-                    "min_moments": min_moments,
-                    "max_moments": max_moments,
-                    "operation_type": "generation"
-                }
-                
-                # Add model_name, prompt, and generation_config to each moment
-                for moment in moments:
-                    moment['model_name'] = model_name
-                    moment['prompt'] = complete_prompt
-                    moment['generation_config'] = generation_config
-                
-                # Validate moments against constraints
-                validated_moments = []
-                for i, moment in enumerate(moments):
-                    # Check moment duration
-                    duration = moment['end_time'] - moment['start_time']
-                    if duration < min_moment_length or duration > max_moment_length:
-                        logger.warning(f"Moment {i} duration {duration:.2f}s outside range [{min_moment_length:.2f}, {max_moment_length:.2f}], skipping")
-                        continue
-                    
-                    # Check bounds
-                    if moment['start_time'] < 0 or moment['end_time'] > video_duration:
-                        logger.warning(f"Moment {i} outside video bounds, skipping")
-                        continue
-                    
-                    # Check start < end
-                    if moment['end_time'] <= moment['start_time']:
-                        logger.warning(f"Moment {i} has invalid time range, skipping")
-                        continue
-                    
-                    validated_moments.append(moment)
-                
-                # Check number of moments constraint
-                if len(validated_moments) < min_moments:
-                    logger.info(f"Generated {len(validated_moments)} moments (requested minimum: {min_moments})")
-                elif len(validated_moments) > max_moments:
-                    logger.warning(f"{len(validated_moments)} valid moments found, but maximum is {max_moments}. Truncating to {max_moments}")
-                    validated_moments = validated_moments[:max_moments]
-                
-                # Check for overlaps
-                validated_moments.sort(key=lambda x: x['start_time'])
-                non_overlapping = []
-                for moment in validated_moments:
-                    overlaps = False
-                    for existing in non_overlapping:
-                        if (moment['start_time'] < existing['end_time'] and 
-                            moment['end_time'] > existing['start_time']):
-                            overlaps = True
-                            logger.warning(f"Moment '{moment['title']}' overlaps with '{existing['title']}', skipping")
-                            break
-                    if not overlaps:
-                        non_overlapping.append(moment)
-                
-                validated_moments = non_overlapping
-                
-                if not validated_moments:
-                    logger.warning("No valid moments after validation - returning empty result")
-                
-                # Save moments (replaces existing) - handle empty list gracefully
-                if validated_moments:
-                    log_event(
-                        level="INFO",
-                        logger="app.services.ai.generation_service",
-                        function="process_moments_generation_async",
-                        operation=operation,
-                        event="file_operation_start",
-                        message="Saving validated moments",
-                        context={"moment_count": len(validated_moments)}
-                    )
-                    success = save_moments(video_filename, validated_moments)
-                else:
-                    logger.warning(f"No moments to save for {video_filename}")
-                    success = True  # Consider empty result as success
-                
-                if not success:
-                    log_event(
-                        level="ERROR",
-                        logger="app.services.ai.generation_service",
-                        function="process_moments_generation_async",
-                        operation=operation,
-                        event="file_operation_error",
-                        message="Failed to save moments to file",
-                        context={"video_filename": video_filename}
-                    )
-                    raise Exception("Failed to save moments to file")
-                
-                # Mark pipeline stage as complete (import here to avoid circular dependency)
-                from app.services.pipeline.status import mark_stage_completed
-                from app.models.pipeline_schemas import PipelineStage
-                mark_stage_completed(video_id, PipelineStage.MOMENT_GENERATION)
-                
-                # Also update job repo for backward compatibility with API endpoints
-                job_repo.update_status(
-                    JobType.MOMENT_GENERATION,
-                    video_id,
-                    JobStatus.COMPLETED
+                log_ai_request_response(
+                    operation="moment_generation_async",
+                    video_id=video_id,
+                    model_key=model,
+                    model_name=model_name,
+                    model_id=model_id,
+                    model_url=model_url,
+                    request_payload=payload,
+                    response_status_code=200,
+                    response_data=ai_response,
+                    response_content=response_content,
+                    duration_seconds=time.time() - start_time,
+                    parsing_success=parsing_success,
+                    parsing_error=parsing_error,
+                    extracted_data=moments if parsing_success else None,
+                    request_id=get_request_id(),
                 )
+            
+            # Create generation_config dictionary with all parameters
+            generation_config = {
+                "model": model,
+                "temperature": temperature,
+                "user_prompt": user_prompt,
+                "complete_prompt": complete_prompt,
+                "min_moment_length": min_moment_length,
+                "max_moment_length": max_moment_length,
+                "min_moments": min_moments,
+                "max_moments": max_moments,
+                "operation_type": "generation"
+            }
+            
+            # Add model_name, prompt, and generation_config to each moment
+            for moment in moments:
+                moment['model_name'] = model_name
+                moment['prompt'] = complete_prompt
+                moment['generation_config'] = generation_config
+            
+            # Validate moments against constraints
+            validated_moments = []
+            for i, moment in enumerate(moments):
+                # Check moment duration
+                duration = moment['end_time'] - moment['start_time']
+                if duration < min_moment_length or duration > max_moment_length:
+                    logger.warning(f"Moment {i} duration {duration:.2f}s outside range [{min_moment_length:.2f}, {max_moment_length:.2f}], skipping")
+                    continue
                 
-                duration = time.time() - start_time
-                log_operation_complete(
-                    logger="app.services.ai.generation_service",
-                    function="process_moments_generation_async",
-                    operation=operation,
-                    message="Moment generation completed successfully",
-                    context={
-                        "video_id": video_id,
-                        "moment_count": len(validated_moments),
-                        "duration_seconds": duration
-                    }
-                )
+                # Check bounds
+                if moment['start_time'] < 0 or moment['end_time'] > video_duration:
+                    logger.warning(f"Moment {i} outside video bounds, skipping")
+                    continue
                 
-        except Exception as e:
+                # Check start < end
+                if moment['end_time'] <= moment['start_time']:
+                    logger.warning(f"Moment {i} has invalid time range, skipping")
+                    continue
+                
+                validated_moments.append(moment)
+            
+            # Check number of moments constraint
+            if len(validated_moments) < min_moments:
+                logger.info(f"Generated {len(validated_moments)} moments (requested minimum: {min_moments})")
+            elif len(validated_moments) > max_moments:
+                logger.warning(f"{len(validated_moments)} valid moments found, but maximum is {max_moments}. Truncating to {max_moments}")
+                validated_moments = validated_moments[:max_moments]
+            
+            # Check for overlaps
+            validated_moments.sort(key=lambda x: x['start_time'])
+            non_overlapping = []
+            for moment in validated_moments:
+                overlaps = False
+                for existing in non_overlapping:
+                    if (moment['start_time'] < existing['end_time'] and 
+                        moment['end_time'] > existing['start_time']):
+                        overlaps = True
+                        logger.warning(f"Moment '{moment['title']}' overlaps with '{existing['title']}', skipping")
+                        break
+                if not overlaps:
+                    non_overlapping.append(moment)
+            
+            validated_moments = non_overlapping
+            
+            if not validated_moments:
+                logger.warning("No valid moments after validation - returning empty result")
+            
             duration = time.time() - start_time
-            log_operation_error(
+            log_operation_complete(
                 logger="app.services.ai.generation_service",
-                function="process_moments_generation_async",
+                function="process_moments_generation",
                 operation=operation,
-                error=e,
-                message="Error in async moment generation",
+                message="Moment generation completed successfully (async)",
                 context={
                     "video_id": video_id,
+                    "moment_count": len(validated_moments),
                     "duration_seconds": duration
                 }
             )
-            # Mark pipeline stage as failed (import here to avoid circular dependency)
-            from app.services.pipeline.status import mark_stage_failed
-            from app.models.pipeline_schemas import PipelineStage
-            mark_stage_failed(video_id, PipelineStage.MOMENT_GENERATION, str(e))
             
-            # Also update job repo for backward compatibility with API endpoints
-            job_repo.update_status(
-                JobType.MOMENT_GENERATION,
-                video_id,
-                JobStatus.FAILED,
-                error=str(e)
-            )
-        finally:
-            # Tunnel is closed by context manager
-            pass
+            return validated_moments
     
-    # Start processing in background thread
-    thread = threading.Thread(target=generate, daemon=True)
-    thread.start()
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.ai.generation_service",
+            function="process_moments_generation",
+            operation=operation,
+            error=e,
+            message="Error in moment generation (async)",
+            context={
+                "video_id": video_id,
+                "duration_seconds": duration
+            }
+        )
+        raise
+

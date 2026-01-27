@@ -32,7 +32,7 @@ MODELS = {
         "name": "MiniMax",
         "model_id": None,  # MiniMax doesn't require explicit model_id in the request
         "ssh_host": "naresh@85.234.64.146",
-        "ssh_remote_host": "worker-71",
+        "ssh_remote_host": "worker-17",
         "ssh_local_port": 8007,
         "ssh_remote_port": 7104,
     },
@@ -58,8 +58,9 @@ MODELS = {
     "qwen3_vl_fp8": {
         "name": "Qwen3-VL-FP8",
         "model_id": None,  # Qwen3-VL-FP8 doesn't require explicit model_id in the request
-        "ssh_host": "naresh@85.234.64.44",
-        "ssh_remote_host": "worker-9",
+        # "ssh_host": "naresh@85.234.64.44", Primary
+        "ssh_host": "naresh@85.234.64.146", # Aditioanl
+        "ssh_remote_host": "worker-7",
         "ssh_local_port": 6010,
         "ssh_remote_port": 8010,
         "supports_video": True,  # This model supports video input for refinement
@@ -69,7 +70,7 @@ MODELS = {
         # "ssh_host": "naresh@85.234.64.44", Primary
         "ssh_host": "naresh@85.234.64.146", # Secondry
         # "ssh_remote_host": "worker-9", # Primary
-        "ssh_remote_host": "worker-11", #secondr
+        "ssh_remote_host": "worker-5", #secondr
         "ssh_local_port": 6106,
         "ssh_remote_port": 8006,
     }

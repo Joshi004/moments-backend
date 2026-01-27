@@ -4,18 +4,21 @@ Handles audio extraction and transcript generation.
 """
 from fastapi import APIRouter, HTTPException
 import time
+import asyncio
 
 from app.models.schemas import MessageResponse
 from app.utils.video import get_video_files
 from app.services.audio_service import (
     check_audio_exists,
-    process_audio_async
+    process_audio_async,
+    get_audio_path
 )
 from app.services.transcript_service import (
     check_transcript_exists,
-    process_transcription_async,
+    process_transcription,
     load_transcript
 )
+from app.services.pipeline.upload_service import GCSUploader
 from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 # Initialize job repository
@@ -176,24 +179,51 @@ async def process_transcript(video_id: str):
         if check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript already exists for this video")
         
-        # Start transcription job
-        job = job_repo.create(JobType.TRANSCRIPTION, video_id, audio_filename=audio_filename)
-        if job is None:
-            raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
+        # Upload audio to GCS
+        uploader = GCSUploader()
+        audio_path = get_audio_path(video_file.name)
         
-        # Start async processing
-        process_transcription_async(video_id, audio_filename)
-        
-        duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="INFO",
             logger="app.api.endpoints.transcripts",
             function="process_transcript",
             operation=operation,
-            message="Transcript generation job started",
-            context={"video_id": video_id, "duration_seconds": duration}
+            event="gcs_upload_start",
+            message="Uploading audio to GCS",
+            context={"video_id": video_id, "audio_path": str(audio_path)}
         )
         
-        return {"message": "Transcript generation started", "video_id": video_id}
+        _, audio_signed_url = await uploader.upload_audio(audio_path, video_id)
+        
+        # Call async transcription with timeout
+        try:
+            result = await asyncio.wait_for(
+                process_transcription(video_id, audio_signed_url),
+                timeout=600  # 10 minutes
+            )
+            
+            duration = time.time() - start_time
+            log_operation_complete(
+                logger="app.api.endpoints.transcripts",
+                function="process_transcript",
+                operation=operation,
+                message="Transcription completed successfully",
+                context={"video_id": video_id, "duration_seconds": duration}
+            )
+            
+            return {"message": "Transcription completed", "video_id": video_id}
+            
+        except asyncio.TimeoutError:
+            duration = time.time() - start_time
+            log_operation_error(
+                logger="app.api.endpoints.transcripts",
+                function="process_transcript",
+                operation=operation,
+                error=Exception("Timeout"),
+                message="Transcription timed out",
+                context={"video_id": video_id, "duration_seconds": duration}
+            )
+            raise HTTPException(status_code=504, detail="Transcription timed out after 600 seconds")
         
     except HTTPException:
         raise

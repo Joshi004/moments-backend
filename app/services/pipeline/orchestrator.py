@@ -31,9 +31,9 @@ from app.services.audio_service import (
 )
 from app.services.transcript_service import (
     check_transcript_exists,
-    process_transcription_async,
+    process_transcription,
 )
-from app.services.ai.generation_service import process_moments_generation_async
+from app.services.ai.generation_service import process_moments_generation
 from app.services.ai.refinement_service import process_moment_refinement
 from app.services.moments_service import load_moments, save_moments
 from app.services.video_clipping_service import (
@@ -79,7 +79,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     
     # Progress callback to update Redis
     redis = get_redis_client()
-    status_key = f"pipeline:{video_id}:status"
+    status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
     
     def progress_callback(bytes_downloaded: int, total_bytes: int):
         """Update download progress in Redis."""
@@ -260,9 +260,13 @@ async def execute_audio_extraction(video_id: str) -> None:
     logger.info(f"Extracted audio for {video_id}")
 
 
-async def execute_audio_upload(video_id: str) -> str:
+async def execute_audio_upload(video_id: str, progress_callback=None) -> str:
     """
-    Execute audio upload stage to GCS.
+    Execute audio upload stage to GCS with optional progress tracking.
+    
+    Args:
+        video_id: Video identifier
+        progress_callback: Optional callback(bytes_uploaded, total_bytes)
     
     Returns:
         Signed URL for the uploaded audio file
@@ -274,7 +278,11 @@ async def execute_audio_upload(video_id: str) -> str:
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
     
     uploader = GCSUploader()
-    gcs_path, signed_url = await uploader.upload_audio(audio_path, video_id)
+    gcs_path, signed_url = await uploader.upload_audio(
+        audio_path, 
+        video_id,
+        progress_callback=progress_callback
+    )
     
     logger.info(f"Uploaded audio for {video_id} to gs://{uploader.bucket_name}/{gcs_path}")
     logger.info(f"Generated signed URL (expires in 1 hour)")
@@ -290,72 +298,75 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
         video_id: Video identifier
         audio_signed_url: GCS signed URL for the audio file
     """
+    from app.services.transcript_service import process_transcription
+    
     video_filename = f"{video_id}.mp4"
     
     logger.info(f"Starting transcription for {video_id} with GCS audio URL")
     
-    # Start transcription with signed URL (runs in background thread)
-    process_transcription_async(video_id, audio_signed_url)
-    
-    # Wait for completion by polling pipeline status
-    max_wait = 600  # 10 minutes
-    wait_interval = 2  # 2 seconds
-    elapsed = 0
-    
-    while elapsed < max_wait:
-        await asyncio.sleep(wait_interval)
-        elapsed += wait_interval
+    try:
+        # Call async transcription function with timeout
+        result = await asyncio.wait_for(
+            process_transcription(video_id, audio_signed_url),
+            timeout=600  # 10 minutes
+        )
         
-        # Check stage status in pipeline hash
-        stage_status = get_stage_status(video_id, PipelineStage.TRANSCRIPTION)
+        logger.info(f"Transcription completed for {video_id}")
         
-        if stage_status == StageStatus.COMPLETED:
-            logger.info(f"Transcription completed for {video_id}")
-            return
-        elif stage_status == StageStatus.FAILED:
-            error = get_stage_error(video_id, PipelineStage.TRANSCRIPTION)
-            raise Exception(f"Transcription failed: {error or 'Unknown error'}")
-    
-    raise TimeoutError(f"Transcription timed out after {max_wait} seconds")
+    except asyncio.TimeoutError:
+        error_msg = f"Transcription timed out after 600 seconds"
+        logger.error(error_msg)
+        raise TimeoutError(error_msg)
+    except Exception as e:
+        logger.error(f"Transcription failed for {video_id}: {str(e)}")
+        raise
 
 
 async def execute_moment_generation(video_id: str, config: dict) -> None:
     """Execute moment generation stage."""
+    from app.services.ai.generation_service import process_moments_generation
+    from app.services.moments_service import save_moments
+    
     video_filename = f"{video_id}.mp4"
     
-    # Start moment generation (runs in background thread)
-    process_moments_generation_async(
-        video_id=video_id,
-        video_filename=video_filename,
-        user_prompt=config.get("generation_prompt") or "Analyze the following video transcript and identify the most interesting, engaging, and shareable moments. These should be self-contained segments that can stand alone as short video clips.",
-        min_moment_length=config.get("min_moment_length", 15),
-        max_moment_length=config.get("max_moment_length", 60),
-        min_moments=config.get("min_moments", 3),
-        max_moments=config.get("max_moments", 10),
-        model=config.get("generation_model", "qwen3_vl_fp8"),
-        temperature=config.get("generation_temperature", 0.7),
-    )
+    logger.info(f"Starting moment generation for {video_id}")
     
-    # Wait for completion by polling pipeline status
-    max_wait = 900  # 15 minutes
-    wait_interval = 3  # 3 seconds
-    elapsed = 0
-    
-    while elapsed < max_wait:
-        await asyncio.sleep(wait_interval)
-        elapsed += wait_interval
+    try:
+        # Call async moment generation function with timeout
+        validated_moments = await asyncio.wait_for(
+            process_moments_generation(
+                video_id=video_id,
+                video_filename=video_filename,
+                user_prompt=config.get("generation_prompt") or "Analyze the following video transcript and identify the most interesting, engaging, and shareable moments. These should be self-contained segments that can stand alone as short video clips.",
+                min_moment_length=config.get("min_moment_length", 15),
+                max_moment_length=config.get("max_moment_length", 60),
+                min_moments=config.get("min_moments", 3),
+                max_moments=config.get("max_moments", 10),
+                model=config.get("generation_model", "qwen3_vl_fp8"),
+                temperature=config.get("generation_temperature", 0.7),
+            ),
+            timeout=900  # 15 minutes
+        )
         
-        # Check stage status in pipeline hash
-        stage_status = get_stage_status(video_id, PipelineStage.MOMENT_GENERATION)
+        # Save moments (replaces existing) - handle empty list gracefully
+        if validated_moments:
+            logger.info(f"Saving {len(validated_moments)} moments for {video_id}")
+            success = save_moments(video_filename, validated_moments)
+            
+            if not success:
+                raise Exception("Failed to save moments to file")
+        else:
+            logger.warning(f"No moments to save for {video_filename}")
         
-        if stage_status == StageStatus.COMPLETED:
-            logger.info(f"Moment generation completed for {video_id}")
-            return
-        elif stage_status == StageStatus.FAILED:
-            error = get_stage_error(video_id, PipelineStage.MOMENT_GENERATION)
-            raise Exception(f"Moment generation failed: {error or 'Unknown error'}")
-    
-    raise TimeoutError(f"Moment generation timed out after {max_wait} seconds")
+        logger.info(f"Moment generation completed for {video_id}")
+        
+    except asyncio.TimeoutError:
+        error_msg = f"Moment generation timed out after 900 seconds"
+        logger.error(error_msg)
+        raise TimeoutError(error_msg)
+    except Exception as e:
+        logger.error(f"Moment generation failed for {video_id}: {str(e)}")
+        raise
 
 
 async def execute_clip_extraction(video_id: str, config: dict) -> None:
@@ -505,11 +516,23 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:
-        audio_signed_url = await execute_audio_upload(video_id)
-        # Store signed URL in Redis for next stage
+        # Create progress callback for Redis updates
         from app.core.redis import get_redis_client
         redis = get_redis_client()
-        status_key = f"pipeline:{video_id}:status"
+        status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
+        
+        def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
+            """Update upload progress in Redis."""
+            try:
+                percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
+                redis.hset(status_key, "upload_bytes", str(bytes_uploaded))
+                redis.hset(status_key, "upload_total", str(total_bytes))
+                redis.hset(status_key, "upload_percentage", str(percentage))
+            except Exception as e:
+                logger.error(f"Failed to update upload progress: {e}")
+        
+        audio_signed_url = await execute_audio_upload(video_id, progress_callback=upload_progress_callback)
+        # Store signed URL in Redis for next stage
         redis.hset(status_key, "audio_signed_url", audio_signed_url)
         logger.info(f"Stored audio signed URL in pipeline state for {video_id}")
     
@@ -517,7 +540,7 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         # Retrieve signed URL from Redis
         from app.core.redis import get_redis_client
         redis = get_redis_client()
-        status_key = f"pipeline:{video_id}:status"
+        status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
         audio_signed_url = redis.hget(status_key, "audio_signed_url")
         if audio_signed_url:
             audio_signed_url = audio_signed_url.decode('utf-8') if isinstance(audio_signed_url, bytes) else audio_signed_url

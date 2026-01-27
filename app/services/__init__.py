@@ -18,8 +18,7 @@ from app.services.transcript_service import (
     get_transcript_path,
     check_transcript_exists,
     load_transcript,
-    save_transcript,
-    process_transcription_async
+    save_transcript
 )
 
 from app.services.moments_service import (
@@ -69,7 +68,6 @@ __all__ = [
     "check_transcript_exists",
     "load_transcript",
     "save_transcript",
-    "process_transcription_async",
     
     # Moments service
     "get_moments_directory",

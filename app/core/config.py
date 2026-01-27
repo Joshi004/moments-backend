@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     gcs_audio_prefix: str = "audio/"
     gcs_clips_prefix: str = "clips/"
     gcs_signed_url_expiry_hours: float = 1.0
-    gcs_upload_timeout_seconds: int = 300  # 5 minutes
+    gcs_upload_timeout_seconds: int = 1800  # 30 minutes
     gcs_max_retries: int = 3
     gcs_retry_base_delay: float = 1.0  # Exponential: 1s, 2s, 4s
     
@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     
     # Video Download Configuration
     video_download_timeout_seconds: int = 1800  # 30 minutes
-    video_download_max_size_bytes: int = 4 * 1024 * 1024 * 1024  # 4 GB
+    video_download_max_size_bytes: int = 10 * 1024 * 1024 * 1024  # 10 GB
     video_download_max_concurrent: int = 2
     video_download_chunk_size: int = 8192  # 8 KB chunks
     video_download_retry_count: int = 3

@@ -7,7 +7,7 @@ import logging
 import time
 import hashlib
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional, Callable
 from datetime import timedelta
 import google.auth
 from google.cloud import storage
@@ -16,6 +16,29 @@ from app.core.config import get_settings
 from app.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
+
+
+class ProgressFileWrapper:
+    """File wrapper that reports read progress via callback."""
+    
+    def __init__(self, file_obj, total_size, progress_callback):
+        self._file = file_obj
+        self._total_size = total_size
+        self._callback = progress_callback
+        self._bytes_read = 0
+    
+    def read(self, size=-1):
+        data = self._file.read(size)
+        self._bytes_read += len(data)
+        if self._callback:
+            self._callback(self._bytes_read, self._total_size)
+        return data
+    
+    def seek(self, *args, **kwargs):
+        return self._file.seek(*args, **kwargs)
+    
+    def tell(self):
+        return self._file.tell()
 
 
 # ==================== DEPRECATED: SCP Uploader (kept for reference) ====================
@@ -175,11 +198,16 @@ class GCSUploader:
                     str(credentials_path),
                     scopes=['https://www.googleapis.com/auth/cloud-platform']
                 )
-                self.client = storage.Client(
+                # Create client with custom timeout configuration
+                from google.cloud.storage import Client
+                self.client = Client(
                     credentials=self.credentials,
-                    project=self.credentials.project_id
+                    project=self.credentials.project_id,
+                    client_options={"api_endpoint": None}  # Use default endpoint
                 )
-                logger.info(f"GCS client initialized with service account (project: {self.credentials.project_id})")
+                # Configure timeout on the client's session
+                self.client._http.timeout = self.timeout
+                logger.info(f"GCS client initialized with service account (project: {self.credentials.project_id}, timeout: {self.timeout}s)")
             except Exception as e:
                 logger.error(f"Failed to load service account credentials: {e}")
                 logger.info("Falling back to Application Default Credentials")
@@ -197,13 +225,18 @@ class GCSUploader:
         """Initialize client with Application Default Credentials (fallback)."""
         try:
             client = storage.Client()
-            logger.info("GCS client initialized with Application Default Credentials")
+            # Configure timeout on the client's session
+            client._http.timeout = self.timeout
+            logger.info(f"GCS client initialized with Application Default Credentials (timeout: {self.timeout}s)")
             return client
         except Exception as e:
             if "Project" in str(e) or "project" in str(e):
                 logger.warning("Could not auto-detect project, using bucket-specific access")
                 credentials, _ = google.auth.default()
-                return storage.Client(credentials=credentials, project=None)
+                client = storage.Client(credentials=credentials, project=None)
+                # Configure timeout
+                client._http.timeout = self.timeout
+                return client
             else:
                 raise
     
@@ -219,19 +252,58 @@ class GCSUploader:
         """Get file size in megabytes."""
         return file_path.stat().st_size / (1024 * 1024)
     
+    def _upload_with_progress(
+        self,
+        blob,
+        local_path: Path,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        chunk_size: int = 5 * 1024 * 1024  # 5MB chunks
+    ) -> None:
+        """
+        Upload file with progress tracking.
+        
+        Args:
+            blob: GCS blob object
+            local_path: Path to local file
+            progress_callback: Optional callback(bytes_uploaded, total_bytes)
+            chunk_size: Size of each chunk in bytes (used for resumable threshold)
+        """
+        file_size = local_path.stat().st_size
+        
+        with open(local_path, 'rb') as f:
+            if progress_callback:
+                # Wrap file with progress tracker
+                wrapped_file = ProgressFileWrapper(f, file_size, progress_callback)
+                blob.upload_from_file(
+                    wrapped_file,
+                    size=file_size,
+                    timeout=self.timeout,
+                    num_retries=0  # Retries handled by our retry wrapper
+                )
+            else:
+                # Simple upload without progress tracking
+                blob.upload_from_file(
+                    f,
+                    size=file_size,
+                    timeout=self.timeout,
+                    num_retries=0
+                )
+    
     async def _upload_file_with_retry(
         self, 
         local_path: Path, 
         gcs_path: str,
-        operation_name: str = "upload"
+        operation_name: str = "upload",
+        progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> None:
         """
-        Upload file to GCS with retry logic.
+        Upload file to GCS with retry logic and optional progress tracking.
         
         Args:
             local_path: Local file path
             gcs_path: Destination path in GCS (without gs:// prefix)
             operation_name: Name for logging
+            progress_callback: Optional callback(bytes_uploaded, total_bytes)
         """
         async def _do_upload():
             """Internal upload function to be retried."""
@@ -239,11 +311,25 @@ class GCSUploader:
             
             # Run blocking upload in thread pool
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                blob.upload_from_filename,
-                str(local_path)
-            )
+            
+            if progress_callback:
+                # Use chunked upload with progress tracking
+                await loop.run_in_executor(
+                    None,
+                    self._upload_with_progress,
+                    blob,
+                    local_path,
+                    progress_callback
+                )
+            else:
+                # Use simple upload without progress (existing behavior)
+                from functools import partial
+                upload_func = partial(
+                    blob.upload_from_filename,
+                    str(local_path),
+                    timeout=self.timeout
+                )
+                await loop.run_in_executor(None, upload_func)
         
         # Use retry utility
         await retry_with_backoff(
@@ -289,13 +375,19 @@ class GCSUploader:
         
         return url
     
-    async def upload_audio(self, local_path: Path, video_id: str) -> Tuple[str, str]:
+    async def upload_audio(
+        self, 
+        local_path: Path, 
+        video_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Tuple[str, str]:
         """
         Upload audio file to GCS and return signed URL.
         
         Args:
             local_path: Path to local audio file
             video_id: Video identifier
+            progress_callback: Optional callback(bytes_uploaded, total_bytes)
         
         Returns:
             Tuple of (gcs_path, signed_url)
@@ -325,21 +417,31 @@ class GCSUploader:
             blob.reload()  # Get metadata
             local_md5 = self._get_file_md5(local_path)
             
-            # Compare MD5 hashes (note: GCS returns base64, we have hex)
+            # Compare MD5 hashes (GCS returns base64, we have hex)
             if blob.md5_hash:
-                logger.info(
-                    f"Audio file already exists in GCS: gs://{self.bucket_name}/{gcs_path}. "
-                    f"Skipping upload and generating new signed URL."
-                )
-                signed_url = self.generate_signed_url(gcs_path)
-                logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
-                return (gcs_path, signed_url)
+                import base64
+                remote_md5_hex = base64.b64decode(blob.md5_hash).hex()
+                
+                if remote_md5_hex == local_md5:
+                    logger.info(
+                        f"Audio file already exists in GCS with matching MD5: gs://{self.bucket_name}/{gcs_path}. "
+                        f"Skipping upload and generating new signed URL."
+                    )
+                    signed_url = self.generate_signed_url(gcs_path)
+                    logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
+                    return (gcs_path, signed_url)
+                else:
+                    logger.warning(
+                        f"MD5 mismatch for gs://{self.bucket_name}/{gcs_path}! "
+                        f"Local: {local_md5}, Remote: {remote_md5_hex}. Re-uploading..."
+                    )
         
-        # Upload file with retry
+        # Upload file with retry and progress tracking
         await self._upload_file_with_retry(
             local_path,
             gcs_path,
-            operation_name=f"GCS audio upload ({video_id})"
+            operation_name=f"GCS audio upload ({video_id})",
+            progress_callback=progress_callback
         )
         
         duration = time.time() - start_time
@@ -358,7 +460,8 @@ class GCSUploader:
         self, 
         local_path: Path, 
         video_id: str, 
-        moment_id: str
+        moment_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Tuple[str, str]:
         """
         Upload video clip to GCS and return signed URL.
@@ -367,6 +470,7 @@ class GCSUploader:
             local_path: Path to local clip file
             video_id: Video identifier
             moment_id: Moment identifier
+            progress_callback: Optional callback(bytes_uploaded, total_bytes)
         
         Returns:
             Tuple of (gcs_path, signed_url)
@@ -394,7 +498,8 @@ class GCSUploader:
         await self._upload_file_with_retry(
             local_path,
             gcs_path,
-            operation_name=f"GCS clip upload ({video_id}/{moment_id})"
+            operation_name=f"GCS clip upload ({video_id}/{moment_id})",
+            progress_callback=progress_callback
         )
         
         duration = time.time() - start_time

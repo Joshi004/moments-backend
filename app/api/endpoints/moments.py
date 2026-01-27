@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pathlib import Path
 import time
 import cv2
+import asyncio
 
 from app.models.schemas import (
     MomentResponse,
@@ -15,14 +16,14 @@ from app.models.schemas import (
     JobStatusResponse
 )
 from app.utils.video import get_video_files
-from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
+from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment, save_moments
 from app.services.audio_service import check_audio_exists
 from app.services.transcript_service import check_transcript_exists
 from app.services.ai.generation_service import (
-    process_moments_generation_async
+    process_moments_generation
 )
 from app.services.ai.refinement_service import (
-    process_moment_refinement_async
+    process_moment_refinement
 )
 from app.services.ai.prompt_defaults import DEFAULT_REFINEMENT_PROMPT
 from app.repositories.job_repository import JobRepository, JobType, JobStatus
@@ -256,10 +257,6 @@ async def generate_moments(video_id: str, request: GenerateMomentsRequest):
         if not check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
-        # Check if already processing
-        if job_repo.is_processing(JobType.MOMENT_GENERATION, video_id):
-            raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
-        
         # Default prompt
         default_prompt = """Analyze the following video transcript and identify the most important, engaging, or valuable moments. Each moment should represent a distinct topic, insight, or highlight that would be meaningful to viewers.
 
@@ -271,34 +268,58 @@ Generate moments that:
         
         user_prompt = request.user_prompt if request.user_prompt else default_prompt
         
-        # Start generation job
-        job = job_repo.create(JobType.MOMENT_GENERATION, video_id)
-        if job is None:
-            raise HTTPException(status_code=409, detail="Moment generation already in progress for this video")
-        
-        # Start async processing
-        process_moments_generation_async(
-            video_id=video_id,
-            video_filename=video_file.name,
-            user_prompt=user_prompt,
-            min_moment_length=request.min_moment_length,
-            max_moment_length=request.max_moment_length,
-            min_moments=request.min_moments,
-            max_moments=request.max_moments,
-            model=request.model,
-            temperature=request.temperature
-        )
-        
-        duration = time.time() - start_time
-        log_operation_complete(
-            logger="app.api.endpoints.moments",
-            function="generate_moments",
-            operation=operation,
-            message="Moment generation job started",
-            context={"video_id": video_id, "model": request.model, "duration_seconds": duration}
-        )
-        
-        return {"message": "Moment generation started", "video_id": video_id}
+        # Call async moment generation with timeout
+        try:
+            validated_moments = await asyncio.wait_for(
+                process_moments_generation(
+                    video_id=video_id,
+                    video_filename=video_file.name,
+                    user_prompt=user_prompt,
+                    min_moment_length=request.min_moment_length,
+                    max_moment_length=request.max_moment_length,
+                    min_moments=request.min_moments,
+                    max_moments=request.max_moments,
+                    model=request.model,
+                    temperature=request.temperature
+                ),
+                timeout=900  # 15 minutes
+            )
+            
+            # Save moments directly from result
+            if validated_moments:
+                save_moments(video_file.name, validated_moments)
+                log_event(
+                    level="INFO",
+                    logger="app.api.endpoints.moments",
+                    function="generate_moments",
+                    operation=operation,
+                    event="moments_saved",
+                    message=f"Saved {len(validated_moments)} moments",
+                    context={"video_id": video_id, "moment_count": len(validated_moments)}
+                )
+            
+            duration = time.time() - start_time
+            log_operation_complete(
+                logger="app.api.endpoints.moments",
+                function="generate_moments",
+                operation=operation,
+                message="Moment generation completed successfully",
+                context={"video_id": video_id, "model": request.model, "duration_seconds": duration}
+            )
+            
+            return {"message": "Moment generation completed", "video_id": video_id, "moment_count": len(validated_moments)}
+            
+        except asyncio.TimeoutError:
+            duration = time.time() - start_time
+            log_operation_error(
+                logger="app.api.endpoints.moments",
+                function="generate_moments",
+                operation=operation,
+                error=Exception("Timeout"),
+                message="Moment generation timed out",
+                context={"video_id": video_id, "duration_seconds": duration}
+            )
+            raise HTTPException(status_code=504, detail="Moment generation timed out after 900 seconds")
         
     except HTTPException:
         raise
@@ -396,10 +417,6 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
         if not check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
-        # Check if already processing
-        if job_repo.is_processing(JobType.MOMENT_REFINEMENT, video_id, moment_id):
-            raise HTTPException(status_code=409, detail="Moment refinement already in progress")
-        
         # Always use the centralized refinement prompt (user_prompt is ignored)
         user_prompt = DEFAULT_REFINEMENT_PROMPT
         
@@ -424,43 +441,57 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             
             video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_file.name)
         
-        # Start refinement job
-        job = job_repo.create(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
-        if job is None:
-            raise HTTPException(status_code=409, detail="Moment refinement already in progress")
-        
-        # Start async processing
-        process_moment_refinement_async(
-            video_id=video_id,
-            moment_id=moment_id,
-            video_filename=video_file.name,
-            user_prompt=user_prompt,
-            model=request.model,
-            temperature=request.temperature,
-            include_video=include_video,
-            video_clip_url=video_clip_url
-        )
-        
-        duration = time.time() - start_time
-        log_operation_complete(
-            logger="app.api.endpoints.moments",
-            function="refine_moment",
-            operation=operation,
-            message="Moment refinement job started",
-            context={
+        # Call async moment refinement with timeout
+        try:
+            success = await asyncio.wait_for(
+                process_moment_refinement(
+                    video_id=video_id,
+                    moment_id=moment_id,
+                    video_filename=video_file.name,
+                    user_prompt=user_prompt,
+                    model=request.model,
+                    temperature=request.temperature,
+                    include_video=include_video,
+                    video_clip_url=video_clip_url
+                ),
+                timeout=300  # 5 minutes
+            )
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Moment refinement failed")
+            
+            duration = time.time() - start_time
+            log_operation_complete(
+                logger="app.api.endpoints.moments",
+                function="refine_moment",
+                operation=operation,
+                message="Moment refinement completed successfully",
+                context={
+                    "video_id": video_id,
+                    "moment_id": moment_id,
+                    "model": request.model,
+                    "duration_seconds": duration
+                }
+            )
+            
+            return {
+                "message": "Moment refinement completed",
                 "video_id": video_id,
                 "moment_id": moment_id,
-                "model": request.model,
-                "duration_seconds": duration
+                "include_video": include_video
             }
-        )
-        
-        return {
-            "message": "Moment refinement started",
-            "video_id": video_id,
-            "moment_id": moment_id,
-            "include_video": include_video
-        }
+            
+        except asyncio.TimeoutError:
+            duration = time.time() - start_time
+            log_operation_error(
+                logger="app.api.endpoints.moments",
+                function="refine_moment",
+                operation=operation,
+                error=Exception("Timeout"),
+                message="Moment refinement timed out",
+                context={"video_id": video_id, "moment_id": moment_id, "duration_seconds": duration}
+            )
+            raise HTTPException(status_code=504, detail="Moment refinement timed out after 300 seconds")
         
     except HTTPException:
         raise

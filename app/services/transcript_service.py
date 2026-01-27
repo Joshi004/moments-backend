@@ -1,5 +1,4 @@
 import subprocess
-import threading
 import time
 import json
 import requests
@@ -17,12 +16,8 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.model_config import get_model_config, get_transcription_service_url
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
-
-# Job repository for distributed job tracking (kept for backward compatibility with API endpoints)
-job_repo = JobRepository()
 
 
 def get_transcript_directory() -> Path:
@@ -557,59 +552,204 @@ def call_transcription_service(audio_url: str) -> Optional[dict]:
 # Job management functions now handled by JobRepository
 
 
-def process_transcription_async(video_id: str, audio_signed_url: str) -> None:
+async def call_transcription_service_async(audio_url: str) -> Optional[dict]:
     """
-    Process transcription asynchronously in a background thread using GCS signed URL.
+    Call the remote transcription service via tunnel asynchronously using httpx.
+    
+    This is the async version of call_transcription_service() for use in async contexts.
+    The SSH tunnel must already be established before calling this function.
     
     Args:
-        video_id: ID of the video (filename stem)
-        audio_signed_url: GCS signed URL for the audio file
+        audio_url: URL to the audio file (e.g., GCS signed URL)
+    
+    Returns:
+        Dictionary with transcription response or None if failed
     """
-    operation = "transcription_processing_async"
+    import httpx
     
-    # Extract audio filename from video_id for saving transcript
-    audio_filename = f"{video_id}.wav"
+    operation = "transcription_api_call_async"
+    start_time = time.time()
     
-    log_event(
-        level="INFO",
+    # Get service URL from config
+    service_url = get_transcription_service_url()
+    
+    log_operation_start(
         logger="app.services.transcript_service",
-        function="process_transcription_async",
+        function="call_transcription_service_async",
         operation=operation,
-        event="operation_start",
-        message="Starting async transcription processing thread with GCS audio",
+        message="Calling transcription service (async)",
         context={
-            "video_id": video_id,
-            "audio_url_type": "gcs_signed_url",
+            "audio_url": audio_url,
+            "service_url": service_url,
             "request_id": get_request_id()
         }
     )
     
-    def transcribe():
-        tunnel_process = None
-        try:
-            # Use the GCS signed URL directly
-            audio_url = audio_signed_url
-            
-            log_event(
-                level="DEBUG",
-                logger="app.services.transcript_service",
-                function="process_transcription_async",
-                operation=operation,
-                event="operation_start",
-                message="Starting transcription in background thread",
-                context={
-                    "video_id": video_id,
-                    "audio_url": audio_url
-                }
+    try:
+        payload = {"audio_url": audio_url}
+        
+        log_event(
+            level="DEBUG",
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            event="external_call_start",
+            message="Sending request to transcription service",
+            context={"payload": payload}
+        )
+        
+        # Use httpx AsyncClient for async HTTP requests
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                service_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
             )
-            
-            # Create SSH tunnel (tunnel is already verified in create_ssh_tunnel)
-            tunnel_process = create_ssh_tunnel("parakeet")
-            if tunnel_process is None:
-                raise Exception("Failed to create SSH tunnel")
-            
-            # Call transcription service
-            transcription_result = call_transcription_service(audio_url)
+        
+        duration = time.time() - start_time
+        
+        log_event(
+            level="DEBUG",
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            event="external_call_complete",
+            message="Received response from transcription service",
+            context={
+                "status_code": response.status_code,
+                "response_size_bytes": len(response.content) if response.content else 0,
+                "duration_seconds": duration
+            }
+        )
+        
+        response.raise_for_status()
+        
+        result = response.json()
+        processing_time = result.get('processing_time', 0)
+        
+        log_operation_complete(
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            message="Transcription service call completed (async)",
+            context={
+                "audio_url": audio_url,
+                "processing_time_seconds": processing_time,
+                "has_segments": "segment_timestamps" in result if result else False,
+                "has_words": "word_timestamps" in result if result else False,
+                "duration_seconds": duration
+            }
+        )
+        
+        return result
+        
+    except httpx.HTTPStatusError as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            error=e,
+            message="HTTP error calling transcription service (async)",
+            context={
+                "audio_url": audio_url,
+                "status_code": e.response.status_code if e.response else None,
+                "response_preview": e.response.text[:500] if e.response and hasattr(e.response, 'text') else None,
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except httpx.TimeoutException as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            error=e,
+            message="Timeout calling transcription service (async)",
+            context={
+                "audio_url": audio_url,
+                "timeout_seconds": 300,
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except httpx.ConnectError as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            error=e,
+            message="Connection error calling transcription service (async)",
+            context={
+                "audio_url": audio_url,
+                "duration_seconds": duration
+            }
+        )
+        return None
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.transcript_service",
+            function="call_transcription_service_async",
+            operation=operation,
+            error=e,
+            message="Unexpected error in transcription service call (async)",
+            context={
+                "audio_url": audio_url,
+                "duration_seconds": duration
+            }
+        )
+        return None
+
+
+async def process_transcription(
+    video_id: str,
+    audio_signed_url: str
+) -> dict:
+    """
+    Process transcription as an async coroutine using GCS signed URL.
+    
+    This is the recommended async version that integrates with the pipeline orchestrator.
+    Unlike the deprecated thread-based version, this function:
+    - Returns result directly (no Redis polling needed)
+    - Raises exceptions on errors (native exception handling)
+    - Can be used with asyncio.wait_for() for timeout handling
+    
+    Args:
+        video_id: ID of the video (filename stem)
+        audio_signed_url: GCS signed URL for the audio file
+    
+    Returns:
+        Dictionary with transcription result
+    
+    Raises:
+        Exception: If transcription fails with an error that should stop processing
+    """
+    operation = "transcription_processing"
+    start_time = time.time()
+    
+    try:
+        # Extract audio filename from video_id for saving transcript
+        audio_filename = f"{video_id}.wav"
+        
+        log_operation_start(
+            logger="app.services.transcript_service",
+            function="process_transcription",
+            operation=operation,
+            message="Starting transcription processing (async)",
+            context={
+                "video_id": video_id,
+                "audio_url_type": "gcs_signed_url",
+                "request_id": get_request_id()
+            }
+        )
+        
+        # Create SSH tunnel
+        with ssh_tunnel("parakeet"):
+            # Call transcription service asynchronously
+            transcription_result = await call_transcription_service_async(audio_signed_url)
             
             if transcription_result is None:
                 raise Exception("Transcription service returned no result")
@@ -620,74 +760,31 @@ def process_transcription_async(video_id: str, audio_signed_url: str) -> None:
             if not success:
                 raise Exception("Failed to save transcript file")
             
-            # Mark pipeline stage as complete (import here to avoid circular dependency)
-            from app.services.pipeline.status import mark_stage_completed
-            from app.models.pipeline_schemas import PipelineStage
-            mark_stage_completed(video_id, PipelineStage.TRANSCRIPTION)
-            
-            # Also update job repo for backward compatibility with API endpoints
-            job_repo.update_status(
-                JobType.TRANSCRIPTION,
-                video_id,
-                JobStatus.COMPLETED
-            )
-            
-            log_event(
-                level="INFO",
+            duration = time.time() - start_time
+            log_operation_complete(
                 logger="app.services.transcript_service",
-                function="process_transcription_async",
+                function="process_transcription",
                 operation=operation,
-                event="operation_complete",
-                message="Transcription processing completed successfully",
-                context={"video_id": video_id}
+                message="Transcription processing completed successfully (async)",
+                context={
+                    "video_id": video_id,
+                    "duration_seconds": duration
+                }
             )
             
-        except Exception as e:
-            log_operation_error(
-                logger="app.services.transcript_service",
-                function="process_transcription_async",
-                operation=operation,
-                error=e,
-                message="Error in async transcription processing",
-                context={"video_id": video_id}
-            )
-            # Mark pipeline stage as failed (import here to avoid circular dependency)
-            from app.services.pipeline.status import mark_stage_failed
-            from app.models.pipeline_schemas import PipelineStage
-            mark_stage_failed(video_id, PipelineStage.TRANSCRIPTION, str(e))
-            
-            # Also update job repo for backward compatibility with API endpoints
-            job_repo.update_status(
-                JobType.TRANSCRIPTION,
-                video_id,
-                JobStatus.FAILED,
-                error=str(e)
-            )
-        finally:
-            # Always close tunnel
-            if tunnel_process is not None:
-                log_event(
-                    level="DEBUG",
-                    logger="app.services.transcript_service",
-                    function="process_transcription_async",
-                    operation=operation,
-                    event="ssh_tunnel_start",
-                    message="Closing SSH tunnel",
-                    context={"video_id": video_id}
-                )
-                close_ssh_tunnel(tunnel_process, "parakeet")
+            return transcription_result
     
-    # Start processing in background thread
-    thread = threading.Thread(target=transcribe, daemon=True)
-    thread.start()
-    
-    log_event(
-        level="DEBUG",
-        logger="app.services.transcript_service",
-        function="process_transcription_async",
-        operation=operation,
-        event="operation_complete",
-        message="Background thread started",
-        context={"video_id": video_id, "thread_name": thread.name}
-    )
-
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.services.transcript_service",
+            function="process_transcription",
+            operation=operation,
+            error=e,
+            message="Error in transcription processing (async)",
+            context={
+                "video_id": video_id,
+                "duration_seconds": duration
+            }
+        )
+        raise

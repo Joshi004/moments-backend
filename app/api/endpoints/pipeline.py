@@ -90,6 +90,30 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                 except ValueError:
                     pass
     
+    # Upload progress
+    elif stage == PipelineStage.AUDIO_UPLOAD:
+        upload_bytes = status_data.get("upload_bytes")
+        upload_total = status_data.get("upload_total")
+        upload_percentage = status_data.get("upload_percentage")
+        
+        if upload_bytes or upload_total or upload_percentage:
+            progress = {}
+            if upload_bytes:
+                try:
+                    progress["bytes_uploaded"] = int(upload_bytes)
+                except ValueError:
+                    pass
+            if upload_total:
+                try:
+                    progress["total_bytes"] = int(upload_total)
+                except ValueError:
+                    pass
+            if upload_percentage:
+                try:
+                    progress["percentage"] = int(upload_percentage)
+                except ValueError:
+                    pass
+    
     # Refinement progress
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         refinement_total = status_data.get("refinement_total")
