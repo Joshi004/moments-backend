@@ -18,7 +18,9 @@
     },
     "id": "1bf386922837cf07",
     "is_refined": false,
-    "parent_id": null
+    "parent_id": null,
+    "gcs_clip_path": "clips/jspz-aaa/jspz-aaa_1bf386922837cf07_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/jspz-aaa/jspz-aaa_1bf386922837cf07_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260129%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260129T234419Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=096b3cd7d8a5e74bc027fc1e6c7bc387ba1125029b84c76c8218b34940349f5b6a173ff4886a1f1da790cca982f689843c3e83846e06b7b55dd10a58f707d62b2cc6bede3314a9a806aaa74dc3039bf7eb39646372de71753d122bba055c29d4d35d169e852c2b35e0777d34a72f5b0088131a6830e8120f25ac1f9ba0cffe2b06261d0a9f95ef14ba31b1f9023795210f68a8cfe47ff24c0f5c285ebb6de2b397fcc229014fd5fc607ff0e5e5a66d82b304fd69cb023ecf1bb7e50e22fb17bca2bc2584a1081af6069ddcb9a6ca349e01e8cf299bdeb15b3bcb0e6b4c5a8f68658b6f9b37c9e3d3f41827070a58536a82b4ed1cc051ec6f793ac98e70990a7a"
   },
   {
     "start_time": 251.36,
@@ -39,7 +41,9 @@
     },
     "id": "3cf19692b59a31cc",
     "is_refined": false,
-    "parent_id": null
+    "parent_id": null,
+    "gcs_clip_path": "clips/jspz-aaa/jspz-aaa_3cf19692b59a31cc_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/jspz-aaa/jspz-aaa_3cf19692b59a31cc_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260129%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260129T234425Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=77e779bf6951322b14d50015bab98f79d285005016cc75bac903690ceb1760174912ea297e5fb7d4a2c6c479d9c905f60e7d2098b65f9df3435b56824ab53785e7d98d4a12babc09454da67121d7b61113a61b00f41e3c8d2bb9afd22702bc24b533b5f60b889473ead426c0538620377b9bb8a01b9c146a1f0cd672e3acd35b76a29b615116c8f4bc56ca75fcdcc5bb91084ccca28af4ccada0fb7851cec6f2c728881997971fbd6a72263971d5db5ecc08207f2aee9476608b23e8b1149af7b780cb8ddf2b7986185cd0ef3adda73040b7b654ea96c8be9a6349590da7a0f886791f32e8c0355e25ab74fbb632004f142af2dee8a2be9866c7a70ee9a3a55d"
   },
   {
     "start_time": 1541.28,
@@ -60,7 +64,9 @@
     },
     "id": "5354b594fa254084",
     "is_refined": false,
-    "parent_id": null
+    "parent_id": null,
+    "gcs_clip_path": "clips/jspz-aaa/jspz-aaa_5354b594fa254084_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/jspz-aaa/jspz-aaa_5354b594fa254084_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260129%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260129T234432Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=6223ea7b459340c3f3dcaae8c61f7a6e2139e3a706046210276d0e81579849ba322186bb35251467a18c55de3462d542b19f8d6e8e2b80165f0bbef464af3f964b54d958a69ac3f4ce4fbf062649d3e8106d1b9a4722f7ed67d35242566ada8a1c2fe41421af3d3c1080e3d576b2fdcee6483206cb54204fb07f36646800e965bdfe28bd55471b8f135dfc4219b096f32bdc4bfb22a7ffd214c8ea9153a94b69edd3605a7e31ca17494d677f7029b57e5d9822473a22a5c97eafcf5e08e49f77e83591b18cd68fb0b01595f1be3e7192a9d6c9716e1f94942f3f903ea74d3970b91cfca0f1f899f6bf85aab2415a612894d974969fe22e58c312c23e807ee469"
   },
   {
     "start_time": 2955.84,
@@ -81,7 +87,9 @@
     },
     "id": "fa8c1ef9e4022e49",
     "is_refined": false,
-    "parent_id": null
+    "parent_id": null,
+    "gcs_clip_path": "clips/jspz-aaa/jspz-aaa_fa8c1ef9e4022e49_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/jspz-aaa/jspz-aaa_fa8c1ef9e4022e49_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260129%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260129T234442Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=713cfe40500f0f2c373bf747a17d2131c0ed6e622e226ba19512769434e81e25056b39e3bffa2458d44ff196f195e9aab9af7979204b2c9cd0b2affd613b5f6c0fae309b4271ac18dba4bcb08de7f919f8191796605ee2f22ed6bb33f3c6015be65663869b9ef00b8cb355fb11236743168b811b9a80059b7ba07d69fdbafeeec4fa763df7e1271caa70e78281504f95e052b65f8eb277297989321eaa895a95b7cf97d799b5977e707cbb63ac11281f70f1370f81d2a7f767da92d3a420bc38287bd9e3a831a607f9ed2f0ff57b75bd95863f7dbc8c8ffab2af7adfc03aeccb8b4d18d12485f7a45577bd43269dfc271e2a85e52f9cb4d13779991a04b746c0"
   },
   {
     "start_time": 5200.56,
@@ -102,6 +110,8 @@
     },
     "id": "0813bab17e9db3bd",
     "is_refined": false,
-    "parent_id": null
+    "parent_id": null,
+    "gcs_clip_path": "clips/jspz-aaa/jspz-aaa_0813bab17e9db3bd_clip.mp4",
+    "clip_signed_url": "https://storage.googleapis.com/rumble-ai-bucket-1/clips/jspz-aaa/jspz-aaa_0813bab17e9db3bd_clip.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=dev-743%40tether-data-open-ai-rnd.iam.gserviceaccount.com%2F20260129%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260129T234451Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=10dca9a7c4a5d75455f03fe5f7b6665970f0ad02abd2deff1f565275491b9c8e79b55f8efaa118e0b01d753d8e54345461a7bdcc0e42e3ede0113e13d0107f3d8001cb156be8882788a04435003c4993a7c03343ed756f3d5b0e28c73eee009b06e5f7ed3f42b5ce238150053815a1a35972131345101850548631de20ad3d8dbedd9f8e4dd17e95fddcbc037f04cdb249002af36dcb9d6cc14391d56980c7d90e1cea88f3d36894f2e1841ee029b607c15e925877b95a218151add8badcc343377a17f20a5a876763b03afea3d7604f9c9ca406c1f67690d449e01290c8c481d70f1314c1393493d56d58d2e91a19a66c93be442a73e599c933b72c3891f029"
   }
 ]
