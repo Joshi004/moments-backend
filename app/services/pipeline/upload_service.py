@@ -514,31 +514,53 @@ class GCSUploader:
         
         return (gcs_path, signed_url)
     
-    async def upload_all_clips(self, video_id: str, moments: List[Dict]) -> List[Dict]:
+    async def upload_all_clips(
+        self, 
+        video_id: str, 
+        moments: List[Dict],
+        progress_callback: Optional[Callable[[int, int, int, int], None]] = None
+    ) -> List[Dict]:
         """
         Upload all clips for moments, return updated moments with GCS info.
         
         Args:
             video_id: Video identifier
             moments: List of moment dictionaries
+            progress_callback: Optional callback(clip_index, total_clips, bytes_uploaded, total_bytes)
         
         Returns:
             Updated moments list with gcs_clip_path and clip_signed_url fields
         """
         from app.services.video_clipping_service import get_clip_path
         
+        # Calculate total clips that exist for progress tracking
+        total_clips = sum(1 for m in moments if get_clip_path(m['id'], f"{video_id}.mp4").exists())
+        current_clip_index = 0
+        
         for moment in moments:
             clip_path = get_clip_path(moment['id'], f"{video_id}.mp4")
             if clip_path.exists():
+                current_clip_index += 1
+                
+                # Create per-clip progress callback wrapper
+                clip_progress_callback = None
+                if progress_callback:
+                    def make_clip_callback(clip_idx, total):
+                        def callback(bytes_uploaded: int, total_bytes: int):
+                            progress_callback(clip_idx, total, bytes_uploaded, total_bytes)
+                        return callback
+                    clip_progress_callback = make_clip_callback(current_clip_index, total_clips)
+                
                 try:
                     gcs_path, signed_url = await self.upload_clip(
                         clip_path, 
                         video_id, 
-                        moment['id']
+                        moment['id'],
+                        progress_callback=clip_progress_callback
                     )
                     moment['gcs_clip_path'] = gcs_path
                     moment['clip_signed_url'] = signed_url
-                    logger.info(f"Uploaded clip for moment {moment['id']} to GCS")
+                    logger.info(f"Uploaded clip for moment {moment['id']} to GCS ({current_clip_index}/{total_clips})")
                 except Exception as e:
                     logger.error(
                         f"Failed to upload clip for moment {moment['id']}: "

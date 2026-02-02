@@ -114,6 +114,42 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                 except ValueError:
                     pass
     
+    # Clip upload progress
+    elif stage == PipelineStage.CLIP_UPLOAD:
+        clip_current = status_data.get("clip_upload_current")
+        clip_total_clips = status_data.get("clip_upload_total_clips")
+        clip_bytes = status_data.get("clip_upload_bytes")
+        clip_total_bytes = status_data.get("clip_upload_total_bytes")
+        clip_percentage = status_data.get("clip_upload_percentage")
+        
+        if any([clip_current, clip_total_clips, clip_bytes, clip_total_bytes, clip_percentage]):
+            progress = {}
+            if clip_current:
+                try:
+                    progress["current_clip"] = int(clip_current)
+                except ValueError:
+                    pass
+            if clip_total_clips:
+                try:
+                    progress["total_clips"] = int(clip_total_clips)
+                except ValueError:
+                    pass
+            if clip_bytes:
+                try:
+                    progress["bytes_uploaded"] = int(clip_bytes)
+                except ValueError:
+                    pass
+            if clip_total_bytes:
+                try:
+                    progress["total_bytes"] = int(clip_total_bytes)
+                except ValueError:
+                    pass
+            if clip_percentage:
+                try:
+                    progress["percentage"] = int(clip_percentage)
+                except ValueError:
+                    pass
+    
     # Refinement progress
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         refinement_total = status_data.get("refinement_total")

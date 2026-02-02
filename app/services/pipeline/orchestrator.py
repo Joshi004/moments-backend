@@ -403,8 +403,32 @@ async def execute_clip_upload(video_id: str) -> None:
     if not moments:
         raise Exception("No moments found for clip upload")
     
+    # Create progress callback for Redis updates
+    from app.core.redis import get_redis_client
+    redis = get_redis_client()
+    status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
+    
+    def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
+        """Update clip upload progress in Redis."""
+        try:
+            # Calculate overall percentage based on completed clips + current clip progress
+            clip_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
+            overall_percentage = int(((clip_index - 1) * 100 + clip_percentage) / total_clips) if total_clips > 0 else 0
+            
+            redis.hset(status_key, "clip_upload_current", str(clip_index))
+            redis.hset(status_key, "clip_upload_total_clips", str(total_clips))
+            redis.hset(status_key, "clip_upload_bytes", str(bytes_uploaded))
+            redis.hset(status_key, "clip_upload_total_bytes", str(total_bytes))
+            redis.hset(status_key, "clip_upload_percentage", str(overall_percentage))
+        except Exception as e:
+            logger.error(f"Failed to update clip upload progress: {e}")
+    
     uploader = GCSUploader()
-    updated_moments = await uploader.upload_all_clips(video_id, moments)
+    updated_moments = await uploader.upload_all_clips(
+        video_id, 
+        moments,
+        progress_callback=clip_upload_progress_callback
+    )
     
     # Save updated moments with GCS paths and signed URLs
     save_moments(video_filename, updated_moments)
