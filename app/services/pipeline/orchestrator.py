@@ -513,14 +513,16 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
     tasks = [refine_one_moment(m) for m in moments_to_refine]
     results = []
     processed = 0
+    successful = 0
     
     for coro in asyncio.as_completed(tasks):
         result = await coro
         results.append(result)
         processed += 1
-        update_refinement_progress(video_id, len(moments_to_refine), processed)
+        if result:
+            successful += 1
+        update_refinement_progress(video_id, len(moments_to_refine), processed, successful)
     
-    successful = sum(1 for r in results if r)
     logger.info(f"Refined {successful}/{len(moments_to_refine)} moments for {video_id}")
 
 

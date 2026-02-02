@@ -61,6 +61,7 @@ def initialize_status(video_id: str, request_id: str, config: dict) -> None:
     # Special fields for refinement progress
     status_data["refinement_total"] = "0"
     status_data["refinement_processed"] = "0"
+    status_data["refinement_successful"] = "0"
     
     redis.hset(status_key, mapping=status_data)
     logger.info(f"Initialized pipeline status for {video_id}: {request_id}")
@@ -244,21 +245,25 @@ def get_current_stage(video_id: str) -> Optional[str]:
     return current_stage if current_stage else None
 
 
-def update_refinement_progress(video_id: str, total: int, processed: int) -> None:
+def update_refinement_progress(video_id: str, total: int, processed: int, successful: int = None) -> None:
     """
     Update refinement progress.
     
     Args:
         video_id: Video identifier
         total: Total number of moments to refine
-        processed: Number of moments processed so far
+        processed: Number of moments processed (attempted) so far
+        successful: Number of moments successfully refined (optional)
     """
     redis = get_redis_client()
     status_key = _get_status_key(video_id)
-    redis.hset(status_key, mapping={
+    mapping = {
         "refinement_total": str(total),
         "refinement_processed": str(processed),
-    })
+    }
+    if successful is not None:
+        mapping["refinement_successful"] = str(successful)
+    redis.hset(status_key, mapping=mapping)
 
 
 def get_status(video_id: str) -> Optional[Dict[str, Any]]:

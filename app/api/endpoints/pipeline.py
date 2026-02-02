@@ -154,6 +154,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         refinement_total = status_data.get("refinement_total")
         refinement_processed = status_data.get("refinement_processed")
+        refinement_successful = status_data.get("refinement_successful")
         
         if refinement_total or refinement_processed:
             progress = {}
@@ -165,6 +166,12 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
             if refinement_processed:
                 try:
                     progress["processed"] = int(refinement_processed)
+                except ValueError:
+                    pass
+            if refinement_successful:
+                try:
+                    progress["successful"] = int(refinement_successful)
+                    progress["failed"] = progress.get("processed", 0) - progress["successful"]
                 except ValueError:
                     pass
     
