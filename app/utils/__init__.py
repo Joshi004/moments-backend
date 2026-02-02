@@ -20,7 +20,7 @@ from app.utils.video import (
 
 # Model configuration
 from app.utils.model_config import (
-    MODELS,
+    DEFAULT_MODELS,
     CLIPPING_CONFIG,
     VIDEO_SERVER_CONFIG,
     VIDEO_ENCODING_CONFIG,
@@ -35,6 +35,9 @@ from app.utils.model_config import (
     get_encoding_config,
     get_parallel_workers
 )
+
+# Backward compatibility alias
+MODELS = DEFAULT_MODELS
 
 # Logging utilities
 from app.utils.logging_config import (

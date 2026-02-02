@@ -9,7 +9,7 @@ from app.core.logging import setup_logging
 from app.core.redis import get_redis_client, close_redis_client, health_check
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
-from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments, delete
+from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments, delete, admin
 from app.api.deps import cleanup_resources
 from app.workers.pipeline_worker import ensure_pipeline_consumer_group, start_pipeline_worker
 
@@ -39,6 +39,7 @@ app.include_router(clips.router, prefix="/api", tags=["clips"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
 app.include_router(generate_moments.router, prefix="/api", tags=["generate_moments"])
 app.include_router(delete.router, prefix="/api", tags=["delete"])
+app.include_router(admin.router, prefix="/api", tags=["admin"])
 
 # Mount static files
 thumbnails_dir = Path(__file__).parent.parent / "static" / "thumbnails"
@@ -85,6 +86,23 @@ async def startup_event():
     except Exception as e:
         # Log error but don't prevent startup
         logger.error(f"Failed to initialize Redis: {e}")
+    
+    # Auto-seed model configs if Redis is empty
+    try:
+        from app.services.config_registry import get_config_registry
+        from app.utils.model_config import seed_default_configs
+        
+        registry = get_config_registry()
+        registered_keys = registry.get_registered_keys()
+        
+        if len(registered_keys) == 0:
+            logger.info("No model configs in Redis - seeding defaults...")
+            count = seed_default_configs()
+            logger.info(f"Seeded {count} default model configs")
+        else:
+            logger.info(f"Model configs already exist in Redis: {registered_keys}")
+    except Exception as e:
+        logger.error(f"Failed to seed model configs: {e}")
     
     # Initialize pipeline consumer group
     try:

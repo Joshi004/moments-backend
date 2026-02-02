@@ -1,7 +1,13 @@
 """
 Model configuration for AI models used in moment generation and refinement.
+
+Model configurations are now stored in Redis for dynamic updates.
+The DEFAULT_MODELS dict below is used only for seeding Redis on first startup.
 """
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Configuration for video clipping and transcript extraction
 CLIPPING_CONFIG = {
@@ -27,7 +33,9 @@ VIDEO_ENCODING_CONFIG = {
     "audio_bitrate": "128k",  # Audio bitrate
 }
 
-MODELS = {
+# Default model configurations - used ONLY for seeding Redis on first startup
+# To update configurations at runtime, use the Admin UI (/admin) or CLI tool
+DEFAULT_MODELS = {
     "minimax": {
         "name": "MiniMax",
         "model_id": None,  # MiniMax doesn't require explicit model_id in the request
@@ -35,14 +43,16 @@ MODELS = {
         "ssh_remote_host": "worker-7",
         "ssh_local_port": 8007,
         "ssh_remote_port": 7104,
+        "supports_video": False,
     },
     "qwen": {
         "name": "Qwen3-VL",
         "model_id": "qwen3-vl-235b-thinking",
-        "ssh_host": "naresh@85.234.64.44",  # Update if Qwen uses different SSH host
-        "ssh_remote_host": "worker-9",  # Update if Qwen runs on different remote host
+        "ssh_host": "naresh@85.234.64.44",
+        "ssh_remote_host": "worker-9",
         "ssh_local_port": 6101,
-        "ssh_remote_port": 7001,  # Update with actual remote port for Qwen service
+        "ssh_remote_port": 7001,
+        "supports_video": False,
     },
     "qwen3_omni": {
         "name": "Qwen3-Omini",
@@ -50,50 +60,51 @@ MODELS = {
         "ssh_host": "naresh@85.234.64.44",
         "ssh_remote_host": "worker-9",
         "ssh_local_port": 7101,
-        "ssh_remote_port": 8002,  # Update with actual remote port for Qwen3-Omini service
-        "supports_video": False,  # Text-only model
+        "ssh_remote_port": 8002,
+        "supports_video": False,
         "top_p": 0.95,
         "top_k": 20,
     },
     "qwen3_vl_fp8": {
         "name": "Qwen3-VL-FP8",
         "model_id": None,  # Qwen3-VL-FP8 doesn't require explicit model_id in the request
-        # "ssh_host": "naresh@85.234.64.44", Primary
-        "ssh_host": "naresh@85.234.64.146", # Aditioanl
+        "ssh_host": "naresh@85.234.64.146",
         "ssh_remote_host": "worker-16",
         "ssh_local_port": 6010,
         "ssh_remote_port": 8010,
-        "supports_video": True,  # This model supports video input for refinement
+        "supports_video": True,
     },
     "parakeet": {
         "name": "Parakeet",
-        # "ssh_host": "naresh@85.234.64.44", Primary
-        "ssh_host": "naresh@85.234.64.146", # Secondry
-        # "ssh_remote_host": "worker-9", # Primary
-        "ssh_remote_host": "worker-7", #secondr
+        "ssh_host": "naresh@85.234.64.146",
+        "ssh_remote_host": "worker-7",
         "ssh_local_port": 6106,
         "ssh_remote_port": 8006,
+        "supports_video": False,
     }
 }
 
 
 def get_model_config(model_key: str) -> dict:
     """
-    Get configuration for a specific model.
+    Get configuration for a specific model from Redis.
     
     Args:
-        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
+        model_key: Model identifier ("minimax", "qwen", "qwen3_omni", "qwen3_vl_fp8", "parakeet")
     
     Returns:
         Dictionary with model configuration
     
     Raises:
-        ValueError: If model_key is not found
+        ModelConfigNotFoundError: If model not configured in Redis
     """
-    if model_key not in MODELS:
-        raise ValueError(f"Unknown model: {model_key}. Available models: {list(MODELS.keys())}")
+    from app.services.config_registry import get_config_registry
     
-    return MODELS[model_key]
+    registry = get_config_registry()
+    config = registry.get_config(model_key)
+    
+    logger.debug(f"Retrieved config for {model_key} from Redis")
+    return config
 
 
 def get_model_url(model_key: str) -> str:
@@ -154,7 +165,8 @@ def model_supports_video(model_key: str) -> bool:
     try:
         config = get_model_config(model_key)
         return config.get('supports_video', False)
-    except ValueError:
+    except Exception:
+        # Handle both ValueError (old) and ModelConfigNotFoundError (new)
         return False
 
 
@@ -203,5 +215,37 @@ def get_parallel_workers() -> int:
         Number of parallel workers
     """
     return VIDEO_ENCODING_CONFIG['parallel_workers']
+
+
+def seed_default_configs(force: bool = False) -> int:
+    """
+    Seed Redis with default model configurations.
+    
+    Args:
+        force: If True, overwrite existing configs
+        
+    Returns:
+        Number of configs seeded
+    """
+    from app.services.config_registry import get_config_registry
+    
+    registry = get_config_registry()
+    count = registry.seed_from_defaults(DEFAULT_MODELS, force=force)
+    
+    logger.info(f"Seeded {count} model configs to Redis (force={force})")
+    return count
+
+
+def get_available_model_keys() -> list[str]:
+    """
+    Get list of all configured model keys from Redis.
+    
+    Returns:
+        List of model key strings
+    """
+    from app.services.config_registry import get_config_registry
+    
+    registry = get_config_registry()
+    return registry.get_registered_keys()
 
 
