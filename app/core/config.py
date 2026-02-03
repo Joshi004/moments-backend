@@ -110,7 +110,6 @@ class Settings(BaseSettings):
     
     # Pipeline Configuration
     pipeline_lock_ttl: int = 1800  # 30 minutes
-    pipeline_history_dir: Path = Path("static/pipeline_history")  # DEPRECATED - using Redis now
     
     # Pipeline History Configuration (Redis-based)
     pipeline_history_ttl: int = 86400         # 24 hours for completed runs

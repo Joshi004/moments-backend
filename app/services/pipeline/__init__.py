@@ -23,11 +23,6 @@ from app.services.pipeline.lock import (
     check_cancellation,
     clear_cancellation,
 )
-from app.services.pipeline.history import (
-    save_to_history,
-    load_history,
-    get_latest_run,
-)
 from app.services.pipeline.upload_service import GCSUploader
 from app.services.pipeline.orchestrator import execute_pipeline
 
@@ -52,10 +47,6 @@ __all__ = [
     "set_cancellation_flag",
     "check_cancellation",
     "clear_cancellation",
-    # History
-    "save_to_history",
-    "load_history",
-    "get_latest_run",
     # Upload
     "GCSUploader",
     # Orchestrator
