@@ -1,12 +1,14 @@
 """
 Redis-backed model configuration registry.
 Provides dynamic configuration management for AI models.
+
+All methods are async for non-blocking Redis operations.
 """
 import json
 import logging
 from datetime import datetime
 from typing import Optional, Dict, List
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +28,20 @@ class ModelConfigNotFoundError(Exception):
 
 
 class ConfigRegistry:
-    """Redis-backed model configuration registry."""
+    """Redis-backed model configuration registry with async operations."""
     
     KEY_PREFIX = "model:config:"
     KEYS_SET = "model:config:_keys"
     
     def __init__(self):
-        self.redis = get_redis_client()
+        """Initialize registry. Redis client is fetched async in each method."""
+        self._redis = None
+    
+    async def _get_redis(self):
+        """Get async Redis client."""
+        if self._redis is None:
+            self._redis = await get_async_redis_client()
+        return self._redis
     
     def _get_key(self, model_key: str) -> str:
         """Get Redis key for a model config."""
@@ -66,7 +75,7 @@ class ConfigRegistry:
         # String fields
         return value
     
-    def get_config(self, model_key: str) -> Dict:
+    async def get_config(self, model_key: str) -> Dict:
         """
         Get full config for a model.
         
@@ -79,11 +88,12 @@ class ConfigRegistry:
         Raises:
             ModelConfigNotFoundError: If model not configured in Redis
         """
+        redis = await self._get_redis()
         redis_key = self._get_key(model_key)
-        config_data = self.redis.hgetall(redis_key)
+        config_data = await redis.hgetall(redis_key)
         
         if not config_data:
-            available_keys = self.get_registered_keys()
+            available_keys = await self.get_registered_keys()
             logger.error(
                 f"Model config not found in Redis: {model_key}. "
                 f"Available: {available_keys}"
@@ -98,7 +108,7 @@ class ConfigRegistry:
         logger.debug(f"Retrieved config for {model_key} from Redis")
         return config
     
-    def set_config(self, model_key: str, config: Dict) -> None:
+    async def set_config(self, model_key: str, config: Dict) -> None:
         """
         Set/update full config for a model.
         
@@ -106,6 +116,7 @@ class ConfigRegistry:
             model_key: Model identifier
             config: Dictionary with configuration fields
         """
+        redis = await self._get_redis()
         redis_key = self._get_key(model_key)
         
         # Add timestamp
@@ -119,14 +130,14 @@ class ConfigRegistry:
         }
         
         # Store in Redis hash
-        self.redis.hset(redis_key, mapping=serialized_config)
+        await redis.hset(redis_key, mapping=serialized_config)
         
         # Add to keys set
-        self.redis.sadd(self.KEYS_SET, model_key)
+        await redis.sadd(self.KEYS_SET, model_key)
         
         logger.info(f"Stored config for {model_key} in Redis")
     
-    def update_config(self, model_key: str, updates: Dict) -> Dict:
+    async def update_config(self, model_key: str, updates: Dict) -> Dict:
         """
         Partially update a model config.
         
@@ -141,17 +152,17 @@ class ConfigRegistry:
             ModelConfigNotFoundError: If model not found
         """
         # Get existing config
-        existing_config = self.get_config(model_key)
+        existing_config = await self.get_config(model_key)
         
         # Apply updates
         existing_config.update(updates)
         
         # Save back
-        self.set_config(model_key, existing_config)
+        await self.set_config(model_key, existing_config)
         
         return existing_config
     
-    def delete_config(self, model_key: str) -> bool:
+    async def delete_config(self, model_key: str) -> bool:
         """
         Delete a model config.
         
@@ -161,36 +172,37 @@ class ConfigRegistry:
         Returns:
             True if config existed and was deleted, False otherwise
         """
+        redis = await self._get_redis()
         redis_key = self._get_key(model_key)
         
         # Check if exists
-        exists = self.redis.exists(redis_key)
+        exists = await redis.exists(redis_key)
         
         if exists:
             # Delete hash
-            self.redis.delete(redis_key)
+            await redis.delete(redis_key)
             
             # Remove from keys set
-            self.redis.srem(self.KEYS_SET, model_key)
+            await redis.srem(self.KEYS_SET, model_key)
             
             logger.info(f"Deleted config for {model_key} from Redis")
             return True
         
         return False
     
-    def list_configs(self) -> List[Dict]:
+    async def list_configs(self) -> List[Dict]:
         """
         List all configured models with their settings.
         
         Returns:
             List of dictionaries with model_key and config fields
         """
-        model_keys = self.get_registered_keys()
+        model_keys = await self.get_registered_keys()
         configs = []
         
         for model_key in model_keys:
             try:
-                config = self.get_config(model_key)
+                config = await self.get_config(model_key)
                 config["model_key"] = model_key
                 configs.append(config)
             except ModelConfigNotFoundError:
@@ -200,17 +212,18 @@ class ConfigRegistry:
         
         return configs
     
-    def get_registered_keys(self) -> List[str]:
+    async def get_registered_keys(self) -> List[str]:
         """
         Get list of all registered model keys.
         
         Returns:
             List of model key strings
         """
-        keys = self.redis.smembers(self.KEYS_SET)
+        redis = await self._get_redis()
+        keys = await redis.smembers(self.KEYS_SET)
         return sorted(list(keys))
     
-    def seed_from_defaults(self, defaults: Dict, force: bool = False) -> int:
+    async def seed_from_defaults(self, defaults: Dict, force: bool = False) -> int:
         """
         Seed Redis from default config dictionary.
         
@@ -221,14 +234,15 @@ class ConfigRegistry:
         Returns:
             Number of configs seeded
         """
+        redis = await self._get_redis()
         count = 0
         
         for model_key, config in defaults.items():
             redis_key = self._get_key(model_key)
-            exists = self.redis.exists(redis_key)
+            exists = await redis.exists(redis_key)
             
             if not exists or force:
-                self.set_config(model_key, config)
+                await self.set_config(model_key, config)
                 count += 1
                 logger.info(
                     f"Seeded config for {model_key} "
@@ -239,7 +253,7 @@ class ConfigRegistry:
         
         return count
     
-    def clear_all(self) -> int:
+    async def clear_all(self) -> int:
         """
         Clear all model configs from Redis.
         WARNING: This is destructive!
@@ -247,11 +261,11 @@ class ConfigRegistry:
         Returns:
             Number of configs cleared
         """
-        keys = self.get_registered_keys()
+        keys = await self.get_registered_keys()
         count = 0
         
         for model_key in keys:
-            if self.delete_config(model_key):
+            if await self.delete_config(model_key):
                 count += 1
         
         logger.warning(f"Cleared all {count} model configs from Redis")
@@ -265,6 +279,10 @@ _registry: Optional[ConfigRegistry] = None
 def get_config_registry() -> ConfigRegistry:
     """
     Get or create the config registry singleton.
+    
+    Note: The registry methods are async, but the factory itself is sync
+    since it just creates the object. Redis connection is established
+    lazily when async methods are called.
     
     Returns:
         ConfigRegistry instance

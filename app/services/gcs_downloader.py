@@ -15,7 +15,7 @@ from google.oauth2 import service_account
 import google.auth
 
 from app.core.config import get_settings
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
@@ -142,7 +142,7 @@ class GCSDownloader:
     
     async def _acquire_download_slot(self, video_id: str) -> None:
         """
-        Acquire a download slot using Redis semaphore.
+        Acquire a download slot using Redis semaphore (non-blocking).
         
         Args:
             video_id: Video identifier for logging
@@ -150,7 +150,7 @@ class GCSDownloader:
         Raises:
             TimeoutError: If unable to acquire slot within timeout
         """
-        redis = get_redis_client()
+        redis = await get_async_redis_client()
         semaphore_key = "download:active_count"
         
         max_wait_seconds = 300  # 5 minutes
@@ -159,7 +159,7 @@ class GCSDownloader:
         
         while elapsed < max_wait_seconds:
             # Try to increment counter
-            current_count = redis.incr(semaphore_key)
+            current_count = await redis.incr(semaphore_key)
             
             if current_count <= self.max_concurrent:
                 # Got a slot
@@ -167,7 +167,7 @@ class GCSDownloader:
                 return
             else:
                 # Too many downloads, decrement and wait
-                redis.decr(semaphore_key)
+                await redis.decr(semaphore_key)
                 logger.info(
                     f"Download queue full ({self.max_concurrent} active), waiting for slot... "
                     f"({elapsed}/{max_wait_seconds}s)"
@@ -179,21 +179,21 @@ class GCSDownloader:
             f"Download queue full, could not acquire slot within {max_wait_seconds}s"
         )
     
-    def _release_download_slot(self, video_id: str) -> None:
+    async def _release_download_slot(self, video_id: str) -> None:
         """
-        Release download slot.
+        Release download slot (non-blocking).
         
         Args:
             video_id: Video identifier for logging
         """
         try:
-            redis = get_redis_client()
+            redis = await get_async_redis_client()
             semaphore_key = "download:active_count"
-            current_count = redis.decr(semaphore_key)
+            current_count = await redis.decr(semaphore_key)
             
             # Ensure it doesn't go negative
             if current_count < 0:
-                redis.set(semaphore_key, 0)
+                await redis.set(semaphore_key, 0)
                 current_count = 0
             
             logger.info(f"Released download slot for {video_id} ({current_count} active)")
@@ -417,6 +417,6 @@ class GCSDownloader:
         
         finally:
             # Always release slot
-            self._release_download_slot(video_id)
+            await self._release_download_slot(video_id)
 
 

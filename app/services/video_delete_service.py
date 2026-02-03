@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from google.cloud import storage
 
 from app.core.config import get_settings
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.services.url_registry import URLRegistry
 from app.services.pipeline.status import get_status as get_pipeline_status
 from app.utils.video import get_videos_directory
@@ -330,9 +330,9 @@ class StateDeleter:
     def __init__(self, video_id: str):
         self.video_id = video_id
     
-    def delete_all(self) -> Dict[str, any]:
+    async def delete_all(self) -> Dict[str, any]:
         """
-        Delete all state for video_id.
+        Delete all state for video_id (async for non-blocking Redis operations).
         
         Returns:
             Dictionary with deletion results
@@ -343,7 +343,7 @@ class StateDeleter:
         }
         
         # Delete Redis keys
-        redis_count = self._delete_redis_keys()
+        redis_count = await self._delete_redis_keys()
         result["redis_keys"] = redis_count
         
         # Delete URL registry entry
@@ -352,10 +352,10 @@ class StateDeleter:
         
         return result
     
-    def _delete_redis_keys(self) -> int:
-        """Delete all Redis keys associated with video_id."""
+    async def _delete_redis_keys(self) -> int:
+        """Delete all Redis keys associated with video_id (async)."""
         try:
-            redis = get_redis_client()
+            redis = await get_async_redis_client()
             deleted_count = 0
             
             # Keys to delete:
@@ -374,8 +374,8 @@ class StateDeleter:
             
             # Delete known keys
             for key in keys_to_delete:
-                if redis.exists(key):
-                    redis.delete(key)
+                if await redis.exists(key):
+                    await redis.delete(key)
                     deleted_count += 1
                     logger.debug(f"Deleted Redis key: {key}")
             
@@ -466,7 +466,7 @@ class VideoDeleteService:
         
         # Pre-deletion checks
         if not force:
-            pipeline_status = get_pipeline_status(video_id)
+            pipeline_status = await get_pipeline_status(video_id)
             if pipeline_status and pipeline_status.get("status") in ["processing", "pending", "queued"]:
                 result.status = "failed"
                 result.errors.append(
@@ -488,7 +488,7 @@ class VideoDeleteService:
         if not skip_redis:
             try:
                 state_deleter = StateDeleter(video_id)
-                state_result = state_deleter.delete_all()
+                state_result = await state_deleter.delete_all()
                 result.deleted["redis_keys"] = state_result["redis_keys"]
                 
                 # URL registry is part of state deletion

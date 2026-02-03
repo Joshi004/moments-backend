@@ -14,7 +14,7 @@ from pathlib import Path
 from app.core.logging import setup_logging
 setup_logging(log_level="INFO")
 
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.workers.pipeline_worker import start_pipeline_worker
 
 logger = logging.getLogger(__name__)
@@ -71,20 +71,25 @@ if __name__ == "__main__":
     
     logger.info("Starting dedicated pipeline worker...")
     
-    # Verify Redis connection
-    try:
-        redis = get_redis_client()
-        redis.ping()
-        logger.info("Redis connection verified")
-    except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
-        logger.error("Please ensure Redis is running and accessible")
-        release_pid_lock()
-        sys.exit(1)
+    async def verify_and_run():
+        """Verify Redis connection and run worker."""
+        # Verify Redis connection
+        try:
+            redis = await get_async_redis_client()
+            await redis.ping()
+            logger.info("Async Redis connection verified")
+        except Exception as e:
+            logger.error(f"Redis connection failed: {e}")
+            logger.error("Please ensure Redis is running and accessible")
+            release_pid_lock()
+            sys.exit(1)
+        
+        # Run worker
+        await start_pipeline_worker()
     
     # Run worker
     try:
-        asyncio.run(start_pipeline_worker())
+        asyncio.run(verify_and_run())
     except KeyboardInterrupt:
         logger.info("Worker stopped by user")
     except Exception as e:

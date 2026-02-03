@@ -1,5 +1,6 @@
 """
 Pipeline orchestrator - executes all pipeline stages sequentially.
+All status and lock operations are async for non-blocking Redis operations.
 """
 import asyncio
 import logging
@@ -60,7 +61,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     from app.services.gcs_downloader import GCSDownloader
     from app.services.url_registry import URLRegistry
     from app.utils.video import get_videos_directory
-    from app.core.redis import get_redis_client
+    from app.core.redis import get_async_redis_client
     
     video_url = config.get("video_url")
     if not video_url:
@@ -77,17 +78,17 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     
     logger.info(f"Starting video download: {video_url} -> {dest_path}")
     
-    # Progress callback to update Redis
-    redis = get_redis_client()
+    # Progress callback to update Redis - uses async client
+    redis = await get_async_redis_client()
     status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
     
-    def progress_callback(bytes_downloaded: int, total_bytes: int):
+    async def progress_callback(bytes_downloaded: int, total_bytes: int):
         """Update download progress in Redis."""
         try:
             percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
-            redis.hset(status_key, "download_bytes", str(bytes_downloaded))
-            redis.hset(status_key, "download_total", str(total_bytes))
-            redis.hset(status_key, "download_percentage", str(percentage))
+            await redis.hset(status_key, "download_bytes", str(bytes_downloaded))
+            await redis.hset(status_key, "download_total", str(total_bytes))
+            await redis.hset(status_key, "download_percentage", str(percentage))
         except Exception as e:
             logger.error(f"Failed to update download progress: {e}")
     
@@ -403,23 +404,23 @@ async def execute_clip_upload(video_id: str) -> None:
     if not moments:
         raise Exception("No moments found for clip upload")
     
-    # Create progress callback for Redis updates
-    from app.core.redis import get_redis_client
-    redis = get_redis_client()
+    # Create progress callback for Redis updates - uses async client
+    from app.core.redis import get_async_redis_client
+    redis = await get_async_redis_client()
     status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
     
-    def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
+    async def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
         """Update clip upload progress in Redis."""
         try:
             # Calculate overall percentage based on completed clips + current clip progress
             clip_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
             overall_percentage = int(((clip_index - 1) * 100 + clip_percentage) / total_clips) if total_clips > 0 else 0
             
-            redis.hset(status_key, "clip_upload_current", str(clip_index))
-            redis.hset(status_key, "clip_upload_total_clips", str(total_clips))
-            redis.hset(status_key, "clip_upload_bytes", str(bytes_uploaded))
-            redis.hset(status_key, "clip_upload_total_bytes", str(total_bytes))
-            redis.hset(status_key, "clip_upload_percentage", str(overall_percentage))
+            await redis.hset(status_key, "clip_upload_current", str(clip_index))
+            await redis.hset(status_key, "clip_upload_total_clips", str(total_clips))
+            await redis.hset(status_key, "clip_upload_bytes", str(bytes_uploaded))
+            await redis.hset(status_key, "clip_upload_total_bytes", str(total_bytes))
+            await redis.hset(status_key, "clip_upload_percentage", str(overall_percentage))
         except Exception as e:
             logger.error(f"Failed to update clip upload progress: {e}")
     
@@ -465,7 +466,7 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
         logger.info(f"All moments already refined for {video_id}")
         return
     
-    update_refinement_progress(video_id, len(moments_to_refine), 0)
+    await update_refinement_progress(video_id, len(moments_to_refine), 0)
     
     # Refine moments with configured parallelism
     parallel_workers = config.get("refinement_parallel_workers", 2)
@@ -521,7 +522,7 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
         processed += 1
         if result:
             successful += 1
-        update_refinement_progress(video_id, len(moments_to_refine), processed, successful)
+        await update_refinement_progress(video_id, len(moments_to_refine), processed, successful)
     
     logger.info(f"Refined {successful}/{len(moments_to_refine)} moments for {video_id}")
 
@@ -542,32 +543,32 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:
-        # Create progress callback for Redis updates
-        from app.core.redis import get_redis_client
-        redis = get_redis_client()
+        # Create progress callback for Redis updates - uses async client
+        from app.core.redis import get_async_redis_client
+        redis = await get_async_redis_client()
         status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
         
-        def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
+        async def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
             """Update upload progress in Redis."""
             try:
                 percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
-                redis.hset(status_key, "upload_bytes", str(bytes_uploaded))
-                redis.hset(status_key, "upload_total", str(total_bytes))
-                redis.hset(status_key, "upload_percentage", str(percentage))
+                await redis.hset(status_key, "upload_bytes", str(bytes_uploaded))
+                await redis.hset(status_key, "upload_total", str(total_bytes))
+                await redis.hset(status_key, "upload_percentage", str(percentage))
             except Exception as e:
                 logger.error(f"Failed to update upload progress: {e}")
         
         audio_signed_url = await execute_audio_upload(video_id, progress_callback=upload_progress_callback)
         # Store signed URL in Redis for next stage
-        redis.hset(status_key, "audio_signed_url", audio_signed_url)
+        await redis.hset(status_key, "audio_signed_url", audio_signed_url)
         logger.info(f"Stored audio signed URL in pipeline state for {video_id}")
     
     elif stage == PipelineStage.TRANSCRIPTION:
         # Retrieve signed URL from Redis
-        from app.core.redis import get_redis_client
-        redis = get_redis_client()
+        from app.core.redis import get_async_redis_client
+        redis = await get_async_redis_client()
         status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
-        audio_signed_url = redis.hget(status_key, "audio_signed_url")
+        audio_signed_url = await redis.hget(status_key, "audio_signed_url")
         if audio_signed_url:
             audio_signed_url = audio_signed_url.decode('utf-8') if isinstance(audio_signed_url, bytes) else audio_signed_url
         await execute_transcription(video_id, audio_signed_url)
@@ -603,7 +604,7 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
     
     # Use existing helper from model_config.py
     from app.utils.model_config import model_supports_video
-    refinement_needs_video = model_supports_video(refinement_model)
+    refinement_needs_video = await model_supports_video(refinement_model)
     
     # Select stages based on refinement model's video capability
     if refinement_needs_video:
@@ -611,43 +612,43 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
     else:
         stages = MINIMAX_STAGES
         # Mark skipped stages for non-video models
-        mark_stage_skipped(video_id, PipelineStage.CLIP_EXTRACTION, 
+        await mark_stage_skipped(video_id, PipelineStage.CLIP_EXTRACTION, 
                           "Refinement model does not support video")
-        mark_stage_skipped(video_id, PipelineStage.CLIP_UPLOAD, 
+        await mark_stage_skipped(video_id, PipelineStage.CLIP_UPLOAD, 
                           "Refinement model does not support video")
         # Force disable video refinement
         config["include_video_refinement"] = False
     
-    update_pipeline_status(video_id, "processing")
+    await update_pipeline_status(video_id, "processing")
     
     for stage in stages:
         # Check for cancellation between stages
-        if check_cancellation(video_id):
-            update_pipeline_status(video_id, "cancelled")
-            clear_cancellation(video_id)
+        if await check_cancellation(video_id):
+            await update_pipeline_status(video_id, "cancelled")
+            await clear_cancellation(video_id)
             logger.info(f"Pipeline cancelled for {video_id}")
             return {"success": False, "cancelled": True}
         
         # Check skip logic
         should_skip, reason = await should_skip_stage(stage, video_id, config)
         if should_skip:
-            mark_stage_skipped(video_id, stage, reason)
+            await mark_stage_skipped(video_id, stage, reason)
             logger.info(f"Skipping stage {stage.value} for {video_id}: {reason}")
             continue
         
         # Execute stage
-        update_current_stage(video_id, stage)
-        mark_stage_started(video_id, stage)
+        await update_current_stage(video_id, stage)
+        await mark_stage_started(video_id, stage)
         
         try:
             logger.info(f"Executing stage {stage.value} for {video_id}")
             await execute_stage(stage, video_id, config)
-            mark_stage_completed(video_id, stage)
+            await mark_stage_completed(video_id, stage)
             logger.info(f"Completed stage {stage.value} for {video_id}")
         except Exception as e:
             logger.exception(f"Failed stage {stage.value} for {video_id}: {e}")
-            mark_stage_failed(video_id, stage, str(e))
-            update_pipeline_status(video_id, "failed")
+            await mark_stage_failed(video_id, stage, str(e))
+            await update_pipeline_status(video_id, "failed")
             return {
                 "success": False,
                 "error": str(e),
@@ -655,11 +656,8 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
             }
         
         # Refresh lock after each stage
-        refresh_lock(video_id)
+        await refresh_lock(video_id)
     
-    update_pipeline_status(video_id, "completed")
+    await update_pipeline_status(video_id, "completed")
     logger.info(f"Pipeline completed successfully for {video_id}")
     return {"success": True}
-
-
-

@@ -3,6 +3,8 @@ Model configuration for AI models used in moment generation and refinement.
 
 Model configurations are now stored in Redis for dynamic updates.
 The DEFAULT_MODELS dict below is used only for seeding Redis on first startup.
+
+Functions that access Redis are async for non-blocking operations.
 """
 from pathlib import Path
 import logging
@@ -85,7 +87,7 @@ DEFAULT_MODELS = {
 }
 
 
-def get_model_config(model_key: str) -> dict:
+async def get_model_config(model_key: str) -> dict:
     """
     Get configuration for a specific model from Redis.
     
@@ -101,13 +103,13 @@ def get_model_config(model_key: str) -> dict:
     from app.services.config_registry import get_config_registry
     
     registry = get_config_registry()
-    config = registry.get_config(model_key)
+    config = await registry.get_config(model_key)
     
     logger.debug(f"Retrieved config for {model_key} from Redis")
     return config
 
 
-def get_model_url(model_key: str) -> str:
+async def get_model_url(model_key: str) -> str:
     """
     Get the local URL for a model API endpoint.
     
@@ -117,18 +119,18 @@ def get_model_url(model_key: str) -> str:
     Returns:
         URL string for the model API endpoint
     """
-    config = get_model_config(model_key)
+    config = await get_model_config(model_key)
     return f"http://localhost:{config['ssh_local_port']}/v1/chat/completions"
 
 
-def get_transcription_service_url() -> str:
+async def get_transcription_service_url() -> str:
     """
     Get the local URL for the transcription service endpoint.
     
     Returns:
         URL string for the transcription service API endpoint
     """
-    config = get_model_config("parakeet")
+    config = await get_model_config("parakeet")
     return f"http://localhost:{config['ssh_local_port']}/transcribe"
 
 
@@ -152,7 +154,7 @@ def get_video_server_config() -> dict:
     return VIDEO_SERVER_CONFIG.copy()
 
 
-def model_supports_video(model_key: str) -> bool:
+async def model_supports_video(model_key: str) -> bool:
     """
     Check if a model supports video input.
     
@@ -163,7 +165,7 @@ def model_supports_video(model_key: str) -> bool:
         True if model supports video, False otherwise
     """
     try:
-        config = get_model_config(model_key)
+        config = await get_model_config(model_key)
         return config.get('supports_video', False)
     except Exception:
         # Handle both ValueError (old) and ModelConfigNotFoundError (new)
@@ -217,7 +219,7 @@ def get_parallel_workers() -> int:
     return VIDEO_ENCODING_CONFIG['parallel_workers']
 
 
-def seed_default_configs(force: bool = False) -> int:
+async def seed_default_configs(force: bool = False) -> int:
     """
     Seed Redis with default model configurations.
     
@@ -230,13 +232,13 @@ def seed_default_configs(force: bool = False) -> int:
     from app.services.config_registry import get_config_registry
     
     registry = get_config_registry()
-    count = registry.seed_from_defaults(DEFAULT_MODELS, force=force)
+    count = await registry.seed_from_defaults(DEFAULT_MODELS, force=force)
     
     logger.info(f"Seeded {count} model configs to Redis (force={force})")
     return count
 
 
-def get_available_model_keys() -> list[str]:
+async def get_available_model_keys() -> list[str]:
     """
     Get list of all configured model keys from Redis.
     
@@ -246,6 +248,4 @@ def get_available_model_keys() -> list[str]:
     from app.services.config_registry import get_config_registry
     
     registry = get_config_registry()
-    return registry.get_registered_keys()
-
-
+    return await registry.get_registered_keys()

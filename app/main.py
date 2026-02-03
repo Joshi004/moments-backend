@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.logging import setup_logging
-from app.core.redis import get_redis_client, close_redis_client, health_check
+from app.core.redis import get_async_redis_client, close_async_redis_client, async_health_check
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
 from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments, delete, admin
@@ -68,24 +68,24 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    redis_status = "connected" if health_check() else "disconnected"
+    """Health check endpoint using async Redis."""
+    redis_status = "connected" if await async_health_check() else "disconnected"
     return {"status": "healthy", "redis": redis_status}
 
 
 # Startup event to initialize Redis
 @app.on_event("startup")
 async def startup_event():
-    """Initialize Redis connection and pipeline worker on startup."""
+    """Initialize async Redis connection and pipeline worker on startup."""
     import logging
     logger = logging.getLogger(__name__)
     
     try:
-        get_redis_client()
-        logger.info("Redis client initialized successfully")
+        await get_async_redis_client()
+        logger.info("Async Redis client initialized successfully")
     except Exception as e:
         # Log error but don't prevent startup
-        logger.error(f"Failed to initialize Redis: {e}")
+        logger.error(f"Failed to initialize async Redis: {e}")
     
     # Auto-seed model configs if Redis is empty
     try:
@@ -93,20 +93,20 @@ async def startup_event():
         from app.utils.model_config import seed_default_configs
         
         registry = get_config_registry()
-        registered_keys = registry.get_registered_keys()
+        registered_keys = await registry.get_registered_keys()
         
         if len(registered_keys) == 0:
             logger.info("No model configs in Redis - seeding defaults...")
-            count = seed_default_configs()
+            count = await seed_default_configs()
             logger.info(f"Seeded {count} default model configs")
         else:
             logger.info(f"Model configs already exist in Redis: {registered_keys}")
     except Exception as e:
         logger.error(f"Failed to seed model configs: {e}")
     
-    # Initialize pipeline consumer group
+    # Initialize pipeline consumer group (now async)
     try:
-        ensure_pipeline_consumer_group()
+        await ensure_pipeline_consumer_group()
         logger.info("Pipeline consumer group initialized")
     except Exception as e:
         logger.error(f"Failed to initialize pipeline consumer group: {e}")
@@ -125,6 +125,4 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup resources on shutdown."""
     cleanup_resources()
-    close_redis_client()
-
-
+    await close_async_redis_client()

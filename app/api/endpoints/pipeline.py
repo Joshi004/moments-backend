@@ -1,6 +1,8 @@
 """
 Pipeline API endpoints.
 Provides REST API for unified video processing pipeline.
+
+All endpoints use async Redis for non-blocking operations.
 """
 import json
 import time
@@ -8,7 +10,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.models.pipeline_schemas import (
     PipelineStartRequest,
     PipelineStartResponse,
@@ -285,7 +287,7 @@ async def start_pipeline(video_id: str, request: PipelineStartRequest):
         raise HTTPException(status_code=404, detail=f"Video not found: {video_id}")
     
     # Check if already processing
-    locked, lock_info = is_locked(video_id)
+    locked, lock_info = await is_locked(video_id)
     if locked:
         raise HTTPException(
             status_code=409,
@@ -296,11 +298,11 @@ async def start_pipeline(video_id: str, request: PipelineStartRequest):
     request_id = f"pipeline:{video_id}:{int(time.time() * 1000)}"
     
     # Initialize status in Redis
-    initialize_status(video_id, request_id, request.dict())
+    await initialize_status(video_id, request_id, request.dict())
     
     # Add to stream
-    redis = get_redis_client()
-    message_id = redis.xadd("pipeline:requests", {
+    redis = await get_async_redis_client()
+    message_id = await redis.xadd("pipeline:requests", {
         "request_id": request_id,
         "video_id": video_id,
         "config": json.dumps(request.dict()),
@@ -329,12 +331,12 @@ async def get_pipeline_status(video_id: str):
         Pipeline status response
     """
     # Check Redis for active pipeline
-    status_data = get_active_status(video_id)
+    status_data = await get_active_status(video_id)
     if status_data:
         return _build_status_response(status_data)
     
     # Not active - check Redis history for last run
-    latest_run = get_latest_run(video_id)
+    latest_run = await get_latest_run(video_id)
     if latest_run:
         return _build_status_response(latest_run)
     
@@ -371,21 +373,21 @@ async def cancel_pipeline(video_id: str):
     Raises:
         HTTPException: If no pipeline is running
     """
-    locked, _ = is_locked(video_id)
+    locked, _ = await is_locked(video_id)
     if not locked:
         raise HTTPException(
             status_code=400,
             detail=f"No pipeline running for video '{video_id}'"
         )
     
-    set_cancellation_flag(video_id)
+    await set_cancellation_flag(video_id)
     logger.info(f"Cancellation requested for pipeline: {video_id}")
     
     return {"message": "Cancellation requested", "video_id": video_id}
 
 
 @router.get("/{video_id}/history")
-def get_pipeline_history(video_id: str):
+async def get_pipeline_history(video_id: str):
     """
     Get all historical pipeline runs for a video from Redis.
     
@@ -396,7 +398,7 @@ def get_pipeline_history(video_id: str):
         History object with list of runs
     """
     # Get all runs from Redis (newest first)
-    runs_data = get_all_runs(video_id)
+    runs_data = await get_all_runs(video_id)
     
     # Build response list from Redis data
     runs = []
@@ -454,8 +456,3 @@ def get_pipeline_history(video_id: str):
         runs.append(run_entry)
     
     return {"video_id": video_id, "runs": runs, "count": len(runs)}
-
-
-
-
-

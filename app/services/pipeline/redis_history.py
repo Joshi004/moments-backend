@@ -1,12 +1,14 @@
 """
 Pipeline history persistence using Redis.
 Stores completed pipeline runs with 24-hour TTL.
+
+All functions are async for non-blocking Redis operations.
 """
 import json
 import time
 import logging
 from typing import List, Dict, Optional, Any
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.core.config import get_settings
 from app.models.pipeline_schemas import PipelineStage
 
@@ -23,7 +25,7 @@ def _get_history_key(video_id: str) -> str:
     return f"pipeline:{video_id}:history"
 
 
-def archive_active_to_history(video_id: str) -> Optional[str]:
+async def archive_active_to_history(video_id: str) -> Optional[str]:
     """
     Move active pipeline to history with TTL.
     
@@ -33,12 +35,12 @@ def archive_active_to_history(video_id: str) -> Optional[str]:
     Returns:
         request_id of archived run, or None if no active pipeline
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     settings = get_settings()
     
     # Get active pipeline key
     active_key = f"pipeline:{video_id}:active"
-    status_data = redis.hgetall(active_key)
+    status_data = await redis.hgetall(active_key)
     
     if not status_data:
         logger.warning(f"No active pipeline found for {video_id}, cannot archive")
@@ -61,25 +63,25 @@ def archive_active_to_history(video_id: str) -> Optional[str]:
     
     # Save to run hash with TTL
     run_key = _get_run_key(request_id)
-    redis.hset(run_key, mapping=status_data)
-    redis.expire(run_key, settings.pipeline_history_ttl)
+    await redis.hset(run_key, mapping=status_data)
+    await redis.expire(run_key, settings.pipeline_history_ttl)
     
     # Add to history sorted set (score = timestamp for chronological ordering)
     history_key = _get_history_key(video_id)
-    redis.zadd(history_key, {request_id: timestamp})
+    await redis.zadd(history_key, {request_id: timestamp})
     
     # Cleanup old runs if exceeding max limit
-    cleanup_old_runs(video_id)
+    await cleanup_old_runs(video_id)
     
     # Delete active pipeline
-    redis.delete(active_key)
+    await redis.delete(active_key)
     
     logger.info(f"Archived pipeline run to Redis: {request_id} for {video_id} with {settings.pipeline_history_ttl}s TTL")
     
     return request_id
 
 
-def get_run_by_id(request_id: str) -> Optional[Dict[str, Any]]:
+async def get_run_by_id(request_id: str) -> Optional[Dict[str, Any]]:
     """
     Get specific pipeline run by request_id.
     
@@ -89,10 +91,10 @@ def get_run_by_id(request_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         Run data dictionary or None if not found
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     run_key = _get_run_key(request_id)
     
-    run_data = redis.hgetall(run_key)
+    run_data = await redis.hgetall(run_key)
     
     if not run_data:
         return None
@@ -100,7 +102,7 @@ def get_run_by_id(request_id: str) -> Optional[Dict[str, Any]]:
     return run_data
 
 
-def get_latest_run(video_id: str) -> Optional[Dict[str, Any]]:
+async def get_latest_run(video_id: str) -> Optional[Dict[str, Any]]:
     """
     Get the most recent completed pipeline run for a video.
     
@@ -110,20 +112,20 @@ def get_latest_run(video_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         Latest run data or None if no history
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     history_key = _get_history_key(video_id)
     
     # Get most recent run (highest score = latest timestamp)
-    run_ids = redis.zrevrange(history_key, 0, 0)
+    run_ids = await redis.zrevrange(history_key, 0, 0)
     
     if not run_ids:
         return None
     
     request_id = run_ids[0]
-    return get_run_by_id(request_id)
+    return await get_run_by_id(request_id)
 
 
-def get_all_runs(video_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+async def get_all_runs(video_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """
     Get all pipeline runs for a video, ordered from most recent to oldest.
     
@@ -134,14 +136,14 @@ def get_all_runs(video_id: str, limit: Optional[int] = None) -> List[Dict[str, A
     Returns:
         List of run data dictionaries (newest first)
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     history_key = _get_history_key(video_id)
     
     # Get all run IDs in reverse chronological order
     if limit:
-        run_ids = redis.zrevrange(history_key, 0, limit - 1)
+        run_ids = await redis.zrevrange(history_key, 0, limit - 1)
     else:
-        run_ids = redis.zrevrange(history_key, 0, -1)
+        run_ids = await redis.zrevrange(history_key, 0, -1)
     
     if not run_ids:
         return []
@@ -149,14 +151,14 @@ def get_all_runs(video_id: str, limit: Optional[int] = None) -> List[Dict[str, A
     # Fetch each run's data
     runs = []
     for request_id in run_ids:
-        run_data = get_run_by_id(request_id)
+        run_data = await get_run_by_id(request_id)
         if run_data:
             runs.append(run_data)
     
     return runs
 
 
-def cleanup_old_runs(video_id: str) -> int:
+async def cleanup_old_runs(video_id: str) -> int:
     """
     Remove runs beyond the max_runs limit for a video.
     Keeps the most recent runs.
@@ -167,12 +169,12 @@ def cleanup_old_runs(video_id: str) -> int:
     Returns:
         Number of runs removed
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     settings = get_settings()
     history_key = _get_history_key(video_id)
     
     # Count total runs
-    total_runs = redis.zcard(history_key)
+    total_runs = await redis.zcard(history_key)
     
     if total_runs <= settings.pipeline_history_max_runs:
         return 0
@@ -181,17 +183,17 @@ def cleanup_old_runs(video_id: str) -> int:
     to_remove = total_runs - settings.pipeline_history_max_runs
     
     # Get oldest run IDs to remove (lowest scores)
-    old_run_ids = redis.zrange(history_key, 0, to_remove - 1)
+    old_run_ids = await redis.zrange(history_key, 0, to_remove - 1)
     
     # Remove from sorted set
     removed_count = 0
     for request_id in old_run_ids:
         # Remove from sorted set
-        redis.zrem(history_key, request_id)
+        await redis.zrem(history_key, request_id)
         
         # Delete the run hash (it might already be expired by TTL, but clean up anyway)
         run_key = _get_run_key(request_id)
-        redis.delete(run_key)
+        await redis.delete(run_key)
         
         removed_count += 1
     
@@ -200,7 +202,7 @@ def cleanup_old_runs(video_id: str) -> int:
     return removed_count
 
 
-def delete_all_history(video_id: str) -> bool:
+async def delete_all_history(video_id: str) -> bool:
     """
     Delete all history for a video (for testing/cleanup).
     
@@ -210,21 +212,20 @@ def delete_all_history(video_id: str) -> bool:
     Returns:
         True if deleted, False otherwise
     """
-    redis = get_redis_client()
+    redis = await get_async_redis_client()
     history_key = _get_history_key(video_id)
     
     # Get all run IDs
-    run_ids = redis.zrange(history_key, 0, -1)
+    run_ids = await redis.zrange(history_key, 0, -1)
     
     # Delete all run hashes
     for request_id in run_ids:
         run_key = _get_run_key(request_id)
-        redis.delete(run_key)
+        await redis.delete(run_key)
     
     # Delete the sorted set
-    redis.delete(history_key)
+    await redis.delete(history_key)
     
     logger.info(f"Deleted all pipeline history for {video_id}")
     
     return True
-

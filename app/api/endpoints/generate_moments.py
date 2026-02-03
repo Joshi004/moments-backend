@@ -1,6 +1,8 @@
 """
 Generate Moments API endpoint.
 Unified endpoint for generating moments from existing videos or URLs.
+
+Uses async Redis for non-blocking operations.
 """
 import json
 import time
@@ -8,7 +10,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pathlib import Path
 
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.models.generate_moments_schemas import (
     GenerateMomentsRequest,
     GenerateMomentsResponse,
@@ -104,7 +106,7 @@ async def generate_moments(request: GenerateMomentsRequest):
         )
     
     # Check if pipeline already running for this video
-    locked, lock_info = is_locked(video_id)
+    locked, lock_info = await is_locked(video_id)
     if locked:
         raise HTTPException(
             status_code=409,
@@ -123,11 +125,11 @@ async def generate_moments(request: GenerateMomentsRequest):
         config['force_download'] = request.force_download
     
     # Initialize status in Redis
-    initialize_status(video_id, request_id, config)
+    await initialize_status(video_id, request_id, config)
     
     # Add to pipeline stream
-    redis = get_redis_client()
-    message_id = redis.xadd("pipeline:requests", {
+    redis = await get_async_redis_client()
+    message_id = await redis.xadd("pipeline:requests", {
         "request_id": request_id,
         "video_id": video_id,
         "config": json.dumps(config),
@@ -148,5 +150,3 @@ async def generate_moments(request: GenerateMomentsRequest):
         source_url=video_url,
         is_cached=is_cached
     )
-
-
