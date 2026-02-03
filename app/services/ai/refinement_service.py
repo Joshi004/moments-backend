@@ -397,7 +397,6 @@ async def process_moment_refinement(
                 'is_refined': True,
                 'parent_id': moment_id,
                 'model_name': model_name,
-                'prompt': complete_prompt,
                 'generation_config': generation_config
             }
             

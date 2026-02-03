@@ -1235,10 +1235,9 @@ async def process_moments_generation(
                 "operation_type": "generation"
             }
             
-            # Add model_name, prompt, and generation_config to each moment
+            # Add model_name and generation_config to each moment
             for moment in moments:
                 moment['model_name'] = model_name
-                moment['prompt'] = complete_prompt
                 moment['generation_config'] = generation_config
             
             # Validate moments against constraints
