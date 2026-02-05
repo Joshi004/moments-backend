@@ -22,6 +22,7 @@ from app.services.pipeline.status import (
 from app.models.pipeline_schemas import StageStatus
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
+from app.services.pipeline.concurrency import GlobalConcurrencyLimits
 from app.services.ai.prompt_defaults import DEFAULT_REFINEMENT_PROMPT
 
 # Import existing services
@@ -243,7 +244,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
 
 
 async def execute_audio_extraction(video_id: str) -> None:
-    """Execute audio extraction stage."""
+    """Execute audio extraction stage with global concurrency control."""
     video_filename = f"{video_id}.mp4"
     video_path = get_video_by_filename(video_filename)
     
@@ -252,8 +253,19 @@ async def execute_audio_extraction(video_id: str) -> None:
     
     audio_path = get_audio_path(video_filename)
     
-    # Run extraction synchronously
-    success = extract_audio_from_video(video_path, audio_path)
+    # Acquire global semaphore for cross-pipeline coordination
+    limits = GlobalConcurrencyLimits.get()
+    async with limits.audio_extraction:
+        logger.info(f"Acquired audio extraction slot for {video_id}")
+        
+        # Run extraction in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(
+            None,  # Use default ThreadPoolExecutor
+            extract_audio_from_video,
+            video_path,
+            audio_path
+        )
     
     if not success:
         raise Exception("Audio extraction failed")
@@ -468,13 +480,12 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
     
     await update_refinement_progress(video_id, len(moments_to_refine), 0)
     
-    # Refine moments with configured parallelism
-    parallel_workers = config.get("refinement_parallel_workers", 2)
-    semaphore = asyncio.Semaphore(parallel_workers)
+    # Use global semaphore for cross-pipeline coordination
+    limits = GlobalConcurrencyLimits.get()
     
     async def refine_one_moment(moment):
-        """Refine a single moment with semaphore-controlled concurrency."""
-        async with semaphore:
+        """Refine a single moment with global semaphore-controlled concurrency."""
+        async with limits.refinement:
             moment_id = moment['id']
             
             # Generate GCS signed URL for video if needed

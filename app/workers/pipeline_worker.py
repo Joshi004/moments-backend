@@ -32,6 +32,7 @@ class PipelineWorker:
         self.settings = get_settings()
         self.consumer_name = f"worker-{self.settings.container_id}"
         self.running = True
+        self.max_concurrent_pipelines = self.settings.max_concurrent_pipelines
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -177,32 +178,88 @@ class PipelineWorker:
         except Exception as e:
             logger.error(f"Error acknowledging message {message_id}: {e}")
     
+    async def _process_and_acknowledge(self, message: Dict[str, Any]) -> None:
+        """
+        Process a pipeline message and acknowledge it.
+        
+        This wrapper ensures the message is always acknowledged even if processing fails,
+        preventing message redelivery for failed pipelines.
+        
+        Args:
+            message: Message dictionary with id, video_id, request_id, config
+        """
+        try:
+            await self._process_message(message)
+        finally:
+            # Always acknowledge, even if processing failed
+            await self._acknowledge_message(message["id"])
+    
     async def run(self):
-        """Main worker loop with non-blocking Redis operations."""
+        """
+        Main worker loop with support for concurrent pipeline execution.
+        
+        Maintains a set of active pipeline tasks up to max_concurrent_pipelines limit.
+        Each pipeline runs as an independent async task, allowing multiple pipelines
+        to execute concurrently while sharing resources via global semaphores.
+        """
         # Initialize async Redis client
         self.redis = await get_async_redis_client()
         
         await self.ensure_consumer_group()
-        logger.info(f"Pipeline worker started: {self.consumer_name}")
+        logger.info(
+            f"Pipeline worker started: {self.consumer_name} "
+            f"(max concurrent pipelines: {self.max_concurrent_pipelines})"
+        )
+        
+        active_tasks: set = set()
         
         while self.running:
             try:
-                # Try to claim stale messages first (non-blocking)
-                message = await self._claim_stale_message()
+                # Clean up completed tasks
+                done_tasks = {t for t in active_tasks if t.done()}
+                for task in done_tasks:
+                    try:
+                        # Re-raise any exceptions for logging
+                        await task
+                    except Exception as e:
+                        logger.error(f"Pipeline task failed: {e}")
+                active_tasks -= done_tasks
                 
-                # If no stale messages, read new ones (non-blocking - yields to event loop)
-                if message is None:
-                    message = await self._read_new_message()
-                
-                if message:
-                    await self._process_message(message)
-                    await self._acknowledge_message(message["id"])
+                # Start new pipelines if under limit
+                if len(active_tasks) < self.max_concurrent_pipelines:
+                    # Try to claim stale messages first (non-blocking)
+                    message = await self._claim_stale_message()
+                    
+                    # If no stale messages, read new ones (non-blocking)
+                    if message is None:
+                        message = await self._read_new_message()
+                    
+                    if message:
+                        # Create task for concurrent execution
+                        task = asyncio.create_task(
+                            self._process_and_acknowledge(message)
+                        )
+                        active_tasks.add(task)
+                        logger.info(
+                            f"Started pipeline task for {message['video_id']} "
+                            f"({len(active_tasks)}/{self.max_concurrent_pipelines} active)"
+                        )
+                else:
+                    # At capacity, wait briefly before checking again
+                    await asyncio.sleep(0.5)
                     
             except Exception as e:
                 logger.exception(f"Error in worker loop: {e}")
                 await asyncio.sleep(1)
         
-        logger.info(f"Pipeline worker {self.consumer_name} shutting down")
+        # Graceful shutdown: wait for active tasks to complete
+        if active_tasks:
+            logger.info(
+                f"Shutting down: waiting for {len(active_tasks)} active pipeline(s) to complete..."
+            )
+            await asyncio.gather(*active_tasks, return_exceptions=True)
+        
+        logger.info(f"Pipeline worker {self.consumer_name} shut down")
 
 
 async def ensure_pipeline_consumer_group():

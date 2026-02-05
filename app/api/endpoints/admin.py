@@ -35,7 +35,7 @@ async def list_model_configs():
     """
     try:
         registry = get_config_registry()
-        configs = registry.list_configs()
+        configs = await registry.list_configs()
         
         return ModelConfigListResponse(
             models=configs,
@@ -62,7 +62,7 @@ async def get_model_config(model_key: str):
     """
     try:
         registry = get_config_registry()
-        config = registry.get_config(model_key)
+        config = await registry.get_config(model_key)
         config["model_key"] = model_key
         
         return ModelConfigResponse(**config)
@@ -104,10 +104,10 @@ async def create_or_update_model_config(
         
         # Convert to dict and set
         config_dict = config.dict(exclude_none=False)
-        registry.set_config(model_key, config_dict)
+        await registry.set_config(model_key, config_dict)
         
         # Get back with timestamp
-        updated_config = registry.get_config(model_key)
+        updated_config = await registry.get_config(model_key)
         updated_config["model_key"] = model_key
         
         logger.info(f"Created/updated model config: {model_key}")
@@ -151,7 +151,7 @@ async def partial_update_model_config(
             )
         
         # Update config
-        updated_config = registry.update_config(model_key, update_dict)
+        updated_config = await registry.update_config(model_key, update_dict)
         updated_config["model_key"] = model_key
         
         logger.info(f"Partially updated model config: {model_key}, fields: {list(update_dict.keys())}")
@@ -187,7 +187,7 @@ async def delete_model_config(model_key: str):
     """
     try:
         registry = get_config_registry()
-        deleted = registry.delete_config(model_key)
+        deleted = await registry.delete_config(model_key)
         
         if deleted:
             logger.info(f"Deleted model config: {model_key}")
@@ -222,7 +222,7 @@ async def seed_model_configs(request: SeedRequest = SeedRequest()):
         Number of configs seeded
     """
     try:
-        count = seed_default_configs(force=request.force)
+        count = await seed_default_configs(force=request.force)
         
         message = (
             f"Seeded {count} model configs"
