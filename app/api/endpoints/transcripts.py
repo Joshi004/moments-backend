@@ -19,10 +19,7 @@ from app.services.transcript_service import (
     load_transcript
 )
 from app.services.pipeline.upload_service import GCSUploader
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
-
-# Initialize job repository
-job_repo = JobRepository()
+from app.services import job_tracker
 from app.core.logging import (
     log_event,
     log_operation_start,
@@ -71,7 +68,7 @@ async def process_audio(video_id: str):
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Check if already processing
-        if job_repo.is_processing(JobType.AUDIO_EXTRACTION, video_id):
+        if await job_tracker.is_running("audio_extraction", video_id):
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.transcripts",
@@ -97,8 +94,8 @@ async def process_audio(video_id: str):
             raise HTTPException(status_code=400, detail="Audio file already exists for this video")
         
         # Start processing job
-        job = job_repo.create(JobType.AUDIO_EXTRACTION, video_id, video_filename=video_file.name)
-        if job is None:
+        job_created = await job_tracker.create_job("audio_extraction", video_id, video_filename=video_file.name)
+        if not job_created:
             raise HTTPException(status_code=409, detail="Audio processing already in progress for this video")
         
         # Start async processing
@@ -172,7 +169,7 @@ async def process_transcript(video_id: str):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
         
         # Check if already processing
-        if job_repo.is_processing(JobType.TRANSCRIPTION, video_id):
+        if await job_tracker.is_running("transcription", video_id):
             raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
         
         # Check if transcript already exists
@@ -258,20 +255,19 @@ async def get_audio_extraction_status(video_id: str):
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Get status and update last poll
-        job = job_repo.get(JobType.AUDIO_EXTRACTION, video_id)
-        if job:
-            job_repo.update_last_poll(JobType.AUDIO_EXTRACTION, video_id)
+        # Get status
+        job = await job_tracker.get_job("audio_extraction", video_id)
         
         duration = time.time() - start_time
         
         if job is None:
             return {"status": "not_started", "started_at": None}
         
+        started_at = float(job.get("started_at", time.time()))
         return {
             "status": job.get("status"),
             "started_at": job.get("started_at"),
-            "elapsed_seconds": time.time() - job.get("started_at", time.time()),
+            "elapsed_seconds": time.time() - started_at,
             "error": job.get("error")
         }
         
@@ -308,20 +304,19 @@ async def get_transcription_status(video_id: str):
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Get status and update last poll
-        job = job_repo.get(JobType.TRANSCRIPTION, video_id)
-        if job:
-            job_repo.update_last_poll(JobType.TRANSCRIPTION, video_id)
+        # Get status
+        job = await job_tracker.get_job("transcription", video_id)
         
         duration = time.time() - start_time
         
         if job is None:
             return {"status": "not_started", "started_at": None}
         
+        started_at = float(job.get("started_at", time.time()))
         return {
             "status": job.get("status"),
             "started_at": job.get("started_at"),
-            "elapsed_seconds": time.time() - job.get("started_at", time.time()),
+            "elapsed_seconds": time.time() - started_at,
             "error": job.get("error")
         }
         

@@ -11,12 +11,8 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
-
-# Job repository for distributed job tracking
-job_repo = JobRepository()
 
 
 def get_audio_directory() -> Path:
@@ -310,6 +306,9 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
         }
     )
     
+    import asyncio
+    from app.services import job_tracker
+    
     def extract():
         try:
             output_path = get_audio_path(video_path.name)
@@ -331,11 +330,10 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
             success = extract_audio_from_video(video_path, output_path)
             
             # Mark job as complete
-            job_repo.update_status(
-                JobType.AUDIO_EXTRACTION,
-                video_id,
-                JobStatus.COMPLETED if success else JobStatus.FAILED
-            )
+            if success:
+                asyncio.run(job_tracker.complete_job("audio_extraction", video_id))
+            else:
+                asyncio.run(job_tracker.fail_job("audio_extraction", video_id, "Audio extraction failed"))
             
             log_event(
                 level="INFO",
@@ -356,12 +354,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
                 message="Error in async audio processing",
                 context={"video_id": video_id}
             )
-            job_repo.update_status(
-                JobType.AUDIO_EXTRACTION,
-                video_id,
-                JobStatus.FAILED,
-                error=str(e)
-            )
+            asyncio.run(job_tracker.fail_job("audio_extraction", video_id, str(e)))
     
     # Start processing in background thread
     thread = threading.Thread(target=extract, daemon=True)

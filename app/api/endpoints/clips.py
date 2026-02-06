@@ -13,10 +13,7 @@ from app.services.video_clipping_service import (
     check_clip_exists,
     get_clip_duration
 )
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
-
-# Initialize job repository
-job_repo = JobRepository()
+from app.services import job_tracker
 from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_video_clip_url, get_duration_tolerance, get_clipping_config
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
@@ -69,12 +66,12 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             raise HTTPException(status_code=400, detail="No moments found for this video")
         
         # Check if already processing
-        if job_repo.is_processing(JobType.CLIP_EXTRACTION, video_id):
+        if await job_tracker.is_running("clip_extraction", video_id):
             raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
         
         # Start extraction job
-        job = job_repo.create(JobType.CLIP_EXTRACTION, video_id)
-        if job is None:
+        job_created = await job_tracker.create_job("clip_extraction", video_id)
+        if not job_created:
             raise HTTPException(status_code=409, detail="Clip extraction already in progress for this video")
         
         # Start async processing
@@ -128,15 +125,27 @@ async def get_clip_extraction_status_endpoint(video_id: str):
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Get status and update last poll
-        job = job_repo.get(JobType.CLIP_EXTRACTION, video_id)
-        if job:
-            job_repo.update_last_poll(JobType.CLIP_EXTRACTION, video_id)
+        # Get status
+        job = await job_tracker.get_job("clip_extraction", video_id)
         
         if job is None:
             return {"status": "not_started", "started_at": None}
         
-        return {"status": job.get("status"), "started_at": job.get("started_at")}
+        # Build response with progress fields if available
+        response = {
+            "status": job.get("status"),
+            "started_at": job.get("started_at")
+        }
+        
+        # Add progress fields if they exist
+        if "total_moments" in job:
+            response["total_moments"] = int(job.get("total_moments", 0))
+        if "processed_moments" in job:
+            response["processed_moments"] = int(job.get("processed_moments", 0))
+        if "failed_moments" in job:
+            response["failed_moments"] = int(job.get("failed_moments", 0))
+        
+        return response
         
     except HTTPException:
         raise

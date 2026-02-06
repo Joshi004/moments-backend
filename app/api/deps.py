@@ -7,10 +7,6 @@ from typing import Optional
 from app.core.config import Settings, get_settings
 from app.repositories.moments_repository import MomentsRepository
 from app.repositories.transcript_repository import TranscriptRepository
-from app.repositories.job_repository import JobRepository
-
-# Global singleton instances
-_job_repository: Optional[JobRepository] = None
 
 
 @lru_cache()
@@ -22,19 +18,6 @@ def get_app_settings() -> Settings:
         Settings instance
     """
     return get_settings()
-
-
-def get_job_repository() -> JobRepository:
-    """
-    Get job repository singleton.
-    
-    Returns:
-        JobRepository instance
-    """
-    global _job_repository
-    if _job_repository is None:
-        _job_repository = JobRepository()
-    return _job_repository
 
 
 def get_moments_repository(

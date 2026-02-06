@@ -15,12 +15,8 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.timestamp import calculate_padded_boundaries
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
 
 logger = logging.getLogger(__name__)
-
-# Job repository for distributed job tracking
-job_repo = JobRepository()
 
 
 def get_moment_clips_directory() -> Path:
@@ -418,24 +414,13 @@ def extract_video_clip(
 
 # Job management functions now handled by JobRepository
 
-def update_clip_extraction_progress(video_id: str, total: int, processed: int, failed: int):
-    """Update clip extraction progress."""
-    job_repo.update_status(
-        JobType.CLIP_EXTRACTION,
-        video_id,
-        JobStatus.PROCESSING,
-        total_moments=total,
-        processed_moments=processed,
-        failed_moments=failed
-    )
-
-
 def extract_clips_for_video(
     video_id: str,
     video_path: Path,
     video_filename: str,
     moments: List[Dict],
-    override_existing: bool = True
+    override_existing: bool = True,
+    progress_callback: Optional[callable] = None
 ) -> Dict:
     """
     Extract video clips for all original moments in a video.
@@ -446,6 +431,7 @@ def extract_clips_for_video(
         video_filename: Original video filename
         moments: List of moment objects
         override_existing: Whether to override existing clips
+        progress_callback: Optional callback function(total, processed, failed) for progress updates
     
     Returns:
         Dictionary with extraction results
@@ -534,7 +520,8 @@ def extract_clips_for_video(
         }
         
         # Update job with total count
-        update_clip_extraction_progress(video_id, len(original_moments), 0, 0)
+        if progress_callback:
+            progress_callback(len(original_moments), 0, 0)
         
         # Get number of parallel workers from configuration
         from app.utils.model_config import get_parallel_workers
@@ -677,7 +664,8 @@ def extract_clips_for_video(
                 
                 # Update progress
                 processed = results["successful"] + results["skipped"] + results["failed"]
-                update_clip_extraction_progress(video_id, len(original_moments), processed, results["failed"])
+                if progress_callback:
+                    progress_callback(len(original_moments), processed, results["failed"])
         
         log_operation_complete(
             logger="app.services.video_clipping_service",
@@ -716,7 +704,8 @@ async def extract_clips_parallel(
     video_path: Path,
     video_filename: str,
     moments: List[Dict],
-    override_existing: bool = False
+    override_existing: bool = False,
+    progress_callback: Optional[callable] = None
 ) -> bool:
     """
     Extract clips in parallel (async wrapper for pipeline).
@@ -726,21 +715,26 @@ async def extract_clips_parallel(
         video_filename: Original video filename
         moments: List of moment objects
         override_existing: Whether to override existing clips
+        progress_callback: Optional callback function(total, processed, failed) for progress updates
     
     Returns:
         True if successful, False otherwise
     """
+    import asyncio
+    
     try:
         # Extract video_id from filename
         video_id = Path(video_filename).stem
         
-        # Call the synchronous function
-        results = extract_clips_for_video(
+        # Call the synchronous function in a thread pool to avoid blocking the event loop
+        results = await asyncio.to_thread(
+            extract_clips_for_video,
             video_id=video_id,
             video_path=video_path,
             video_filename=video_filename,
             moments=moments,
-            override_existing=override_existing
+            override_existing=override_existing,
+            progress_callback=progress_callback
         )
         
         # Return success based on whether we had more successes than failures
@@ -771,32 +765,54 @@ def process_clip_extraction_async(
         moments: List of moment objects
         override_existing: Whether to override existing clips
     """
+    import asyncio
+    from app.services import job_tracker
+    
     def extraction_worker():
         try:
+            # Create progress callback that updates job_tracker
+            def progress_callback(total: int, processed: int, failed: int):
+                asyncio.run(job_tracker.update_progress(
+                    "clip_extraction",
+                    video_id,
+                    total_moments=total,
+                    processed_moments=processed,
+                    failed_moments=failed
+                ))
+            
             results = extract_clips_for_video(
                 video_id=video_id,
                 video_path=video_path,
                 video_filename=video_filename,
                 moments=moments,
-                override_existing=override_existing
+                override_existing=override_existing,
+                progress_callback=progress_callback
             )
             
             # Mark as completed
             success = results.get("failed", 0) < results.get("total", 1)
-            job_repo.update_status(
-                JobType.CLIP_EXTRACTION,
-                video_id,
-                JobStatus.COMPLETED if success else JobStatus.FAILED
-            )
+            if success:
+                asyncio.run(job_tracker.complete_job(
+                    "clip_extraction",
+                    video_id,
+                    total_moments=results.get("total", 0),
+                    processed_moments=results.get("successful", 0) + results.get("skipped", 0),
+                    failed_moments=results.get("failed", 0)
+                ))
+            else:
+                asyncio.run(job_tracker.fail_job(
+                    "clip_extraction",
+                    video_id,
+                    "Clip extraction completed with failures"
+                ))
             
         except Exception as e:
             logger.error(f"Error in clip extraction worker: {e}")
-            job_repo.update_status(
-                JobType.CLIP_EXTRACTION,
+            asyncio.run(job_tracker.fail_job(
+                "clip_extraction",
                 video_id,
-                JobStatus.FAILED,
-                error=str(e)
-            )
+                str(e)
+            ))
     
     # Start extraction in background thread
     thread = threading.Thread(target=extraction_worker, daemon=True)

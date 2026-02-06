@@ -26,10 +26,7 @@ from app.services.ai.refinement_service import (
     process_moment_refinement
 )
 from app.services.ai.prompt_defaults import DEFAULT_REFINEMENT_PROMPT
-from app.repositories.job_repository import JobRepository, JobType, JobStatus
-
-# Initialize job repository
-job_repo = JobRepository()
+from app.services import job_tracker
 from app.services.video_clipping_service import check_clip_exists, get_clip_gcs_signed_url_async
 from app.utils.model_config import model_supports_video
 from app.core.logging import (
@@ -352,15 +349,16 @@ async def get_generation_status_endpoint(video_id: str):
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Get status and update last poll
-        job = job_repo.get(JobType.MOMENT_GENERATION, video_id)
-        if job:
-            job_repo.update_last_poll(JobType.MOMENT_GENERATION, video_id)
+        # Get status
+        job = await job_tracker.get_job("moment_generation", video_id)
         
         if job is None:
             return {"status": "not_started", "started_at": None}
         
-        return status
+        return {
+            "status": job.get("status"),
+            "started_at": job.get("started_at")
+        }
         
     except HTTPException:
         raise
@@ -524,15 +522,16 @@ async def get_refinement_status_endpoint(video_id: str, moment_id: str):
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Get status and update last poll
-        job = job_repo.get(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
-        if job:
-            job_repo.update_last_poll(JobType.MOMENT_REFINEMENT, video_id, moment_id=moment_id)
+        # Get status
+        job = await job_tracker.get_job("moment_refinement", video_id, sub_id=moment_id)
         
         if job is None:
             return {"status": "not_started", "started_at": None}
         
-        return status
+        return {
+            "status": job.get("status"),
+            "started_at": job.get("started_at")
+        }
         
     except HTTPException:
         raise

@@ -403,12 +403,25 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
     if not moments:
         raise Exception("No moments found for clip extraction")
     
+    # Create progress callback for pipeline status
+    def progress_callback(total: int, processed: int, failed: int):
+        """Update pipeline status with clip extraction progress."""
+        from app.core.redis import get_redis_client
+        redis_client = get_redis_client()
+        status_key = f"pipeline:{video_id}:active"
+        redis_client.hset(status_key, mapping={
+            "clips_total": str(total),
+            "clips_processed": str(processed),
+            "clips_failed": str(failed),
+        })
+    
     # Extract clips in parallel
     success = await extract_clips_parallel(
         video_path=video_path,
         video_filename=video_filename,
         moments=moments,
         override_existing=config.get("override_existing_clips", False),
+        progress_callback=progress_callback
     )
     
     if not success:

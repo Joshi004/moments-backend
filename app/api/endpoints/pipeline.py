@@ -153,6 +153,30 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                 except ValueError:
                     pass
     
+    # Clip extraction progress
+    elif stage == PipelineStage.CLIP_EXTRACTION:
+        clips_total = status_data.get("clips_total")
+        clips_processed = status_data.get("clips_processed")
+        clips_failed = status_data.get("clips_failed")
+        
+        if clips_total or clips_processed:
+            progress = {}
+            if clips_total:
+                try:
+                    progress["total"] = int(clips_total)
+                except ValueError:
+                    pass
+            if clips_processed:
+                try:
+                    progress["processed"] = int(clips_processed)
+                except ValueError:
+                    pass
+            if clips_failed:
+                try:
+                    progress["failed"] = int(clips_failed)
+                except ValueError:
+                    pass
+    
     # Refinement progress
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         refinement_total = status_data.get("refinement_total")

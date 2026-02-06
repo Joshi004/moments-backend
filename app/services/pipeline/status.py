@@ -65,6 +65,11 @@ async def initialize_status(video_id: str, request_id: str, config: dict) -> Non
     status_data["refinement_processed"] = "0"
     status_data["refinement_successful"] = "0"
     
+    # Special fields for clip extraction progress
+    status_data["clips_total"] = "0"
+    status_data["clips_processed"] = "0"
+    status_data["clips_failed"] = "0"
+    
     await redis.hset(status_key, mapping=status_data)
     logger.info(f"Initialized pipeline status for {video_id}: {request_id}")
 
@@ -265,6 +270,26 @@ async def update_refinement_progress(video_id: str, total: int, processed: int, 
     }
     if successful is not None:
         mapping["refinement_successful"] = str(successful)
+    await redis.hset(status_key, mapping=mapping)
+
+
+async def update_clip_extraction_progress(video_id: str, total: int, processed: int, failed: int = 0) -> None:
+    """
+    Update clip extraction progress.
+    
+    Args:
+        video_id: Video identifier
+        total: Total number of clips to extract
+        processed: Number of clips processed so far
+        failed: Number of clips that failed (optional)
+    """
+    redis = await get_async_redis_client()
+    status_key = _get_status_key(video_id)
+    mapping = {
+        "clips_total": str(total),
+        "clips_processed": str(processed),
+        "clips_failed": str(failed),
+    }
     await redis.hset(status_key, mapping=mapping)
 
 
