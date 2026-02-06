@@ -6,7 +6,7 @@ import psutil
 import socket
 from pathlib import Path
 from typing import Optional, Dict, List
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 import logging
 from app.utils.logging_config import (
     log_event,
@@ -151,8 +151,8 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
         return False
 
 
-@contextmanager
-def ssh_tunnel(service_key: str = "parakeet"):
+@asynccontextmanager
+async def ssh_tunnel(service_key: str = "parakeet"):
     """
     Context manager for SSH tunnel lifecycle.
     Creates tunnel on entry and closes it on exit.
@@ -164,7 +164,7 @@ def ssh_tunnel(service_key: str = "parakeet"):
     try:
         # Create SSH tunnel
         logger.info(f"Creating SSH tunnel for service: {service_key}...")
-        tunnel_process = create_ssh_tunnel(service_key)
+        tunnel_process = await create_ssh_tunnel(service_key)
         if tunnel_process is None:
             raise Exception("Failed to create SSH tunnel - process exited immediately")
         
@@ -179,10 +179,10 @@ def ssh_tunnel(service_key: str = "parakeet"):
         # Always close tunnel
         if tunnel_process is not None:
             logger.info("Closing SSH tunnel...")
-            close_ssh_tunnel(tunnel_process, service_key)
+            await close_ssh_tunnel(tunnel_process, service_key)
 
 
-def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Popen]:
+async def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Popen]:
     """
     Create FRESH SSH tunnel to remote transcription service.
     Always kills existing tunnels first to ensure clean state and correct config.
@@ -197,7 +197,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
     start_time = time.time()
     
     try:
-        config = get_model_config(service_key)
+        config = await get_model_config(service_key)
         ssh_host = config['ssh_host']
         ssh_remote_host = config['ssh_remote_host']
         ssh_local_port = config['ssh_local_port']
@@ -220,7 +220,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         
         # ALWAYS kill existing tunnel first to ensure fresh connection with correct config
         logger.info(f"Killing any existing tunnel on port {ssh_local_port}...")
-        killed = close_ssh_tunnel(None, service_key)  # Pass None to kill by port/config
+        killed = await close_ssh_tunnel(None, service_key)  # Pass None to kill by port/config
         if killed:
             logger.info(f"Killed existing tunnel - will create fresh tunnel")
             # Wait a moment for port to be released
@@ -379,7 +379,7 @@ def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Pope
         return None
 
 
-def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, service_key: str = "parakeet") -> bool:
+async def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, service_key: str = "parakeet") -> bool:
     """
     Close SSH tunnel by killing the SSH process.
     
@@ -391,7 +391,7 @@ def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, service_
         True if successful, False otherwise
     """
     try:
-        config = get_model_config(service_key)
+        config = await get_model_config(service_key)
         ssh_host = config['ssh_host']
         ssh_remote_host = config['ssh_remote_host']
         ssh_remote_port = config['ssh_remote_port']
@@ -632,7 +632,7 @@ async def process_transcription(
         )
         
         # Create SSH tunnel
-        with ssh_tunnel("parakeet"):
+        async with ssh_tunnel("parakeet"):
             # Call transcription service asynchronously
             transcription_result = await call_transcription_service_async(audio_signed_url)
             

@@ -71,7 +71,6 @@ class Moment:
     is_refined: bool = False
     parent_id: Optional[str] = None
     model_name: Optional[str] = None
-    prompt: Optional[str] = None
     generation_config: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -84,7 +83,6 @@ class Moment:
             "is_refined": self.is_refined,
             "parent_id": self.parent_id,
             "model_name": self.model_name,
-            "prompt": self.prompt,
             "generation_config": self.generation_config
         }
     
@@ -99,7 +97,6 @@ class Moment:
             is_refined=data.get("is_refined", False),
             parent_id=data.get("parent_id"),
             model_name=data.get("model_name"),
-            prompt=data.get("prompt"),
             generation_config=data.get("generation_config")
         )
     

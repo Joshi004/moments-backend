@@ -78,42 +78,13 @@ def load_moments(video_filename: str) -> List[Dict]:
         return []
     
     try:
-        with FileLock(str(lock_file), timeout=30):
+        with FileLock(str(lock_file), timeout=5):
             with open(moments_file, 'r', encoding='utf-8') as f:
                 moments = json.load(f)
                 # Validate it's a list
                 if not isinstance(moments, list):
                     logger.warning(f"Moments file {moments_file} does not contain a list, returning empty list")
                     return []
-                
-                # Auto-assign IDs to moments that don't have them
-                modified = False
-                for moment in moments:
-                    if 'id' not in moment or not moment['id']:
-                        moment['id'] = generate_moment_id(moment['start_time'], moment['end_time'])
-                        modified = True
-                    # Ensure is_refined and parent_id fields exist
-                    if 'is_refined' not in moment:
-                        moment['is_refined'] = False
-                        modified = True
-                    if 'parent_id' not in moment:
-                        moment['parent_id'] = None
-                        modified = True
-                    # Ensure model_name and prompt fields exist (backward compatibility)
-                    if 'model_name' not in moment:
-                        moment['model_name'] = None
-                        modified = True
-                    if 'prompt' not in moment:
-                        moment['prompt'] = None
-                        modified = True
-                    # Ensure generation_config field exists (backward compatibility)
-                    if 'generation_config' not in moment:
-                        moment['generation_config'] = None
-                        modified = True
-                
-                # Save if we modified any moments (FileLock is reentrant)
-                if modified:
-                    save_moments(video_filename, moments)
                 
                 return moments
     except json.JSONDecodeError as e:
@@ -158,7 +129,7 @@ def save_moments(video_filename: str, moments: List[Dict]) -> bool:
         moments_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Write moments to file with locking and atomic write
-        with FileLock(str(lock_file), timeout=30):
+        with FileLock(str(lock_file), timeout=5):
             # Write to temp file first
             temp_file = moments_file.with_suffix('.tmp')
             with open(temp_file, 'w', encoding='utf-8') as f:
@@ -359,11 +330,6 @@ def add_moment(video_filename: str, moment: Dict, video_duration: float) -> Tupl
         moment['is_refined'] = False
     if 'parent_id' not in moment:
         moment['parent_id'] = None
-    # Ensure model_name and prompt fields exist (backward compatibility)
-    if 'model_name' not in moment:
-        moment['model_name'] = None
-    if 'prompt' not in moment:
-        moment['prompt'] = None
     # Ensure generation_config field exists (backward compatibility)
     if 'generation_config' not in moment:
         moment['generation_config'] = None

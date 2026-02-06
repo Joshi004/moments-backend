@@ -5,7 +5,7 @@ import requests
 import psutil
 import re
 from typing import Optional, Dict, List
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 import logging
 from app.utils.model_config import get_model_config, get_model_url
 from app.utils.logging_config import (
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 MAX_TOKENS = 15000
 
 
-@contextmanager
-def ssh_tunnel(model_key: str = "minimax"):
+@asynccontextmanager
+async def ssh_tunnel(model_key: str = "minimax"):
     """
     Context manager for SSH tunnel lifecycle.
     Creates tunnel on entry and closes it on exit.
@@ -37,7 +37,7 @@ def ssh_tunnel(model_key: str = "minimax"):
     try:
         # Create SSH tunnel
         logger.info(f"Creating SSH tunnel for model: {model_key}...")
-        tunnel_process = create_ssh_tunnel(model_key)
+        tunnel_process = await create_ssh_tunnel(model_key)
         if tunnel_process is None:
             raise Exception("Failed to create SSH tunnel - process exited immediately")
         
@@ -52,10 +52,10 @@ def ssh_tunnel(model_key: str = "minimax"):
         # Always close tunnel
         if tunnel_process is not None:
             logger.info("Closing SSH tunnel...")
-            close_ssh_tunnel(tunnel_process, model_key)
+            await close_ssh_tunnel(tunnel_process, model_key)
 
 
-def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
+async def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
     """
     Create FRESH SSH tunnel to AI model service.
     Always kills existing tunnels first to ensure clean state and correct config.
@@ -67,7 +67,7 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
         subprocess.Popen object if successful, None otherwise
     """
     try:
-        config = get_model_config(model_key)
+        config = await get_model_config(model_key)
         ssh_host = config['ssh_host']
         ssh_remote_host = config['ssh_remote_host']
         ssh_local_port = config['ssh_local_port']
@@ -75,7 +75,7 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
         
         # ALWAYS kill existing tunnel first to ensure fresh connection with correct config
         logger.info(f"Killing any existing tunnel on port {ssh_local_port} for model {model_key}...")
-        killed = close_ssh_tunnel(None, model_key)  # Pass None to kill by port/config
+        killed = await close_ssh_tunnel(None, model_key)  # Pass None to kill by port/config
         if killed:
             logger.info(f"Killed existing tunnel - will create fresh tunnel")
             # Wait a moment for port to be released
@@ -190,7 +190,7 @@ def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.Popen]:
         return None
 
 
-def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, model_key: str = "minimax") -> bool:
+async def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, model_key: str = "minimax") -> bool:
     """
     Close SSH tunnel by killing the SSH process.
     
@@ -202,7 +202,7 @@ def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, model_ke
         True if successful, False otherwise
     """
     try:
-        config = get_model_config(model_key)
+        config = await get_model_config(model_key)
         ssh_host = config['ssh_host']
         ssh_remote_host = config['ssh_remote_host']
         ssh_remote_port = config['ssh_remote_port']
@@ -245,7 +245,7 @@ def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, model_ke
         return False
 
 
-def test_ssh_connection(model_key: str = "minimax") -> bool:
+async def test_ssh_connection(model_key: str = "minimax") -> bool:
     """
     Test basic SSH connectivity to the remote host.
     
@@ -256,7 +256,7 @@ def test_ssh_connection(model_key: str = "minimax") -> bool:
         True if SSH connection works, False otherwise
     """
     try:
-        config = get_model_config(model_key)
+        config = await get_model_config(model_key)
         ssh_host = config['ssh_host']
         
         logger.info(f"Testing SSH connection to {ssh_host}...")
@@ -286,7 +286,7 @@ def test_ssh_connection(model_key: str = "minimax") -> bool:
         return False
 
 
-def check_remote_service(model_key: str = "minimax") -> bool:
+async def check_remote_service(model_key: str = "minimax") -> bool:
     """
     Check if the AI model service is running on the remote server.
     
@@ -297,7 +297,7 @@ def check_remote_service(model_key: str = "minimax") -> bool:
         True if service is accessible, False otherwise
     """
     try:
-        config = get_model_config(model_key)
+        config = await get_model_config(model_key)
         ssh_host = config['ssh_host']
         ssh_remote_host = config['ssh_remote_host']
         ssh_remote_port = config['ssh_remote_port']
@@ -366,8 +366,8 @@ async def call_ai_model_async(
     model_url = None
     
     try:
-        model_url = get_model_url(model_key)
-        config = get_model_config(model_key)
+        model_url = await get_model_url(model_key)
+        config = await get_model_config(model_key)
         
         # Use provided model_id or get from config
         if model_id is None:
@@ -758,11 +758,11 @@ async def process_moments_generation(
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
         # Get model configuration
-        model_config = get_model_config(model)
+        model_config = await get_model_config(model)
         model_id = model_config.get('model_id')
         
         # Create SSH tunnel and call AI model
-        with ssh_tunnel(model):
+        async with ssh_tunnel(model):
             # Prepare messages for AI model
             messages = [{
                 "role": "user",
@@ -803,7 +803,7 @@ async def process_moments_generation(
                 raise
             finally:
                 # Log request/response for debugging
-                model_url = get_model_url(model)
+                model_url = await get_model_url(model)
                 payload = {
                     "messages": messages,
                     "max_tokens": MAX_TOKENS,

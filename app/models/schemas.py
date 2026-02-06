@@ -26,7 +26,6 @@ class MomentResponse(BaseModel):
     is_refined: bool = False
     parent_id: Optional[str] = None
     model_name: Optional[str] = None
-    prompt: Optional[str] = None
     generation_config: Optional[Dict[str, Any]] = None
 
 

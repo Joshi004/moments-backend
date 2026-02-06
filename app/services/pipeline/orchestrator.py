@@ -338,7 +338,7 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
 async def execute_moment_generation(video_id: str, config: dict) -> None:
     """Execute moment generation stage."""
     from app.services.ai.generation_service import process_moments_generation
-    from app.services.moments_service import save_moments
+    from app.services.moments_service import save_moments, generate_moment_id
     
     video_filename = f"{video_id}.mp4"
     
@@ -363,6 +363,15 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
         
         # Save moments (replaces existing) - handle empty list gracefully
         if validated_moments:
+            # Ensure all required fields are present
+            for moment in validated_moments:
+                if 'id' not in moment or not moment['id']:
+                    moment['id'] = generate_moment_id(moment['start_time'], moment['end_time'])
+                if 'is_refined' not in moment:
+                    moment['is_refined'] = False
+                if 'parent_id' not in moment:
+                    moment['parent_id'] = None
+            
             logger.info(f"Saving {len(validated_moments)} moments for {video_id}")
             success = save_moments(video_filename, validated_moments)
             

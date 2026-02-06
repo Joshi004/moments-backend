@@ -61,37 +61,6 @@ class MomentsRepository(BaseRepository):
             logger.warning(f"Moments file for {video_filename} does not contain a list")
             return []
         
-        # Auto-assign IDs and ensure schema compatibility
-        modified = False
-        for moment in moments:
-            if 'id' not in moment or not moment['id']:
-                moment['id'] = self.generate_moment_id(
-                    moment['start_time'], 
-                    moment['end_time']
-                )
-                modified = True
-            
-            # Ensure required fields exist
-            if 'is_refined' not in moment:
-                moment['is_refined'] = False
-                modified = True
-            if 'parent_id' not in moment:
-                moment['parent_id'] = None
-                modified = True
-            if 'model_name' not in moment:
-                moment['model_name'] = None
-                modified = True
-            if 'prompt' not in moment:
-                moment['prompt'] = None
-                modified = True
-            if 'generation_config' not in moment:
-                moment['generation_config'] = None
-                modified = True
-        
-        # Save if we modified any moments
-        if modified:
-            self.save(video_filename, moments)
-        
         return moments
     
     def get_by_id(self, video_filename: str, moment_id: str) -> Optional[Dict]:

@@ -228,11 +228,11 @@ async def process_moment_refinement(
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
         # Get model configuration
-        model_config = get_model_config(model)
+        model_config = await get_model_config(model)
         model_id = model_config.get('model_id')
         
         # Create SSH tunnel and call AI model
-        with ssh_tunnel(model):
+        async with ssh_tunnel(model):
             # Prepare messages for AI model
             messages = [{
                 "role": "user",
@@ -333,7 +333,7 @@ async def process_moment_refinement(
                 raise
             finally:
                 # Log request/response for debugging
-                model_url = get_model_url(model)
+                model_url = await get_model_url(model)
                 payload = {
                     "messages": messages,
                     "max_tokens": 15000,

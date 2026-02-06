@@ -4,6 +4,7 @@ Provides REST API for unified video processing pipeline.
 
 All endpoints use async Redis for non-blocking operations.
 """
+import asyncio
 import json
 import time
 import logging
@@ -189,7 +190,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
     )
 
 
-def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusResponse:
+async def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusResponse:
     """Build PipelineStatusResponse from Redis status data."""
     # Parse basic fields
     request_id = status_data.get("request_id", "")
@@ -226,7 +227,7 @@ def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusRespons
     
     # Load moments and separate by refinement status
     video_filename = f"{video_id}.mp4"
-    moments = load_moments(video_filename) or []
+    moments = await asyncio.to_thread(load_moments, video_filename) or []
     
     coarse_moments = [
         MomentSummary(
@@ -333,12 +334,12 @@ async def get_pipeline_status(video_id: str):
     # Check Redis for active pipeline
     status_data = await get_active_status(video_id)
     if status_data:
-        return _build_status_response(status_data)
+        return await _build_status_response(status_data)
     
     # Not active - check Redis history for last run
     latest_run = await get_latest_run(video_id)
     if latest_run:
-        return _build_status_response(latest_run)
+        return await _build_status_response(latest_run)
     
     # Never run
     return PipelineStatusResponse(
