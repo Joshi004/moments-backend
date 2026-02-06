@@ -252,6 +252,40 @@ class GCSUploader:
         """Get file size in megabytes."""
         return file_path.stat().st_size / (1024 * 1024)
     
+    def _delete_by_prefix(self, prefix: str) -> int:
+        """
+        Delete all blobs with given prefix.
+        
+        Args:
+            prefix: GCS prefix (e.g., "clips/video123/")
+        
+        Returns:
+            Number of files deleted
+        """
+        try:
+            # List all blobs with this prefix
+            blobs = list(self.bucket.list_blobs(prefix=prefix))
+            
+            if not blobs:
+                logger.debug(f"No files found with prefix: {prefix}")
+                return 0
+            
+            deleted_count = 0
+            for blob in blobs:
+                try:
+                    blob.delete()
+                    deleted_count += 1
+                    logger.debug(f"Deleted GCS blob: {blob.name}")
+                except Exception as e:
+                    logger.error(f"Failed to delete blob {blob.name}: {e}")
+            
+            logger.info(f"Deleted {deleted_count} files with prefix: {prefix}")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Failed to list/delete blobs with prefix {prefix}: {e}")
+            return 0
+    
     def _upload_with_progress(
         self,
         blob,
@@ -513,6 +547,24 @@ class GCSUploader:
         logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
         
         return (gcs_path, signed_url)
+    
+    async def delete_clips_for_video(self, video_id: str) -> int:
+        """
+        Delete all GCS clip files for a video.
+        
+        Args:
+            video_id: Video identifier
+        
+        Returns:
+            Number of clip files deleted
+        """
+        prefix = f"{self.clips_prefix}{video_id}/"
+        
+        # Run blocking GCS list+delete in thread pool
+        loop = asyncio.get_event_loop()
+        count = await loop.run_in_executor(None, self._delete_by_prefix, prefix)
+        
+        return count
     
     async def upload_all_clips(
         self, 

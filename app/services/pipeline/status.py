@@ -70,6 +70,23 @@ async def initialize_status(video_id: str, request_id: str, config: dict) -> Non
     status_data["clips_processed"] = "0"
     status_data["clips_failed"] = "0"
     
+    # Special fields for video download progress
+    status_data["download_bytes"] = "0"
+    status_data["download_total"] = "0"
+    status_data["download_percentage"] = "0"
+    
+    # Special fields for audio upload progress
+    status_data["upload_bytes"] = "0"
+    status_data["upload_total"] = "0"
+    status_data["upload_percentage"] = "0"
+    
+    # Special fields for clip upload progress
+    status_data["clip_upload_current"] = "0"
+    status_data["clip_upload_total_clips"] = "0"
+    status_data["clip_upload_bytes"] = "0"
+    status_data["clip_upload_total_bytes"] = "0"
+    status_data["clip_upload_percentage"] = "0"
+    
     await redis.hset(status_key, mapping=status_data)
     logger.info(f"Initialized pipeline status for {video_id}: {request_id}")
 

@@ -56,6 +56,35 @@ def check_clip_exists(moment_id: str, video_filename: str) -> bool:
     return clip_path.exists() and clip_path.is_file()
 
 
+def delete_all_clips_for_video(video_id: str) -> int:
+    """
+    Delete all local clip files for a video.
+    
+    Args:
+        video_id: Video identifier
+    
+    Returns:
+        Number of clip files deleted
+    """
+    clips_dir = get_moment_clips_directory()
+    pattern = f"{video_id}_*_clip.mp4"
+    clips = list(clips_dir.glob(pattern))
+    
+    deleted = 0
+    for clip_path in clips:
+        try:
+            clip_path.unlink()
+            deleted += 1
+            logger.debug(f"Deleted clip: {clip_path.name}")
+        except Exception as e:
+            logger.error(f"Failed to delete clip {clip_path.name}: {e}")
+    
+    if deleted > 0:
+        logger.info(f"Deleted {deleted} existing clips for {video_id}")
+    
+    return deleted
+
+
 def get_clip_url(moment_id: str, video_filename: str) -> Optional[str]:
     """
     Get the URL for accessing a clip file from local backend.
@@ -518,10 +547,6 @@ def extract_clips_for_video(
             "failed": 0,
             "clips": []
         }
-        
-        # Update job with total count
-        if progress_callback:
-            progress_callback(len(original_moments), 0, 0)
         
         # Get number of parallel workers from configuration
         from app.utils.model_config import get_parallel_workers

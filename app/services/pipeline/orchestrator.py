@@ -208,6 +208,10 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
             return True, f"Moments already exist ({len(moments)} moments)"
     
     elif stage == PipelineStage.CLIP_EXTRACTION:
+        # Always re-extract when moments are overridden (old clips will be deleted)
+        if config.get("override_existing_moments", False):
+            return False, ""
+        
         moments = load_moments(video_filename)
         if not moments:
             return True, "No moments to extract clips from"
@@ -219,6 +223,10 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
             return True, "All clips already extracted"
     
     elif stage == PipelineStage.CLIP_UPLOAD:
+        # Always re-upload when moments are overridden (new clips will be generated)
+        if config.get("override_existing_moments", False):
+            return False, ""
+        
         moments = load_moments(video_filename)
         if not moments:
             return True, "No moments to upload clips for"
@@ -403,6 +411,24 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
     moments = load_moments(video_filename)
     if not moments:
         raise Exception("No moments found for clip extraction")
+    
+    # Cleanup existing clips if moments were regenerated
+    if config.get("override_existing_moments", False):
+        from app.services.video_clipping_service import delete_all_clips_for_video
+        
+        logger.info(f"Cleaning up existing clips for {video_id} (moments were regenerated)")
+        
+        # Delete local clips
+        deleted_local = await asyncio.to_thread(delete_all_clips_for_video, video_id)
+        logger.info(f"Cleaned up {deleted_local} local clips for {video_id}")
+        
+        # Delete GCS clips
+        try:
+            uploader = GCSUploader()
+            deleted_gcs = await uploader.delete_clips_for_video(video_id)
+            logger.info(f"Cleaned up {deleted_gcs} GCS clips for {video_id}")
+        except Exception as e:
+            logger.warning(f"GCS clip cleanup failed for {video_id}: {e}")
     
     # Create progress callback for pipeline status
     def progress_callback(total: int, processed: int, failed: int):
