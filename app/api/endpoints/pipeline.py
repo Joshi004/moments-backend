@@ -202,6 +202,14 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                 except ValueError:
                     pass
     
+    # Determine stage-level error
+    stage_error = None
+    error_stage_value = status_data.get("error_stage", "")
+    if error_stage_value == prefix:
+        error_msg = status_data.get("error_message", "")
+        if error_msg:
+            stage_error = error_msg
+    
     return StageStatusResponse(
         status=status,
         started_at=started_at,
@@ -209,7 +217,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
         duration_seconds=duration,
         skipped=(skipped_str == "true"),
         skip_reason=skip_reason if skip_reason else None,
-        error=None,
+        error=stage_error,
         progress=progress,
     )
 

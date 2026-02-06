@@ -62,7 +62,6 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     from app.services.gcs_downloader import GCSDownloader
     from app.services.url_registry import URLRegistry
     from app.utils.video import get_videos_directory
-    from app.core.redis import get_async_redis_client
     
     video_url = config.get("video_url")
     if not video_url:
@@ -79,17 +78,19 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     
     logger.info(f"Starting video download: {video_url} -> {dest_path}")
     
-    # Progress callback to update Redis - uses async client
-    redis = await get_async_redis_client()
-    status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
-    
-    async def progress_callback(bytes_downloaded: int, total_bytes: int):
+    # Progress callback to update Redis - uses sync client
+    def progress_callback(bytes_downloaded: int, total_bytes: int):
         """Update download progress in Redis."""
         try:
+            from app.core.redis import get_redis_client
+            redis_client = get_redis_client()
             percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
-            await redis.hset(status_key, "download_bytes", str(bytes_downloaded))
-            await redis.hset(status_key, "download_total", str(total_bytes))
-            await redis.hset(status_key, "download_percentage", str(percentage))
+            status_key = f"pipeline:{video_id}:active"
+            redis_client.hset(status_key, mapping={
+                "download_bytes": str(bytes_downloaded),
+                "download_total": str(total_bytes),
+                "download_percentage": str(percentage),
+            })
         except Exception as e:
             logger.error(f"Failed to update download progress: {e}")
     
@@ -438,23 +439,23 @@ async def execute_clip_upload(video_id: str) -> None:
     if not moments:
         raise Exception("No moments found for clip upload")
     
-    # Create progress callback for Redis updates - uses async client
-    from app.core.redis import get_async_redis_client
-    redis = await get_async_redis_client()
-    status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
-    
-    async def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
+    # Create progress callback for Redis updates - uses sync client
+    def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
         """Update clip upload progress in Redis."""
         try:
+            from app.core.redis import get_redis_client
+            redis_client = get_redis_client()
             # Calculate overall percentage based on completed clips + current clip progress
             clip_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
             overall_percentage = int(((clip_index - 1) * 100 + clip_percentage) / total_clips) if total_clips > 0 else 0
-            
-            await redis.hset(status_key, "clip_upload_current", str(clip_index))
-            await redis.hset(status_key, "clip_upload_total_clips", str(total_clips))
-            await redis.hset(status_key, "clip_upload_bytes", str(bytes_uploaded))
-            await redis.hset(status_key, "clip_upload_total_bytes", str(total_bytes))
-            await redis.hset(status_key, "clip_upload_percentage", str(overall_percentage))
+            status_key = f"pipeline:{video_id}:active"
+            redis_client.hset(status_key, mapping={
+                "clip_upload_current": str(clip_index),
+                "clip_upload_total_clips": str(total_clips),
+                "clip_upload_bytes": str(bytes_uploaded),
+                "clip_upload_total_bytes": str(total_bytes),
+                "clip_upload_percentage": str(overall_percentage),
+            })
         except Exception as e:
             logger.error(f"Failed to update clip upload progress: {e}")
     
@@ -576,23 +577,27 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:
-        # Create progress callback for Redis updates - uses async client
-        from app.core.redis import get_async_redis_client
-        redis = await get_async_redis_client()
-        status_key = f"pipeline:{video_id}:active"  # Use :active key (same as status.py)
-        
-        async def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
+        # Create progress callback for Redis updates - uses sync client
+        def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
             """Update upload progress in Redis."""
             try:
+                from app.core.redis import get_redis_client
+                redis_client = get_redis_client()
                 percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
-                await redis.hset(status_key, "upload_bytes", str(bytes_uploaded))
-                await redis.hset(status_key, "upload_total", str(total_bytes))
-                await redis.hset(status_key, "upload_percentage", str(percentage))
+                status_key = f"pipeline:{video_id}:active"
+                redis_client.hset(status_key, mapping={
+                    "upload_bytes": str(bytes_uploaded),
+                    "upload_total": str(total_bytes),
+                    "upload_percentage": str(percentage),
+                })
             except Exception as e:
                 logger.error(f"Failed to update upload progress: {e}")
         
         audio_signed_url = await execute_audio_upload(video_id, progress_callback=upload_progress_callback)
-        # Store signed URL in Redis for next stage
+        # Store signed URL in Redis for next stage (uses async client)
+        from app.core.redis import get_async_redis_client
+        redis = await get_async_redis_client()
+        status_key = f"pipeline:{video_id}:active"
         await redis.hset(status_key, "audio_signed_url", audio_signed_url)
         logger.info(f"Stored audio signed URL in pipeline state for {video_id}")
     

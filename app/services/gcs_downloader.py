@@ -342,19 +342,23 @@ class GCSDownloader:
         async def _do_download():
             nonlocal bytes_downloaded
             
-            # Download to file
+            # Download with chunked reading for progress reporting
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                blob.download_to_filename,
-                str(dest_path)
-            )
             
-            bytes_downloaded = blob_size
+            def _chunked_download():
+                nonlocal bytes_downloaded
+                with open(str(dest_path), 'wb') as f:
+                    with blob.open("rb") as blob_reader:
+                        while True:
+                            chunk = blob_reader.read(self.chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            bytes_downloaded += len(chunk)
+                            if progress_callback:
+                                progress_callback(bytes_downloaded, blob_size)
             
-            # Final progress callback
-            if progress_callback:
-                progress_callback(bytes_downloaded, blob_size)
+            await loop.run_in_executor(None, _chunked_download)
         
         # Download with retry
         await retry_with_backoff(
