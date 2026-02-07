@@ -147,8 +147,8 @@ class Settings(BaseSettings):
     audio_extraction_max_concurrent: int = 2  # Max concurrent FFmpeg audio extractions
     transcription_max_concurrent: int = 2  # Max concurrent transcription API calls
     moment_generation_max_concurrent: int = 2  # Max concurrent AI generation calls
-    clip_extraction_max_concurrent: int = 8  # Max total FFmpeg clip extractions
-    refinement_max_concurrent: int = 4  # Max concurrent refinement API calls
+    clip_extraction_max_concurrent: int = 4  # Max total FFmpeg clip extractions
+    refinement_max_concurrent: int = 1  # Max concurrent refinement API calls
     
     # URL Registry
     url_registry_file: Path = Path("static/url_registry.json")

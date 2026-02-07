@@ -467,13 +467,16 @@ async def execute_clip_upload(video_id: str) -> None:
     
     # Create progress callback for Redis updates - uses sync client
     def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
-        """Update clip upload progress in Redis."""
+        """
+        Update clip upload progress in Redis.
+        
+        Note: bytes_uploaded and total_bytes are cumulative across all clips.
+        """
         try:
             from app.core.redis import get_redis_client
             redis_client = get_redis_client()
-            # Calculate overall percentage based on completed clips + current clip progress
-            clip_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
-            overall_percentage = int(((clip_index - 1) * 100 + clip_percentage) / total_clips) if total_clips > 0 else 0
+            # Calculate overall percentage from cumulative bytes
+            overall_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
             status_key = f"pipeline:{video_id}:active"
             redis_client.hset(status_key, mapping={
                 "clip_upload_current": str(clip_index),

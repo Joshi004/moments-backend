@@ -579,47 +579,67 @@ class GCSUploader:
             video_id: Video identifier
             moments: List of moment dictionaries
             progress_callback: Optional callback(clip_index, total_clips, bytes_uploaded, total_bytes)
+                              Note: bytes_uploaded and total_bytes are cumulative across all clips
         
         Returns:
             Updated moments list with gcs_clip_path and clip_signed_url fields
         """
         from app.services.video_clipping_service import get_clip_path
         
-        # Calculate total clips that exist for progress tracking
-        total_clips = sum(1 for m in moments if get_clip_path(m['id'], f"{video_id}.mp4").exists())
-        current_clip_index = 0
-        
+        # Pre-calculate total size of all clips and build list of clips to upload
+        clip_paths = []
         for moment in moments:
             clip_path = get_clip_path(moment['id'], f"{video_id}.mp4")
             if clip_path.exists():
-                current_clip_index += 1
+                clip_paths.append((moment, clip_path))
+        
+        total_clips = len(clip_paths)
+        total_bytes_all_clips = sum(p.stat().st_size for _, p in clip_paths)
+        cumulative_bytes_completed = 0
+        
+        logger.info(f"Starting upload of {total_clips} clips with total size {total_bytes_all_clips} bytes")
+        
+        for idx, (moment, clip_path) in enumerate(clip_paths, start=1):
+            clip_file_size = clip_path.stat().st_size
+            
+            # Create cumulative progress callback wrapper
+            clip_progress_callback = None
+            if progress_callback:
+                def make_clip_callback(clip_idx, total, offset, grand_total):
+                    def callback(bytes_uploaded: int, total_bytes: int):
+                        # Pass cumulative bytes: offset + current clip's bytes
+                        progress_callback(clip_idx, total, offset + bytes_uploaded, grand_total)
+                    return callback
+                clip_progress_callback = make_clip_callback(
+                    idx, total_clips, cumulative_bytes_completed, total_bytes_all_clips
+                )
+            
+            try:
+                gcs_path, signed_url = await self.upload_clip(
+                    clip_path, 
+                    video_id, 
+                    moment['id'],
+                    progress_callback=clip_progress_callback
+                )
+                moment['gcs_clip_path'] = gcs_path
+                moment['clip_signed_url'] = signed_url
+                logger.info(f"Uploaded clip for moment {moment['id']} to GCS ({idx}/{total_clips})")
                 
-                # Create per-clip progress callback wrapper
-                clip_progress_callback = None
-                if progress_callback:
-                    def make_clip_callback(clip_idx, total):
-                        def callback(bytes_uploaded: int, total_bytes: int):
-                            progress_callback(clip_idx, total, bytes_uploaded, total_bytes)
-                        return callback
-                    clip_progress_callback = make_clip_callback(current_clip_index, total_clips)
-                
-                try:
-                    gcs_path, signed_url = await self.upload_clip(
-                        clip_path, 
-                        video_id, 
-                        moment['id'],
-                        progress_callback=clip_progress_callback
-                    )
-                    moment['gcs_clip_path'] = gcs_path
-                    moment['clip_signed_url'] = signed_url
-                    logger.info(f"Uploaded clip for moment {moment['id']} to GCS ({current_clip_index}/{total_clips})")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to upload clip for moment {moment['id']}: "
-                        f"{type(e).__name__}: {e}"
-                    )
-                    # Continue with other clips even if one fails
-            else:
+                # Update cumulative bytes after successful upload
+                cumulative_bytes_completed += clip_file_size
+            except Exception as e:
+                logger.error(
+                    f"Failed to upload clip for moment {moment['id']}: "
+                    f"{type(e).__name__}: {e}"
+                )
+                # Continue with other clips even if one fails
+                # Still increment cumulative bytes to keep progress accurate
+                cumulative_bytes_completed += clip_file_size
+        
+        # Handle moments without clip files (preserve original behavior)
+        for moment in moments:
+            clip_path = get_clip_path(moment['id'], f"{video_id}.mp4")
+            if not clip_path.exists():
                 logger.warning(
                     f"Clip file not found for moment {moment['id']}: {clip_path}"
                 )
