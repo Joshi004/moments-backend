@@ -2,17 +2,20 @@
 Video-related API endpoints.
 Handles video listing, retrieval, streaming, and thumbnails.
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from pathlib import Path
 import time
 import cv2
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schemas import VideoResponse
 from app.utils.video import get_video_files, get_videos_directory
 from app.services.thumbnail_service import generate_thumbnail, get_thumbnail_path, get_thumbnail_url
 from app.services.audio_service import check_audio_exists
 from app.services.transcript_service import check_transcript_exists
+from app.database.dependencies import get_db
+from app.repositories import video_db_repository
 from app.core.logging import (
     log_event,
     log_operation_start,
@@ -40,8 +43,8 @@ def get_video_duration(video_path: Path) -> float:
 
 
 @router.get("/videos", response_model=list[VideoResponse])
-async def list_videos():
-    """List all available videos."""
+async def list_videos(db: AsyncSession = Depends(get_db)):
+    """List all available videos from database."""
     start_time = time.time()
     operation = "list_videos"
     
@@ -49,66 +52,45 @@ async def list_videos():
         logger="app.api.endpoints.videos",
         function="list_videos",
         operation=operation,
-        message="Listing all videos",
+        message="Listing all videos from database",
         context={"request_id": get_request_id()}
     )
     
     try:
-        videos_dir = get_videos_directory()
-        
-        log_event(
-            level="DEBUG",
-            logger="app.api.endpoints.videos",
-            function="list_videos",
-            operation=operation,
-            event="validation_start",
-            message="Validating videos directory",
-            context={"videos_dir": str(videos_dir)}
-        )
-        
-        # Verify directory exists
-        if not videos_dir.exists():
-            log_event(
-                level="ERROR",
-                logger="app.api.endpoints.videos",
-                function="list_videos",
-                operation=operation,
-                event="validation_error",
-                message="Videos directory does not exist",
-                context={"videos_dir": str(videos_dir)}
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Videos directory does not exist: {videos_dir}"
-            )
-        
-        video_files = get_video_files()
+        # Query database for all videos
+        videos_from_db = await video_db_repository.list_all(db)
         
         log_event(
             level="INFO",
             logger="app.api.endpoints.videos",
             function="list_videos",
             operation=operation,
-            event="file_operation_start",
-            message="Scanning video files",
-            context={"video_count": len(video_files)}
+            event="database_query_complete",
+            message="Retrieved videos from database",
+            context={"video_count": len(videos_from_db)}
         )
         
         videos = []
-        for video_file in video_files:
-            video_id = video_file.stem
-            thumbnail_url = get_thumbnail_url(video_file.name)
-            has_audio = check_audio_exists(video_file.name)
-            audio_filename = video_file.stem + ".wav"
+        for video in videos_from_db:
+            video_filename = f"{video.identifier}.mp4"
+            thumbnail_url = get_thumbnail_url(video_filename)
+            
+            # Still check filesystem for audio/transcript (until Phase 4)
+            has_audio = check_audio_exists(video_filename)
+            audio_filename = video.identifier + ".wav"
             has_transcript = check_transcript_exists(audio_filename) if has_audio else False
             
             videos.append(VideoResponse(
-                id=video_id,
-                filename=video_file.name,
-                title=video_file.stem.replace("-", " ").replace("_", " ").title(),
+                id=video.identifier,
+                filename=video_filename,
+                title=video.title or video.identifier.replace("-", " ").replace("_", " ").title(),
                 thumbnail_url=thumbnail_url,
                 has_audio=has_audio,
-                has_transcript=has_transcript
+                has_transcript=has_transcript,
+                duration_seconds=video.duration_seconds,
+                cloud_url=video.cloud_url,
+                source_url=video.source_url,
+                created_at=video.created_at.isoformat() if video.created_at else None
             ))
         
         duration = time.time() - start_time
@@ -138,8 +120,8 @@ async def list_videos():
 
 
 @router.get("/videos/{video_id}", response_model=VideoResponse)
-async def get_video(video_id: str):
-    """Get metadata for a specific video."""
+async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
+    """Get metadata for a specific video from database."""
     start_time = time.time()
     operation = "get_video"
     
@@ -152,50 +134,56 @@ async def get_video(video_id: str):
     )
     
     try:
-        video_files = get_video_files()
+        # Query database for video
+        video = await video_db_repository.get_by_identifier(db, video_id)
         
-        # Find video by matching stem
-        for video_file in video_files:
-            if video_file.stem == video_id:
-                thumbnail_url = get_thumbnail_url(video_file.name)
-                has_audio = check_audio_exists(video_file.name)
-                audio_filename = video_file.stem + ".wav"
-                has_transcript = check_transcript_exists(audio_filename) if has_audio else False
-                
-                duration = time.time() - start_time
-                log_operation_complete(
-                    logger="app.api.endpoints.videos",
-                    function="get_video",
-                    operation=operation,
-                    message="Successfully retrieved video metadata",
-                    context={
-                        "video_id": video_id,
-                        "filename": video_file.name,
-                        "has_audio": has_audio,
-                        "has_transcript": has_transcript,
-                        "duration_seconds": duration
-                    }
-                )
-                
-                return VideoResponse(
-                    id=video_id,
-                    filename=video_file.name,
-                    title=video_file.stem.replace("-", " ").replace("_", " ").title(),
-                    thumbnail_url=thumbnail_url,
-                    has_audio=has_audio,
-                    has_transcript=has_transcript
-                )
+        if not video:
+            log_event(
+                level="WARNING",
+                logger="app.api.endpoints.videos",
+                function="get_video",
+                operation=operation,
+                event="validation_error",
+                message="Video not found in database",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
         
-        log_event(
-            level="WARNING",
+        video_filename = f"{video.identifier}.mp4"
+        thumbnail_url = get_thumbnail_url(video_filename)
+        
+        # Still check filesystem for audio/transcript (until Phase 4)
+        has_audio = check_audio_exists(video_filename)
+        audio_filename = video.identifier + ".wav"
+        has_transcript = check_transcript_exists(audio_filename) if has_audio else False
+        
+        duration = time.time() - start_time
+        log_operation_complete(
             logger="app.api.endpoints.videos",
             function="get_video",
             operation=operation,
-            event="validation_error",
-            message="Video not found",
-            context={"video_id": video_id}
+            message="Successfully retrieved video metadata",
+            context={
+                "video_id": video_id,
+                "filename": video_filename,
+                "has_audio": has_audio,
+                "has_transcript": has_transcript,
+                "duration_seconds": duration
+            }
         )
-        raise HTTPException(status_code=404, detail="Video not found")
+        
+        return VideoResponse(
+            id=video.identifier,
+            filename=video_filename,
+            title=video.title or video.identifier.replace("-", " ").replace("_", " ").title(),
+            thumbnail_url=thumbnail_url,
+            has_audio=has_audio,
+            has_transcript=has_transcript,
+            duration_seconds=video.duration_seconds,
+            cloud_url=video.cloud_url,
+            source_url=video.source_url,
+            created_at=video.created_at.isoformat() if video.created_at else None
+        )
         
     except HTTPException:
         raise

@@ -15,6 +15,11 @@ class VideoResponse(BaseModel):
     thumbnail_url: Optional[str] = None
     has_audio: Optional[bool] = None
     has_transcript: Optional[bool] = None
+    # New fields from database
+    duration_seconds: Optional[float] = None
+    cloud_url: Optional[str] = None
+    source_url: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class MomentResponse(BaseModel):

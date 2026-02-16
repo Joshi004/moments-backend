@@ -182,6 +182,7 @@ class GCSUploader:
         self.bucket_name = settings.gcs_bucket_name
         self.audio_prefix = settings.gcs_audio_prefix
         self.clips_prefix = settings.gcs_clips_prefix
+        self.videos_prefix = settings.gcs_videos_prefix
         self.expiry_hours = settings.gcs_signed_url_expiry_hours
         self.timeout = settings.gcs_upload_timeout_seconds
         self.max_retries = settings.gcs_max_retries
@@ -547,6 +548,110 @@ class GCSUploader:
         logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
         
         return (gcs_path, signed_url)
+    
+    async def upload_video(
+        self, 
+        local_path: Path, 
+        identifier: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Tuple[str, str]:
+        """
+        Upload video file to GCS and return signed URL.
+        
+        Args:
+            local_path: Path to the local video file
+            identifier: Video identifier (e.g., "motivation")
+            progress_callback: Optional callback(bytes_uploaded, total_bytes)
+        
+        Returns:
+            Tuple of (gcs_path, signed_url)
+        
+        Raises:
+            FileNotFoundError: If local file doesn't exist
+            Exception: If upload fails after retries
+        """
+        if not local_path.exists():
+            raise FileNotFoundError(f"Video file not found: {local_path}")
+        
+        # Construct GCS path: videos/{identifier}/{filename}
+        filename = local_path.name
+        gcs_path = f"{self.videos_prefix}{identifier}/{filename}"
+        
+        file_size_mb = self._get_file_size_mb(local_path)
+        start_time = time.time()
+        
+        logger.info(
+            f"Starting GCS video upload: {local_path} -> gs://{self.bucket_name}/{gcs_path} "
+            f"({file_size_mb:.2f} MB)"
+        )
+        
+        # Check if file already exists in GCS
+        blob = self.bucket.blob(gcs_path)
+        if blob.exists():
+            blob.reload()  # Get metadata
+            local_md5 = self._get_file_md5(local_path)
+            
+            # Compare MD5 hashes (GCS returns base64, we have hex)
+            if blob.md5_hash:
+                import base64
+                remote_md5_hex = base64.b64decode(blob.md5_hash).hex()
+                
+                if remote_md5_hex == local_md5:
+                    logger.info(
+                        f"Video file already exists in GCS with matching MD5: gs://{self.bucket_name}/{gcs_path}. "
+                        f"Skipping upload and generating new signed URL."
+                    )
+                    signed_url = self.generate_signed_url(gcs_path)
+                    logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
+                    return (gcs_path, signed_url)
+                else:
+                    logger.warning(
+                        f"MD5 mismatch for gs://{self.bucket_name}/{gcs_path}! "
+                        f"Local: {local_md5}, Remote: {remote_md5_hex}. Re-uploading..."
+                    )
+        
+        # Upload file with retry and progress tracking
+        await self._upload_file_with_retry(
+            local_path,
+            gcs_path,
+            operation_name=f"GCS video upload ({identifier})",
+            progress_callback=progress_callback
+        )
+        
+        duration = time.time() - start_time
+        logger.info(
+            f"Successfully uploaded video to GCS: gs://{self.bucket_name}/{gcs_path} "
+            f"({duration:.2f}s)"
+        )
+        
+        # Generate signed URL
+        signed_url = self.generate_signed_url(gcs_path)
+        logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
+        
+        return (gcs_path, signed_url)
+    
+    def get_video_signed_url(self, identifier: str, filename: str) -> Optional[str]:
+        """
+        Get a signed URL for an existing video in GCS.
+        
+        Args:
+            identifier: Video identifier (e.g., "motivation")
+            filename: Video filename (e.g., "motivation.mp4")
+        
+        Returns:
+            Signed URL or None if blob doesn't exist
+        """
+        # Construct GCS path: videos/{identifier}/{filename}
+        gcs_path = f"{self.videos_prefix}{identifier}/{filename}"
+        
+        blob = self.bucket.blob(gcs_path)
+        if not blob.exists():
+            logger.warning(f"Video blob does not exist: gs://{self.bucket_name}/{gcs_path}")
+            return None
+        
+        signed_url = self.generate_signed_url(gcs_path)
+        logger.info(f"Generated signed URL for video: {gcs_path}")
+        return signed_url
     
     async def delete_clips_for_video(self, video_id: str) -> int:
         """

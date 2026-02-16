@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 
 
@@ -30,7 +31,18 @@ def get_videos_directory() -> Path:
 
 
 def get_video_files():
-    """Get list of video files from the videos directory."""
+    """
+    Get list of video files from the videos directory.
+    
+    .. deprecated::
+        Use video_db_repository.list_all() for database-backed video listing.
+        This function will be removed after all phases are complete.
+    """
+    warnings.warn(
+        "get_video_files() is deprecated. Use video_db_repository.list_all() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     videos_dir = get_videos_directory()
     
     # Verify we have the correct directory
@@ -87,7 +99,16 @@ def get_video_by_id(video_id: str):
     
     Returns:
         Path object if video exists, None otherwise
+    
+    .. deprecated::
+        Use video_db_repository.get_by_identifier() for database-backed video lookup.
+        This function will be removed after all phases are complete.
     """
+    warnings.warn(
+        "get_video_by_id() is deprecated. Use video_db_repository.get_by_identifier() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Assume .mp4 extension
     filename = f"{video_id}.mp4"
     return get_video_by_filename(filename)

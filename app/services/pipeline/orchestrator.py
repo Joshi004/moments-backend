@@ -59,9 +59,13 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     Raises:
         Exception: If download fails
     """
+    import json
+    import subprocess
     from app.services.gcs_downloader import GCSDownloader
     from app.services.url_registry import URLRegistry
     from app.utils.video import get_videos_directory
+    from app.database.session import get_session_factory
+    from app.repositories import video_db_repository
     
     video_url = config.get("video_url")
     if not video_url:
@@ -71,69 +75,173 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     videos_dir = get_videos_directory()
     dest_path = videos_dir / f"{video_id}.mp4"
     
-    # Check if already exists (double-check)
+    # Get database session
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        # Check database first - if video already registered with this URL, skip
+        existing_video = await video_db_repository.get_by_source_url(session, video_url)
+        if existing_video:
+            logger.info(f"Video already in database (identifier={existing_video.identifier}), skipping download")
+            return
+        
+        # Also check by identifier
+        existing_by_id = await video_db_repository.get_by_identifier(session, video_id)
+        if existing_by_id:
+            logger.info(f"Video already in database with identifier {video_id}, skipping download")
+            return
+    
+    # Check if already exists locally (double-check)
     if dest_path.exists():
-        logger.info(f"Video already exists at {dest_path}, skipping download")
-        return
-    
-    logger.info(f"Starting video download: {video_url} -> {dest_path}")
-    
-    # Progress callback to update Redis - uses sync client
-    def progress_callback(bytes_downloaded: int, total_bytes: int):
-        """Update download progress in Redis."""
+        logger.info(f"Video already exists at {dest_path}, will upload to GCS and register in DB")
+    else:
+        logger.info(f"Starting video download: {video_url} -> {dest_path}")
+        
+        # Progress callback to update Redis - uses sync client
+        def progress_callback(bytes_downloaded: int, total_bytes: int):
+            """Update download progress in Redis."""
+            try:
+                from app.core.redis import get_redis_client
+                redis_client = get_redis_client()
+                percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
+                status_key = f"pipeline:{video_id}:active"
+                redis_client.hset(status_key, mapping={
+                    "download_bytes": str(bytes_downloaded),
+                    "download_total": str(total_bytes),
+                    "download_percentage": str(percentage),
+                })
+            except Exception as e:
+                logger.error(f"Failed to update download progress: {e}")
+        
+        # Download video
+        downloader = GCSDownloader()
+        
         try:
-            from app.core.redis import get_redis_client
-            redis_client = get_redis_client()
-            percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
-            status_key = f"pipeline:{video_id}:active"
-            redis_client.hset(status_key, mapping={
-                "download_bytes": str(bytes_downloaded),
-                "download_total": str(total_bytes),
-                "download_percentage": str(percentage),
-            })
+            success = await downloader.download(
+                url=video_url,
+                dest_path=dest_path,
+                video_id=video_id,
+                progress_callback=progress_callback
+            )
+            
+            if not success:
+                raise Exception("Download failed")
+            
+            # Verify file was created
+            if not dest_path.exists():
+                raise Exception("Download completed but file not found")
+            
+            file_size = dest_path.stat().st_size
+            logger.info(f"Download completed: {dest_path} ({file_size / (1024**2):.2f} MB)")
+            
         except Exception as e:
-            logger.error(f"Failed to update download progress: {e}")
+            # Cleanup on failure
+            if dest_path.exists():
+                logger.warning(f"Cleaning up partial download: {dest_path}")
+                try:
+                    dest_path.unlink()
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup partial download: {cleanup_error}")
+            
+            raise Exception(f"Video download failed: {e}")
     
-    # Download video
-    downloader = GCSDownloader()
-    
+    # Extract metadata via ffprobe
+    logger.info(f"Extracting video metadata via ffprobe...")
+    metadata = {}
     try:
-        success = await downloader.download(
-            url=video_url,
-            dest_path=dest_path,
-            video_id=video_id,
-            progress_callback=progress_callback
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                "-show_streams",
+                str(dest_path)
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60
         )
         
-        if not success:
-            raise Exception("Download failed")
-        
-        # Verify file was created
-        if not dest_path.exists():
-            raise Exception("Download completed but file not found")
-        
-        file_size = dest_path.stat().st_size
-        logger.info(f"Download completed: {dest_path} ({file_size / (1024**2):.2f} MB)")
-        
-        # Register in URL registry
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            
+            # Extract duration and file size
+            if "format" in data:
+                format_data = data["format"]
+                if "duration" in format_data:
+                    metadata["duration_seconds"] = float(format_data["duration"])
+                if "size" in format_data:
+                    metadata["file_size_kb"] = int(format_data["size"]) // 1024
+            
+            # Extract codec info
+            if "streams" in data:
+                for stream in data["streams"]:
+                    if stream.get("codec_type") == "video":
+                        metadata["video_codec"] = stream.get("codec_name")
+                        width = stream.get("width")
+                        height = stream.get("height")
+                        if width and height:
+                            metadata["resolution"] = f"{width}x{height}"
+                        r_frame_rate = stream.get("r_frame_rate")
+                        if r_frame_rate:
+                            try:
+                                num, den = r_frame_rate.split("/")
+                                metadata["frame_rate"] = float(num) / float(den)
+                            except (ValueError, ZeroDivisionError):
+                                pass
+                    elif stream.get("codec_type") == "audio":
+                        metadata["audio_codec"] = stream.get("codec_name")
+            
+            logger.info(f"Metadata extracted: duration={metadata.get('duration_seconds', 'N/A')}s, "
+                       f"codec={metadata.get('video_codec', 'N/A')}, "
+                       f"resolution={metadata.get('resolution', 'N/A')}")
+    except Exception as e:
+        logger.warning(f"Failed to extract metadata: {e}")
+    
+    # Upload to GCS
+    logger.info(f"Uploading video to GCS...")
+    uploader = GCSUploader()
+    try:
+        gcs_path, signed_url = await uploader.upload_video(dest_path, video_id)
+        cloud_url = f"gs://{uploader.bucket_name}/{gcs_path}"
+        logger.info(f"Video uploaded to GCS: {cloud_url}")
+    except Exception as e:
+        logger.error(f"Failed to upload to GCS: {e}")
+        raise Exception(f"GCS upload failed: {e}")
+    
+    # Insert into database
+    logger.info(f"Registering video in database...")
+    async with session_factory() as session:
+        try:
+            title = video_id.replace("-", " ").replace("_", " ").title()
+            video = await video_db_repository.create(
+                session,
+                identifier=video_id,
+                cloud_url=cloud_url,
+                source_url=video_url,
+                title=title,
+                **metadata
+            )
+            await session.commit()
+            logger.info(f"Video registered in database (id={video.id})")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to insert into database: {e}")
+            raise Exception(f"Database insert failed: {e}")
+    
+    # Register in URL registry (backward compatibility)
+    try:
         registry = URLRegistry()
+        file_size = dest_path.stat().st_size
         registry.register(
             url=video_url,
             video_id=video_id,
             file_size=file_size,
             force_downloaded=config.get("force_download", False)
         )
-        
+        logger.info(f"Video registered in URL registry")
     except Exception as e:
-        # Cleanup on failure
-        if dest_path.exists():
-            logger.warning(f"Cleaning up partial download: {dest_path}")
-            try:
-                dest_path.unlink()
-            except Exception as cleanup_error:
-                logger.error(f"Failed to cleanup partial download: {cleanup_error}")
-        
-        raise Exception(f"Video download failed: {e}")
+        logger.warning(f"Failed to register in URL registry: {e}")
 
 
 # Stage sequences for each model
@@ -173,11 +281,23 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
     video_filename = f"{video_id}.mp4"
     
     if stage == PipelineStage.VIDEO_DOWNLOAD:
+        # Check if video already exists in database
+        from app.database.session import get_session_factory
+        from app.repositories import video_db_repository
+        
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            existing = await video_db_repository.get_by_identifier(session, video_id)
+            if existing:
+                return True, "Video already exists in database"
+        
         # Check if video already exists locally
         from app.utils.video import get_video_by_id
         video = get_video_by_id(video_id)
         if video and video.exists():
-            return True, "Video already exists locally"
+            # File exists locally but not in DB - will upload to GCS and register
+            return False, ""
+        
         # If no video exists, check if download URL is provided
         if not config.get("video_url"):
             raise ValueError("Video not found and no download URL provided")
