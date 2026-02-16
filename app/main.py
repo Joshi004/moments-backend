@@ -68,15 +68,29 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Health check endpoint using async Redis."""
+    """Health check endpoint using async Redis and PostgreSQL."""
     redis_status = "connected" if await async_health_check() else "disconnected"
-    return {"status": "healthy", "redis": redis_status}
+    
+    # Database health check
+    db_status = "disconnected"
+    try:
+        from app.database.session import get_async_session
+        from sqlalchemy import text
+        async for session in get_async_session():
+            await session.execute(text("SELECT 1"))
+            db_status = "connected"
+            break
+    except Exception:
+        db_status = "disconnected"
+    
+    overall_status = "healthy" if redis_status == "connected" and db_status == "connected" else "degraded"
+    return {"status": overall_status, "redis": redis_status, "database": db_status}
 
 
-# Startup event to initialize Redis
+# Startup event to initialize Redis and Database
 @app.on_event("startup")
 async def startup_event():
-    """Initialize async Redis connection and pipeline worker on startup."""
+    """Initialize async Redis connection, database, and pipeline worker on startup."""
     import logging
     logger = logging.getLogger(__name__)
     
@@ -86,6 +100,14 @@ async def startup_event():
     except Exception as e:
         # Log error but don't prevent startup
         logger.error(f"Failed to initialize async Redis: {e}")
+    
+    # Initialize database connection pool
+    try:
+        from app.database.session import init_db
+        await init_db()
+        logger.info("Database connection pool initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
     
     # Auto-seed model configs if Redis is empty
     try:
@@ -124,5 +146,17 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup resources on shutdown."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     cleanup_resources()
+    
+    # Close database connection pool
+    try:
+        from app.database.session import close_db
+        await close_db()
+        logger.info("Database connection pool closed")
+    except Exception as e:
+        logger.error(f"Failed to close database: {e}")
+    
     await close_async_redis_client()

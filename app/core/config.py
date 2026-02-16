@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: Optional[str] = None
     
+    # Database Configuration (PostgreSQL)
+    database_url: str = "postgresql+asyncpg://nareshjoshi@localhost:5432/vision_ai"
+    database_sync_url: str = "postgresql+psycopg2://nareshjoshi@localhost:5432/vision_ai"
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout: int = 30
+    database_echo: bool = False
+    
     # Job Lock Configuration
     job_lock_ttl: int = 900      # 15 minutes
     job_result_ttl: int = 30     # 30 seconds post-completion
