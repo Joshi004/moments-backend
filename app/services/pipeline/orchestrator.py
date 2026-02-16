@@ -505,7 +505,7 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
     
     try:
         # Call async moment generation function with timeout
-        validated_moments = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             process_moments_generation(
                 video_id=video_id,
                 video_filename=video_filename,
@@ -519,6 +519,21 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
             ),
             timeout=900  # 15 minutes
         )
+        
+        # Handle new return type (dict with "moments" and "generation_config_id")
+        # Also support backward compatibility if function returns a list
+        if isinstance(result, dict):
+            validated_moments = result.get("moments", [])
+            generation_config_id = result.get("generation_config_id")
+        else:
+            # Backward compatibility: result is a list
+            validated_moments = result
+            generation_config_id = None
+        
+        # Log generation_config_id for Phase 6 and Phase 9
+        if generation_config_id:
+            logger.info(f"Generation config ID: {generation_config_id}")
+            # TODO Phase 9: Store in pipeline context/history
         
         # Save moments (replaces existing) - handle empty list gracefully
         if validated_moments:

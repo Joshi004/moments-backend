@@ -128,6 +128,66 @@ class BasePromptTask(ABC):
         
         return complete_prompt
     
+    def build_system_template(self, model_key: str, context: Dict) -> str:
+        """
+        Build the template-only portion of the prompt (excludes DATA and USER_PROMPT).
+        
+        This method is used to generate the system_prompt portion that gets stored in
+        the prompts database table. It includes all structural/instructional sections
+        but excludes the variable video-specific data (DATA section) and the user's
+        custom prompt (USER_PROMPT section).
+        
+        Args:
+            model_key: Model identifier (e.g., 'qwen3_vl_fp8', 'minimax')
+            context: Dictionary containing all data needed to render sections
+        
+        Returns:
+            Template string with all sections except DATA and USER_PROMPT
+        """
+        # Get model configuration for this task's output type
+        model_config = get_model_config(model_key, self.get_output_type())
+        
+        # Get the ordered sections for this task
+        sections = self.get_sections()
+        
+        # Build list of rendered sections (excluding DATA and USER_PROMPT)
+        parts = []
+        
+        # Handle JSON header placement based on model priority
+        header_at_top = model_config.header_priority == "top"
+        
+        for section in sections:
+            # Skip video-specific and user-specific sections
+            if section in (PromptSection.DATA, PromptSection.USER_PROMPT):
+                continue
+            
+            if section == PromptSection.JSON_HEADER:
+                if header_at_top:
+                    # Add header at the very beginning
+                    parts.append(model_config.json_header)
+                # If not at top, we'll handle it in its natural position
+                continue
+            elif section == PromptSection.JSON_FOOTER:
+                # Footer is always added if present
+                if model_config.json_footer:
+                    parts.append(model_config.json_footer)
+                continue
+            
+            # Render the section using task-specific logic
+            rendered = self.render_section(section, context)
+            if rendered is not None:  # Allow empty string but skip None
+                parts.append(rendered)
+        
+        # Assemble all parts with double newlines for readability
+        system_template = "\n\n".join(parts)
+        
+        logger.debug(
+            f"Built system template for {self.__class__.__name__} using model {model_key}, "
+            f"length: {len(system_template)} chars, sections: {len(parts)}"
+        )
+        
+        return system_template
+    
     def _validate_context(self, context: Dict, required_keys: List[str]) -> None:
         """
         Validate that context contains all required keys.

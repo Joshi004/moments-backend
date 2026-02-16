@@ -616,15 +616,16 @@ async def process_moments_generation(
     max_moments: int,
     model: str = "minimax",
     temperature: float = 0.7
-) -> List[Dict]:
+) -> Dict:
     """
     Process moment generation as an async coroutine.
     
     This is the recommended async version that integrates with the pipeline orchestrator.
     Unlike the deprecated thread-based version, this function:
-    - Returns moments list directly (no Redis polling needed)
+    - Returns moments list and config ID (no Redis polling needed)
     - Raises exceptions on errors (native exception handling)
     - Can be used with asyncio.wait_for() for timeout handling
+    - Creates database records for prompts and generation configs (Phase 5)
     
     Args:
         video_id: ID of the video (filename stem)
@@ -638,7 +639,9 @@ async def process_moments_generation(
         temperature: Temperature parameter for the model, default: 0.7
     
     Returns:
-        List of validated moment dictionaries
+        Dictionary with:
+            - "moments": List of validated moment dictionaries
+            - "generation_config_id": Database ID of the generation config (or None if DB failed)
     
     Raises:
         Exception: If generation fails with an error that should stop processing
@@ -757,6 +760,68 @@ async def process_moments_generation(
         
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
+        # --- Phase 5: Create database records for prompt and generation config ---
+        generation_config_id = None
+        try:
+            from app.database.session import get_session_factory
+            from app.repositories import prompt_db_repository, generation_config_db_repository
+            from app.repositories import video_db_repository, transcript_db_repository
+            
+            # Build system template (excludes DATA and USER_PROMPT sections)
+            system_template = task.build_system_template(
+                model_key=model,
+                context={
+                    "user_prompt": user_prompt,
+                    "segments": segments,
+                    "video_duration": video_duration,
+                    "min_moment_length": min_moment_length,
+                    "max_moment_length": max_moment_length,
+                    "min_moments": min_moments,
+                    "max_moments": max_moments,
+                }
+            )
+            
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                # Create or get prompt record
+                prompt_record = await prompt_db_repository.create_or_get(
+                    session, user_prompt, system_template
+                )
+                
+                # Look up transcript_id
+                transcript_id = None
+                video_record = await video_db_repository.get_by_identifier(session, video_id)
+                if video_record:
+                    transcript_record = await transcript_db_repository.get_by_video_id(session, video_record.id)
+                    if transcript_record:
+                        transcript_id = transcript_record.id
+                
+                # Extract top_p and top_k from model config
+                top_p = model_config.get('top_p')
+                top_k = model_config.get('top_k')
+                
+                # Create or get generation config record
+                config_record = await generation_config_db_repository.create_or_get(
+                    session,
+                    prompt_id=prompt_record.id,
+                    model=model,
+                    operation_type="generation",
+                    transcript_id=transcript_id,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    min_moment_length=min_moment_length,
+                    max_moment_length=max_moment_length,
+                    min_moments=min_moments,
+                    max_moments=max_moments,
+                )
+                await session.commit()
+                generation_config_id = config_record.id
+                logger.info(f"Created/retrieved generation config (id={generation_config_id})")
+        except Exception as db_err:
+            logger.warning(f"Failed to create DB records for generation config: {db_err}")
+            # Non-fatal: pipeline continues even if DB record creation fails
+        
         # Get model configuration
         model_config = await get_model_config(model)
         model_id = model_config.get('model_id')
@@ -847,10 +912,12 @@ async def process_moments_generation(
                 "operation_type": "generation"
             }
             
-            # Add model_name and generation_config to each moment
+            # Add model_name, generation_config, and generation_config_id to each moment
             for moment in moments:
                 moment['model_name'] = model_name
                 moment['generation_config'] = generation_config
+                if generation_config_id is not None:
+                    moment['generation_config_id'] = generation_config_id
             
             # Validate moments against constraints
             validated_moments = []
@@ -912,7 +979,10 @@ async def process_moments_generation(
                 }
             )
             
-            return validated_moments
+            return {
+                "moments": validated_moments,
+                "generation_config_id": generation_config_id
+            }
     
     except Exception as e:
         duration = time.time() - start_time

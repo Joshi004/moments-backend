@@ -227,6 +227,71 @@ async def process_moment_refinement(
         
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
+        # --- Phase 5: Create database records for prompt and generation config ---
+        generation_config_id = None
+        try:
+            from app.database.session import get_session_factory
+            from app.repositories import prompt_db_repository, generation_config_db_repository
+            from app.repositories import video_db_repository, transcript_db_repository
+            
+            # Build system template (excludes DATA and USER_PROMPT sections)
+            system_template = task.build_system_template(
+                model_key=model,
+                context={
+                    "user_prompt": user_prompt,
+                    "words": normalized_words,
+                    "clip_start": normalized_clip_start,
+                    "clip_end": normalized_clip_end,
+                    "original_start": normalized_original_start,
+                    "original_end": normalized_original_end,
+                    "original_title": moment['title'],
+                    "include_video": include_video,
+                    "video_clip_url": video_clip_url,
+                }
+            )
+            
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                # Create or get prompt record
+                prompt_record = await prompt_db_repository.create_or_get(
+                    session, user_prompt, system_template
+                )
+                
+                # Look up transcript_id
+                transcript_id = None
+                video_record = await video_db_repository.get_by_identifier(session, video_id)
+                if video_record:
+                    transcript_record = await transcript_db_repository.get_by_video_id(session, video_record.id)
+                    if transcript_record:
+                        transcript_id = transcript_record.id
+                
+                # Extract top_p and top_k from model config
+                top_p = model_config.get('top_p')
+                top_k = model_config.get('top_k')
+                
+                # Create or get generation config record
+                # For refinement, moment length/count params are None
+                config_record = await generation_config_db_repository.create_or_get(
+                    session,
+                    prompt_id=prompt_record.id,
+                    model=model,
+                    operation_type="refinement",
+                    transcript_id=transcript_id,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    min_moment_length=None,
+                    max_moment_length=None,
+                    min_moments=None,
+                    max_moments=None,
+                )
+                await session.commit()
+                generation_config_id = config_record.id
+                logger.info(f"Created/retrieved refinement config (id={generation_config_id})")
+        except Exception as db_err:
+            logger.warning(f"Failed to create DB records for refinement config: {db_err}")
+            # Non-fatal: refinement continues even if DB record creation fails
+        
         # Get model configuration
         model_config = await get_model_config(model)
         model_id = model_config.get('model_id')
@@ -399,6 +464,10 @@ async def process_moment_refinement(
                 'model_name': model_name,
                 'generation_config': generation_config
             }
+            
+            # Add generation_config_id if available
+            if generation_config_id is not None:
+                refined_moment['generation_config_id'] = generation_config_id
             
             # Add refined moment
             success, error_message, created_moment = add_moment(

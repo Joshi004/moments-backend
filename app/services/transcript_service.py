@@ -555,7 +555,7 @@ async def call_transcription_service_async(audio_url: str) -> Optional[dict]:
     start_time = time.time()
     
     # Get service URL from config
-    service_url = get_transcription_service_url()
+    service_url = await get_transcription_service_url()
     
     log_operation_start(
         logger="app.services.transcript_service",
