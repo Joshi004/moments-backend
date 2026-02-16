@@ -59,13 +59,14 @@ def get_audio_url(video_filename: str) -> Optional[str]:
     return None
 
 
-def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
+def extract_audio_from_video(video_path: Path, output_path: Path, cloud_url: Optional[str] = None) -> bool:
     """
     Extract audio from a video file and save it as WAV.
     
     Args:
         video_path: Path to the video file
         output_path: Path where audio file should be saved
+        cloud_url: Optional GCS URL for downloading video if local file doesn't exist
     
     Returns:
         True if successful, False otherwise
@@ -81,11 +82,43 @@ def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
         context={
             "video_path": str(video_path),
             "output_path": str(output_path),
+            "cloud_url": cloud_url,
             "request_id": get_request_id()
         }
     )
     
     try:
+        # If video doesn't exist locally and cloud_url is provided, download it
+        if not video_path.exists() and cloud_url:
+            log_event(
+                level="INFO",
+                logger="app.services.audio_service",
+                function="extract_audio_from_video",
+                operation=operation,
+                event="download_start",
+                message="Local video not found, downloading from cloud",
+                context={
+                    "original_path": str(video_path),
+                    "cloud_url": cloud_url
+                }
+            )
+            
+            from app.utils.video import ensure_local_video
+            identifier = video_path.stem
+            video_path = ensure_local_video(identifier, cloud_url)
+            
+            log_event(
+                level="INFO",
+                logger="app.services.audio_service",
+                function="extract_audio_from_video",
+                operation=operation,
+                event="download_complete",
+                message="Downloaded video from cloud",
+                context={
+                    "downloaded_path": str(video_path)
+                }
+            )
+        
         # Ensure output directory exists
         log_event(
             level="DEBUG",

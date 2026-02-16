@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     moments_dir: Path = Path("static/moments")
     thumbnails_dir: Path = Path("static/thumbnails")
     moment_clips_dir: Path = Path("static/moment_clips")
+    temp_processing_dir: Path = Path("temp/processing")
     
     # SSH Tunnel Configuration
     ssh_user: str = "naresh"
@@ -134,7 +135,7 @@ class Settings(BaseSettings):
     gcs_audio_prefix: str = "audio/"
     gcs_clips_prefix: str = "clips/"
     gcs_videos_prefix: str = "videos/"
-    gcs_signed_url_expiry_hours: float = 1.0
+    gcs_signed_url_expiry_hours: float = 4.0
     gcs_upload_timeout_seconds: int = 1800  # 30 minutes
     gcs_max_retries: int = 3
     gcs_retry_base_delay: float = 1.0  # Exponential: 1s, 2s, 4s

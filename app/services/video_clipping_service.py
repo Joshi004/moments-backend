@@ -449,7 +449,8 @@ def extract_clips_for_video(
     video_filename: str,
     moments: List[Dict],
     override_existing: bool = True,
-    progress_callback: Optional[callable] = None
+    progress_callback: Optional[callable] = None,
+    cloud_url: Optional[str] = None
 ) -> Dict:
     """
     Extract video clips for all original moments in a video.
@@ -461,6 +462,7 @@ def extract_clips_for_video(
         moments: List of moment objects
         override_existing: Whether to override existing clips
         progress_callback: Optional callback function(total, processed, failed) for progress updates
+        cloud_url: Optional GCS URL for downloading video if local file doesn't exist
     
     Returns:
         Dictionary with extraction results
@@ -473,11 +475,43 @@ def extract_clips_for_video(
             "video_id": video_id,
             "video_filename": video_filename,
             "num_moments": len(moments),
-            "override_existing": override_existing
+            "override_existing": override_existing,
+            "cloud_url": cloud_url
         }
     )
     
     try:
+        # If video doesn't exist locally and cloud_url is provided, download it
+        if not video_path.exists() and cloud_url:
+            log_event(
+                level="INFO",
+                logger="app.services.video_clipping_service",
+                function="extract_clips_for_video",
+                operation=operation,
+                event="download_start",
+                message="Local video not found, downloading from cloud",
+                context={
+                    "original_path": str(video_path),
+                    "cloud_url": cloud_url
+                }
+            )
+            
+            from app.utils.video import ensure_local_video
+            video_path = ensure_local_video(video_id, cloud_url)
+            
+            log_event(
+                level="INFO",
+                logger="app.services.video_clipping_service",
+                function="extract_clips_for_video",
+                operation=operation,
+                event="download_complete",
+                message="Downloaded video from cloud",
+                context={
+                    "downloaded_path": str(video_path)
+                }
+            )
+        
+
         # Get clipping configuration from backend
         from app.utils.model_config import get_clipping_config
         clipping_config = get_clipping_config()
@@ -730,7 +764,8 @@ async def extract_clips_parallel(
     video_filename: str,
     moments: List[Dict],
     override_existing: bool = False,
-    progress_callback: Optional[callable] = None
+    progress_callback: Optional[callable] = None,
+    cloud_url: Optional[str] = None
 ) -> bool:
     """
     Extract clips in parallel (async wrapper for pipeline).
@@ -741,6 +776,7 @@ async def extract_clips_parallel(
         moments: List of moment objects
         override_existing: Whether to override existing clips
         progress_callback: Optional callback function(total, processed, failed) for progress updates
+        cloud_url: Optional GCS URL for downloading video if local file doesn't exist
     
     Returns:
         True if successful, False otherwise
@@ -759,7 +795,8 @@ async def extract_clips_parallel(
             video_filename=video_filename,
             moments=moments,
             override_existing=override_existing,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            cloud_url=cloud_url
         )
         
         # Return success based on whether we had more successes than failures

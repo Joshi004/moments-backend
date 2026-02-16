@@ -3,7 +3,7 @@ Video-related API endpoints.
 Handles video listing, retrieval, streaming, and thumbnails.
 """
 from fastapi import APIRouter, HTTPException, Request, Depends
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from pathlib import Path
 import time
 import cv2
@@ -201,8 +201,14 @@ async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/videos/{video_id}/stream")
-async def stream_video(video_id: str, request: Request):
-    """Stream video file with range request support."""
+async def stream_video(video_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Redirect to GCS signed URL for video streaming.
+    
+    This endpoint returns a 302 redirect to a signed GCS URL, allowing the browser
+    to stream the video directly from Google Cloud Storage without proxying through
+    the backend. GCS handles Range requests and byte-range streaming natively.
+    """
     start_time = time.time()
     operation = "stream_video"
     
@@ -210,109 +216,55 @@ async def stream_video(video_id: str, request: Request):
         logger="app.api.endpoints.videos",
         function="stream_video",
         operation=operation,
-        message=f"Streaming video {video_id}",
+        message=f"Generating signed URL for video {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
     
     try:
-        video_files = get_video_files()
-        
-        # Find video by matching stem
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        # Look up video in database
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.videos",
                 function="stream_video",
                 operation=operation,
                 event="validation_error",
-                message="Video file not found",
+                message="Video not found in database",
                 context={"video_id": video_id}
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
-        file_path = video_file
-        file_size = file_path.stat().st_size
-        range_header = request.headers.get("range")
+        # Generate signed URL for GCS video
+        from app.services.pipeline.upload_service import GCSUploader
+        uploader = GCSUploader()
+        signed_url = uploader.get_video_signed_url(video.identifier, f"{video.identifier}.mp4")
         
-        if range_header:
-            # Parse range header
-            range_match = range_header.replace("bytes=", "").split("-")
-            start = int(range_match[0]) if range_match[0] else 0
-            end = int(range_match[1]) if range_match[1] and range_match[1] else file_size - 1
-            
-            if start >= file_size or end >= file_size:
-                raise HTTPException(status_code=416, detail="Range not satisfiable")
-            
-            chunk_size = end - start + 1
-            
-            async def generate():
-                with open(file_path, "rb") as f:
-                    f.seek(start)
-                    remaining = chunk_size
-                    while remaining:
-                        chunk = f.read(min(8192, remaining))
-                        if not chunk:
-                            break
-                        remaining -= len(chunk)
-                        yield chunk
-            
-            headers = {
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(chunk_size),
-                "Content-Type": "video/mp4",
+        if not signed_url:
+            log_event(
+                level="ERROR",
+                logger="app.api.endpoints.videos",
+                function="stream_video",
+                operation=operation,
+                event="gcs_error",
+                message="Video not available in cloud storage",
+                context={"video_id": video_id, "cloud_url": video.cloud_url}
+            )
+            raise HTTPException(status_code=404, detail="Video not available in cloud storage")
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.videos",
+            function="stream_video",
+            operation=operation,
+            message="Redirecting to GCS signed URL",
+            context={
+                "video_id": video_id,
+                "duration_seconds": duration
             }
-            
-            duration = time.time() - start_time
-            log_operation_complete(
-                logger="app.api.endpoints.videos",
-                function="stream_video",
-                operation=operation,
-                message="Streaming video range",
-                context={
-                    "video_id": video_id,
-                    "range_start": start,
-                    "range_end": end,
-                    "chunk_size": chunk_size,
-                    "duration_seconds": duration
-                }
-            )
-            
-            return StreamingResponse(
-                generate(),
-                status_code=206,
-                headers=headers,
-                media_type="video/mp4"
-            )
-        else:
-            # Return full file
-            duration = time.time() - start_time
-            log_operation_complete(
-                logger="app.api.endpoints.videos",
-                function="stream_video",
-                operation=operation,
-                message="Streaming full video file",
-                context={
-                    "video_id": video_id,
-                    "file_size": file_size,
-                    "duration_seconds": duration
-                }
-            )
-            
-            return FileResponse(
-                file_path,
-                media_type="video/mp4",
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Length": str(file_size),
-                }
-            )
+        )
+        
+        return RedirectResponse(url=signed_url, status_code=302)
             
     except HTTPException:
         raise
@@ -323,7 +275,104 @@ async def stream_video(video_id: str, request: Request):
             function="stream_video",
             operation=operation,
             error=e,
-            message="Error streaming video",
+            message="Error generating signed URL",
+            context={"video_id": video_id, "duration_seconds": duration}
+        )
+        raise
+
+
+@router.get("/videos/{video_id}/url")
+async def get_video_url(video_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get signed URL for video streaming with expiry information.
+    
+    Returns JSON with the signed GCS URL and expiration time in seconds.
+    This endpoint is used by the frontend for URL lifecycle management,
+    allowing proactive refresh before expiry and error recovery.
+    
+    Returns:
+        {
+            "url": "https://storage.googleapis.com/...",
+            "expires_in_seconds": 14400
+        }
+    """
+    start_time = time.time()
+    operation = "get_video_url"
+    
+    log_operation_start(
+        logger="app.api.endpoints.videos",
+        function="get_video_url",
+        operation=operation,
+        message=f"Getting signed URL for video {video_id}",
+        context={"video_id": video_id, "request_id": get_request_id()}
+    )
+    
+    try:
+        # Look up video in database
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
+            log_event(
+                level="WARNING",
+                logger="app.api.endpoints.videos",
+                function="get_video_url",
+                operation=operation,
+                event="validation_error",
+                message="Video not found in database",
+                context={"video_id": video_id}
+            )
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Generate signed URL for GCS video
+        from app.services.pipeline.upload_service import GCSUploader
+        from app.core.config import get_settings
+        
+        uploader = GCSUploader()
+        signed_url = uploader.get_video_signed_url(video.identifier, f"{video.identifier}.mp4")
+        
+        if not signed_url:
+            log_event(
+                level="ERROR",
+                logger="app.api.endpoints.videos",
+                function="get_video_url",
+                operation=operation,
+                event="gcs_error",
+                message="Video not available in cloud storage",
+                context={"video_id": video_id, "cloud_url": video.cloud_url}
+            )
+            raise HTTPException(status_code=404, detail="Video not available in cloud storage")
+        
+        # Get expiry time from settings
+        settings = get_settings()
+        expires_in_seconds = int(settings.gcs_signed_url_expiry_hours * 3600)
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.api.endpoints.videos",
+            function="get_video_url",
+            operation=operation,
+            message="Generated signed URL",
+            context={
+                "video_id": video_id,
+                "expires_in_seconds": expires_in_seconds,
+                "duration_seconds": duration
+            }
+        )
+        
+        return {
+            "url": signed_url,
+            "expires_in_seconds": expires_in_seconds
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration = time.time() - start_time
+        log_operation_error(
+            logger="app.api.endpoints.videos",
+            function="get_video_url",
+            operation=operation,
+            error=e,
+            message="Error generating signed URL",
             context={"video_id": video_id, "duration_seconds": duration}
         )
         raise

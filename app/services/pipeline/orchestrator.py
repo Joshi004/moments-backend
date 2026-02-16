@@ -377,8 +377,24 @@ async def execute_audio_extraction(video_id: str) -> None:
     video_filename = f"{video_id}.mp4"
     video_path = get_video_by_filename(video_filename)
     
+    cloud_url = None
     if not video_path:
-        raise FileNotFoundError(f"Video file not found: {video_filename}")
+        # Fallback: look up cloud_url from database
+        logger.info(f"Local video not found for {video_id}, querying database for cloud_url")
+        from app.database.session import get_session_factory
+        from app.repositories import video_db_repository
+        
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            video = await video_db_repository.get_by_identifier(session, video_id)
+            if video and video.cloud_url:
+                cloud_url = video.cloud_url
+                logger.info(f"Found cloud_url in database: {cloud_url}")
+                # Create a dummy path object for the identifier
+                from pathlib import Path
+                video_path = Path(f"{video_id}.mp4")
+            else:
+                raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
     
     audio_path = get_audio_path(video_filename)
     
@@ -393,7 +409,8 @@ async def execute_audio_extraction(video_id: str) -> None:
             None,  # Use default ThreadPoolExecutor
             extract_audio_from_video,
             video_path,
-            audio_path
+            audio_path,
+            cloud_url
         )
     
     if not success:
@@ -525,8 +542,24 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
     video_filename = f"{video_id}.mp4"
     video_path = get_video_by_filename(video_filename)
     
+    cloud_url = None
     if not video_path:
-        raise FileNotFoundError(f"Video file not found: {video_filename}")
+        # Fallback: look up cloud_url from database
+        logger.info(f"Local video not found for {video_id}, querying database for cloud_url")
+        from app.database.session import get_session_factory
+        from app.repositories import video_db_repository
+        
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            video = await video_db_repository.get_by_identifier(session, video_id)
+            if video and video.cloud_url:
+                cloud_url = video.cloud_url
+                logger.info(f"Found cloud_url in database: {cloud_url}")
+                # Create a dummy path object for the identifier
+                from pathlib import Path
+                video_path = Path(f"{video_id}.mp4")
+            else:
+                raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
     
     moments = load_moments(video_filename)
     if not moments:
@@ -568,7 +601,8 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
         video_filename=video_filename,
         moments=moments,
         override_existing=config.get("override_existing_clips", False),
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        cloud_url=cloud_url
     )
     
     if not success:
