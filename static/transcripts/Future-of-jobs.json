@@ -1,0 +1,1041 @@
+{
+  "transcription": "You know, rather than be scared by a jobless future, I started to rethink it and I said, I could really be excited by a jobless future because I can finally see a day in under 50 years when people don't have to work for pay. Because humans have labored for thousands of years, slaves to their work primarily in most of the world. And soon they'll be able to do what they wanted to do, what they were born to do before someone came along and said, Stop doing that, you gotta go earn a living. This is a whole new renaissance that we may be able to see actually in our lifetime, where humans can do what they were born to do, like art and dance and music and invention and caring for others and whatever it is that you want to do. Now there will be fits and starts, there'll be politics to get in the way. This is no utopia. No, it is a utopia, actually, come to think of it. And working together towards this goal, this is actually a great idea when we look at it from this vantage point.",
+  "processing_time": 8.81,
+  "word_timestamps": [
+    {
+      "word": "You",
+      "start": 0.24,
+      "end": 0.32
+    },
+    {
+      "word": "know,",
+      "start": 0.32,
+      "end": 0.48
+    },
+    {
+      "word": "rather",
+      "start": 0.56,
+      "end": 0.96
+    },
+    {
+      "word": "than",
+      "start": 0.96,
+      "end": 1.28
+    },
+    {
+      "word": "be",
+      "start": 1.28,
+      "end": 1.52
+    },
+    {
+      "word": "scared",
+      "start": 1.52,
+      "end": 2.16
+    },
+    {
+      "word": "by",
+      "start": 2.16,
+      "end": 2.4
+    },
+    {
+      "word": "a",
+      "start": 2.4,
+      "end": 2.56
+    },
+    {
+      "word": "jobless",
+      "start": 2.56,
+      "end": 3.2
+    },
+    {
+      "word": "future,",
+      "start": 3.2,
+      "end": 3.52
+    },
+    {
+      "word": "I",
+      "start": 3.68,
+      "end": 3.92
+    },
+    {
+      "word": "started",
+      "start": 3.92,
+      "end": 4.16
+    },
+    {
+      "word": "to",
+      "start": 4.16,
+      "end": 4.32
+    },
+    {
+      "word": "rethink",
+      "start": 4.32,
+      "end": 4.72
+    },
+    {
+      "word": "it",
+      "start": 4.72,
+      "end": 4.8
+    },
+    {
+      "word": "and",
+      "start": 4.88,
+      "end": 5.04
+    },
+    {
+      "word": "I",
+      "start": 5.04,
+      "end": 5.12
+    },
+    {
+      "word": "said,",
+      "start": 5.12,
+      "end": 5.28
+    },
+    {
+      "word": "I",
+      "start": 5.44,
+      "end": 5.6000000000000005
+    },
+    {
+      "word": "could",
+      "start": 5.6000000000000005,
+      "end": 5.76
+    },
+    {
+      "word": "really",
+      "start": 5.76,
+      "end": 6.0
+    },
+    {
+      "word": "be",
+      "start": 6.0,
+      "end": 6.16
+    },
+    {
+      "word": "excited",
+      "start": 6.16,
+      "end": 6.8
+    },
+    {
+      "word": "by",
+      "start": 6.8,
+      "end": 7.04
+    },
+    {
+      "word": "a",
+      "start": 7.04,
+      "end": 7.12
+    },
+    {
+      "word": "jobless",
+      "start": 7.12,
+      "end": 7.6000000000000005
+    },
+    {
+      "word": "future",
+      "start": 7.6000000000000005,
+      "end": 7.92
+    },
+    {
+      "word": "because",
+      "start": 8.0,
+      "end": 8.16
+    },
+    {
+      "word": "I",
+      "start": 8.16,
+      "end": 8.24
+    },
+    {
+      "word": "can",
+      "start": 8.24,
+      "end": 8.4
+    },
+    {
+      "word": "finally",
+      "start": 8.4,
+      "end": 8.64
+    },
+    {
+      "word": "see",
+      "start": 8.64,
+      "end": 8.8
+    },
+    {
+      "word": "a",
+      "start": 8.8,
+      "end": 8.88
+    },
+    {
+      "word": "day",
+      "start": 8.88,
+      "end": 9.120000000000001
+    },
+    {
+      "word": "in",
+      "start": 9.120000000000001,
+      "end": 9.28
+    },
+    {
+      "word": "under",
+      "start": 9.28,
+      "end": 9.44
+    },
+    {
+      "word": "50",
+      "start": 9.44,
+      "end": 9.84
+    },
+    {
+      "word": "years",
+      "start": 9.84,
+      "end": 10.24
+    },
+    {
+      "word": "when",
+      "start": 10.24,
+      "end": 10.56
+    },
+    {
+      "word": "people",
+      "start": 10.56,
+      "end": 10.88
+    },
+    {
+      "word": "don't",
+      "start": 10.88,
+      "end": 11.36
+    },
+    {
+      "word": "have",
+      "start": 11.36,
+      "end": 11.6
+    },
+    {
+      "word": "to",
+      "start": 11.6,
+      "end": 11.92
+    },
+    {
+      "word": "work",
+      "start": 11.92,
+      "end": 12.24
+    },
+    {
+      "word": "for",
+      "start": 12.4,
+      "end": 12.72
+    },
+    {
+      "word": "pay.",
+      "start": 12.72,
+      "end": 13.200000000000001
+    },
+    {
+      "word": "Because",
+      "start": 13.44,
+      "end": 13.76
+    },
+    {
+      "word": "humans",
+      "start": 13.76,
+      "end": 14.24
+    },
+    {
+      "word": "have",
+      "start": 14.24,
+      "end": 14.4
+    },
+    {
+      "word": "labored",
+      "start": 14.4,
+      "end": 14.88
+    },
+    {
+      "word": "for",
+      "start": 14.88,
+      "end": 15.040000000000001
+    },
+    {
+      "word": "thousands",
+      "start": 15.040000000000001,
+      "end": 15.44
+    },
+    {
+      "word": "of",
+      "start": 15.44,
+      "end": 15.52
+    },
+    {
+      "word": "years,",
+      "start": 15.52,
+      "end": 15.84
+    },
+    {
+      "word": "slaves",
+      "start": 16.080000000000002,
+      "end": 16.56
+    },
+    {
+      "word": "to",
+      "start": 16.56,
+      "end": 16.72
+    },
+    {
+      "word": "their",
+      "start": 16.72,
+      "end": 16.96
+    },
+    {
+      "word": "work",
+      "start": 16.96,
+      "end": 17.2
+    },
+    {
+      "word": "primarily",
+      "start": 17.28,
+      "end": 17.76
+    },
+    {
+      "word": "in",
+      "start": 17.84,
+      "end": 18.080000000000002
+    },
+    {
+      "word": "most",
+      "start": 18.080000000000002,
+      "end": 18.240000000000002
+    },
+    {
+      "word": "of",
+      "start": 18.240000000000002,
+      "end": 18.32
+    },
+    {
+      "word": "the",
+      "start": 18.32,
+      "end": 18.400000000000002
+    },
+    {
+      "word": "world.",
+      "start": 18.400000000000002,
+      "end": 18.64
+    },
+    {
+      "word": "And",
+      "start": 18.72,
+      "end": 18.96
+    },
+    {
+      "word": "soon",
+      "start": 18.96,
+      "end": 19.28
+    },
+    {
+      "word": "they'll",
+      "start": 19.36,
+      "end": 19.68
+    },
+    {
+      "word": "be",
+      "start": 19.68,
+      "end": 19.84
+    },
+    {
+      "word": "able",
+      "start": 19.84,
+      "end": 20.0
+    },
+    {
+      "word": "to",
+      "start": 20.0,
+      "end": 20.080000000000002
+    },
+    {
+      "word": "do",
+      "start": 20.080000000000002,
+      "end": 20.240000000000002
+    },
+    {
+      "word": "what",
+      "start": 20.240000000000002,
+      "end": 20.400000000000002
+    },
+    {
+      "word": "they",
+      "start": 20.400000000000002,
+      "end": 20.56
+    },
+    {
+      "word": "wanted",
+      "start": 20.56,
+      "end": 20.88
+    },
+    {
+      "word": "to",
+      "start": 20.88,
+      "end": 21.04
+    },
+    {
+      "word": "do,",
+      "start": 21.04,
+      "end": 21.2
+    },
+    {
+      "word": "what",
+      "start": 21.36,
+      "end": 21.6
+    },
+    {
+      "word": "they",
+      "start": 21.6,
+      "end": 21.76
+    },
+    {
+      "word": "were",
+      "start": 21.76,
+      "end": 21.92
+    },
+    {
+      "word": "born",
+      "start": 21.92,
+      "end": 22.240000000000002
+    },
+    {
+      "word": "to",
+      "start": 22.240000000000002,
+      "end": 22.400000000000002
+    },
+    {
+      "word": "do",
+      "start": 22.400000000000002,
+      "end": 22.56
+    },
+    {
+      "word": "before",
+      "start": 22.64,
+      "end": 22.88
+    },
+    {
+      "word": "someone",
+      "start": 22.88,
+      "end": 23.2
+    },
+    {
+      "word": "came",
+      "start": 23.2,
+      "end": 23.44
+    },
+    {
+      "word": "along",
+      "start": 23.44,
+      "end": 23.68
+    },
+    {
+      "word": "and",
+      "start": 23.68,
+      "end": 23.92
+    },
+    {
+      "word": "said,",
+      "start": 23.92,
+      "end": 24.080000000000002
+    },
+    {
+      "word": "Stop",
+      "start": 24.240000000000002,
+      "end": 24.48
+    },
+    {
+      "word": "doing",
+      "start": 24.560000000000002,
+      "end": 24.8
+    },
+    {
+      "word": "that,",
+      "start": 24.8,
+      "end": 24.96
+    },
+    {
+      "word": "you",
+      "start": 25.04,
+      "end": 25.2
+    },
+    {
+      "word": "gotta",
+      "start": 25.2,
+      "end": 25.36
+    },
+    {
+      "word": "go",
+      "start": 25.36,
+      "end": 25.6
+    },
+    {
+      "word": "earn",
+      "start": 25.6,
+      "end": 25.84
+    },
+    {
+      "word": "a",
+      "start": 25.84,
+      "end": 25.92
+    },
+    {
+      "word": "living.",
+      "start": 25.92,
+      "end": 26.400000000000002
+    },
+    {
+      "word": "This",
+      "start": 26.64,
+      "end": 26.88
+    },
+    {
+      "word": "is",
+      "start": 26.88,
+      "end": 27.04
+    },
+    {
+      "word": "a",
+      "start": 27.04,
+      "end": 27.2
+    },
+    {
+      "word": "whole",
+      "start": 27.2,
+      "end": 27.52
+    },
+    {
+      "word": "new",
+      "start": 27.52,
+      "end": 27.92
+    },
+    {
+      "word": "renaissance",
+      "start": 27.92,
+      "end": 28.88
+    },
+    {
+      "word": "that",
+      "start": 28.88,
+      "end": 29.12
+    },
+    {
+      "word": "we",
+      "start": 29.12,
+      "end": 29.36
+    },
+    {
+      "word": "may",
+      "start": 29.36,
+      "end": 29.6
+    },
+    {
+      "word": "be",
+      "start": 29.6,
+      "end": 29.76
+    },
+    {
+      "word": "able",
+      "start": 29.76,
+      "end": 30.240000000000002
+    },
+    {
+      "word": "to",
+      "start": 30.240000000000002,
+      "end": 30.560000000000002
+    },
+    {
+      "word": "see",
+      "start": 30.560000000000002,
+      "end": 30.8
+    },
+    {
+      "word": "actually",
+      "start": 30.96,
+      "end": 31.52
+    },
+    {
+      "word": "in",
+      "start": 31.52,
+      "end": 31.76
+    },
+    {
+      "word": "our",
+      "start": 31.76,
+      "end": 31.92
+    },
+    {
+      "word": "lifetime,",
+      "start": 31.92,
+      "end": 32.56
+    },
+    {
+      "word": "where",
+      "start": 32.72,
+      "end": 32.96
+    },
+    {
+      "word": "humans",
+      "start": 32.96,
+      "end": 33.44
+    },
+    {
+      "word": "can",
+      "start": 33.44,
+      "end": 33.6
+    },
+    {
+      "word": "do",
+      "start": 34.160000000000004,
+      "end": 34.32
+    },
+    {
+      "word": "what",
+      "start": 34.32,
+      "end": 34.480000000000004
+    },
+    {
+      "word": "they",
+      "start": 34.480000000000004,
+      "end": 34.64
+    },
+    {
+      "word": "were",
+      "start": 34.64,
+      "end": 34.800000000000004
+    },
+    {
+      "word": "born",
+      "start": 34.800000000000004,
+      "end": 35.04
+    },
+    {
+      "word": "to",
+      "start": 35.04,
+      "end": 35.2
+    },
+    {
+      "word": "do,",
+      "start": 35.2,
+      "end": 35.44
+    },
+    {
+      "word": "like",
+      "start": 35.6,
+      "end": 35.92
+    },
+    {
+      "word": "art",
+      "start": 35.92,
+      "end": 36.160000000000004
+    },
+    {
+      "word": "and",
+      "start": 36.160000000000004,
+      "end": 36.4
+    },
+    {
+      "word": "dance",
+      "start": 36.4,
+      "end": 36.72
+    },
+    {
+      "word": "and",
+      "start": 36.800000000000004,
+      "end": 36.96
+    },
+    {
+      "word": "music",
+      "start": 36.96,
+      "end": 37.2
+    },
+    {
+      "word": "and",
+      "start": 37.28,
+      "end": 37.44
+    },
+    {
+      "word": "invention",
+      "start": 37.44,
+      "end": 37.92
+    },
+    {
+      "word": "and",
+      "start": 38.0,
+      "end": 38.24
+    },
+    {
+      "word": "caring",
+      "start": 38.24,
+      "end": 38.56
+    },
+    {
+      "word": "for",
+      "start": 38.56,
+      "end": 38.72
+    },
+    {
+      "word": "others",
+      "start": 38.72,
+      "end": 38.96
+    },
+    {
+      "word": "and",
+      "start": 39.12,
+      "end": 39.28
+    },
+    {
+      "word": "whatever",
+      "start": 39.28,
+      "end": 39.68
+    },
+    {
+      "word": "it",
+      "start": 39.68,
+      "end": 39.84
+    },
+    {
+      "word": "is",
+      "start": 39.84,
+      "end": 40.0
+    },
+    {
+      "word": "that",
+      "start": 40.0,
+      "end": 40.160000000000004
+    },
+    {
+      "word": "you",
+      "start": 40.160000000000004,
+      "end": 40.32
+    },
+    {
+      "word": "want",
+      "start": 40.32,
+      "end": 40.480000000000004
+    },
+    {
+      "word": "to",
+      "start": 40.480000000000004,
+      "end": 40.56
+    },
+    {
+      "word": "do.",
+      "start": 40.56,
+      "end": 40.72
+    },
+    {
+      "word": "Now",
+      "start": 40.800000000000004,
+      "end": 40.96
+    },
+    {
+      "word": "there",
+      "start": 41.04,
+      "end": 41.2
+    },
+    {
+      "word": "will",
+      "start": 41.2,
+      "end": 41.28
+    },
+    {
+      "word": "be",
+      "start": 41.28,
+      "end": 41.36
+    },
+    {
+      "word": "fits",
+      "start": 41.36,
+      "end": 41.68
+    },
+    {
+      "word": "and",
+      "start": 41.68,
+      "end": 41.84
+    },
+    {
+      "word": "starts,",
+      "start": 41.84,
+      "end": 42.24
+    },
+    {
+      "word": "there'll",
+      "start": 42.480000000000004,
+      "end": 42.72
+    },
+    {
+      "word": "be",
+      "start": 42.72,
+      "end": 42.88
+    },
+    {
+      "word": "politics",
+      "start": 42.88,
+      "end": 43.36
+    },
+    {
+      "word": "to",
+      "start": 43.36,
+      "end": 43.52
+    },
+    {
+      "word": "get",
+      "start": 43.52,
+      "end": 43.68
+    },
+    {
+      "word": "in",
+      "start": 43.68,
+      "end": 43.84
+    },
+    {
+      "word": "the",
+      "start": 43.84,
+      "end": 44.0
+    },
+    {
+      "word": "way.",
+      "start": 44.0,
+      "end": 44.24
+    },
+    {
+      "word": "This",
+      "start": 44.4,
+      "end": 44.56
+    },
+    {
+      "word": "is",
+      "start": 44.56,
+      "end": 44.72
+    },
+    {
+      "word": "no",
+      "start": 44.72,
+      "end": 44.88
+    },
+    {
+      "word": "utopia.",
+      "start": 44.88,
+      "end": 45.36
+    },
+    {
+      "word": "No,",
+      "start": 45.6,
+      "end": 45.76
+    },
+    {
+      "word": "it",
+      "start": 45.84,
+      "end": 45.92
+    },
+    {
+      "word": "is",
+      "start": 45.92,
+      "end": 46.08
+    },
+    {
+      "word": "a",
+      "start": 46.08,
+      "end": 46.160000000000004
+    },
+    {
+      "word": "utopia,",
+      "start": 46.160000000000004,
+      "end": 46.72
+    },
+    {
+      "word": "actually,",
+      "start": 46.800000000000004,
+      "end": 47.04
+    },
+    {
+      "word": "come",
+      "start": 47.12,
+      "end": 47.36
+    },
+    {
+      "word": "to",
+      "start": 47.36,
+      "end": 47.44
+    },
+    {
+      "word": "think",
+      "start": 47.44,
+      "end": 47.6
+    },
+    {
+      "word": "of",
+      "start": 47.6,
+      "end": 47.76
+    },
+    {
+      "word": "it.",
+      "start": 47.76,
+      "end": 48.0
+    },
+    {
+      "word": "And",
+      "start": 48.160000000000004,
+      "end": 48.480000000000004
+    },
+    {
+      "word": "working",
+      "start": 48.480000000000004,
+      "end": 48.88
+    },
+    {
+      "word": "together",
+      "start": 48.88,
+      "end": 49.28
+    },
+    {
+      "word": "towards",
+      "start": 49.28,
+      "end": 49.76
+    },
+    {
+      "word": "this",
+      "start": 49.76,
+      "end": 50.0
+    },
+    {
+      "word": "goal,",
+      "start": 50.0,
+      "end": 50.480000000000004
+    },
+    {
+      "word": "this",
+      "start": 50.64,
+      "end": 50.88
+    },
+    {
+      "word": "is",
+      "start": 50.88,
+      "end": 51.120000000000005
+    },
+    {
+      "word": "actually",
+      "start": 51.120000000000005,
+      "end": 51.52
+    },
+    {
+      "word": "a",
+      "start": 51.52,
+      "end": 51.76
+    },
+    {
+      "word": "great",
+      "start": 51.76,
+      "end": 52.08
+    },
+    {
+      "word": "idea",
+      "start": 52.08,
+      "end": 52.480000000000004
+    },
+    {
+      "word": "when",
+      "start": 52.64,
+      "end": 52.800000000000004
+    },
+    {
+      "word": "we",
+      "start": 52.800000000000004,
+      "end": 52.96
+    },
+    {
+      "word": "look",
+      "start": 52.96,
+      "end": 53.2
+    },
+    {
+      "word": "at",
+      "start": 53.2,
+      "end": 53.36
+    },
+    {
+      "word": "it",
+      "start": 53.36,
+      "end": 53.6
+    },
+    {
+      "word": "from",
+      "start": 53.6,
+      "end": 53.84
+    },
+    {
+      "word": "this",
+      "start": 53.84,
+      "end": 54.0
+    },
+    {
+      "word": "vantage",
+      "start": 54.0,
+      "end": 54.4
+    },
+    {
+      "word": "point.",
+      "start": 54.4,
+      "end": 54.56
+    }
+  ],
+  "segment_timestamps": [
+    {
+      "text": "You know, rather than be scared by a jobless future, I started to rethink it and I said, I could really be excited by a jobless future because I can finally see a day in under 50 years when people don't have to work for pay.",
+      "start": 0.24,
+      "end": 13.200000000000001,
+      "word_count": 46
+    },
+    {
+      "text": "Because humans have labored for thousands of years, slaves to their work primarily in most of the world.",
+      "start": 13.44,
+      "end": 18.64,
+      "word_count": 18
+    },
+    {
+      "text": "And soon they'll be able to do what they wanted to do, what they were born to do before someone came along and said, Stop doing that, you gotta go earn a living.",
+      "start": 18.72,
+      "end": 26.400000000000002,
+      "word_count": 33
+    },
+    {
+      "text": "This is a whole new renaissance that we may be able to see actually in our lifetime, where humans can do what they were born to do, like art and dance and music and invention and caring for others and whatever it is that you want to do.",
+      "start": 26.64,
+      "end": 40.72,
+      "word_count": 48
+    },
+    {
+      "text": "Now there will be fits and starts, there'll be politics to get in the way.",
+      "start": 40.800000000000004,
+      "end": 44.24,
+      "word_count": 15
+    },
+    {
+      "text": "This is no utopia.",
+      "start": 44.4,
+      "end": 45.36,
+      "word_count": 4
+    },
+    {
+      "text": "No, it is a utopia, actually, come to think of it.",
+      "start": 45.6,
+      "end": 48.0,
+      "word_count": 11
+    },
+    {
+      "text": "And working together towards this goal, this is actually a great idea when we look at it from this vantage point.",
+      "start": 48.160000000000004,
+      "end": 54.56,
+      "word_count": 21
+    }
+  ],
+  "metadata": {
+    "total_segments": 8,
+    "total_words": 196,
+    "duration": 54.56
+  }
+}
