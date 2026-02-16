@@ -313,7 +313,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         return False, ""
     
     elif stage == PipelineStage.TRANSCRIPTION:
-        if check_transcript_exists(video_filename):
+        if await check_transcript_exists(video_filename):
             return True, "Transcript already exists"
     
     elif stage == PipelineStage.MOMENT_GENERATION:
@@ -458,6 +458,9 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
         audio_signed_url: GCS signed URL for the audio file
     """
     from app.services.transcript_service import process_transcription
+    from app.database.session import get_session_factory
+    from app.repositories import transcript_db_repository
+    from app.core.redis import get_async_redis_client
     
     video_filename = f"{video_id}.mp4"
     
@@ -471,6 +474,16 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
         )
         
         logger.info(f"Transcription completed for {video_id}")
+        
+        # Look up the transcript record and store its ID in Redis for Phase 5
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            transcript = await transcript_db_repository.get_by_video_identifier(session, video_id)
+            if transcript:
+                redis = await get_async_redis_client()
+                status_key = f"pipeline:{video_id}:active"
+                await redis.hset(status_key, "transcript_id", transcript.id)
+                logger.info(f"Stored transcript_id={transcript.id} in Redis for video {video_id}")
         
     except asyncio.TimeoutError:
         error_msg = f"Transcription timed out after 600 seconds"

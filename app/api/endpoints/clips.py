@@ -217,7 +217,7 @@ async def check_video_availability(video_id: str, moment_id: str):
         
         # Load transcript for validation
         audio_filename = video_file.stem + ".wav"
-        transcript_data = load_transcript(audio_filename)
+        transcript_data = await load_transcript(audio_filename)
         
         if transcript_data is None or 'word_timestamps' not in transcript_data:
             result.warning = "Transcript not available. Cannot validate alignment."

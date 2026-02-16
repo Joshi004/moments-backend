@@ -683,7 +683,7 @@ async def process_moments_generation(
             context={"audio_filename": audio_filename}
         )
         
-        transcript_data = load_transcript(audio_filename)
+        transcript_data = await load_transcript(audio_filename)
         
         if transcript_data is None:
             log_event(

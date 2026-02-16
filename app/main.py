@@ -50,9 +50,8 @@ audio_dir = Path(__file__).parent.parent / "static" / "audios"
 audio_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static/audios", StaticFiles(directory=str(audio_dir)), name="audios")
 
-transcripts_dir = Path(__file__).parent.parent / "static" / "transcripts"
-transcripts_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/transcripts", StaticFiles(directory=str(transcripts_dir)), name="transcripts")
+# Transcripts are now served from database via API, not as static files
+# JSON files kept on disk as backup only
 
 moment_clips_dir = Path(__file__).parent.parent / "static" / "moment_clips"
 moment_clips_dir.mkdir(parents=True, exist_ok=True)

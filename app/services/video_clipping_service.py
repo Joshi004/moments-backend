@@ -519,9 +519,10 @@ def extract_clips_for_video(
         margin = clipping_config['margin']
         
         # Load transcript for word-level timestamp alignment
+        import asyncio
         from app.services.transcript_service import load_transcript
         audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
-        transcript_data = load_transcript(audio_filename)
+        transcript_data = asyncio.run(load_transcript(audio_filename))
         
         if transcript_data is None or 'word_timestamps' not in transcript_data:
             log_event(

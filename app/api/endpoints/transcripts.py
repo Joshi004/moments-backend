@@ -2,12 +2,15 @@
 Transcript-related API endpoints.
 Handles audio extraction and transcript generation.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 import time
 import asyncio
 
 from app.models.schemas import MessageResponse
 from app.utils.video import get_video_files
+from app.database.dependencies import get_db
+from app.repositories import video_db_repository
 from app.services.audio_service import (
     check_audio_exists,
     process_audio_async,
@@ -173,7 +176,7 @@ async def process_transcript(video_id: str):
             raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
         
         # Check if transcript already exists
-        if check_transcript_exists(audio_filename):
+        if await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript already exists for this video")
         
         # Upload audio to GCS
@@ -336,7 +339,7 @@ async def get_transcription_status(video_id: str):
 
 
 @router.get("/videos/{video_id}/transcript")
-async def get_transcript(video_id: str):
+async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get transcript for a video."""
     start_time = time.time()
     operation = "get_transcript"
@@ -350,25 +353,14 @@ async def get_transcript(video_id: str):
     )
     
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        # Validate video exists in database
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Check if audio exists
-        audio_filename = video_file.stem + ".wav"
-        if not check_audio_exists(video_file.name):
-            raise HTTPException(status_code=400, detail="Audio file not found for this video")
-        
-        # Load transcript
-        transcript_data = load_transcript(audio_filename)
+        # Load transcript from database
+        audio_filename = f"{video_id}.wav"
+        transcript_data = await load_transcript(audio_filename)
         
         if transcript_data is None:
             raise HTTPException(status_code=404, detail="Transcript not found for this video")

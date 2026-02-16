@@ -251,7 +251,7 @@ async def generate_moments(video_id: str, request: GenerateMomentsRequest):
         if not check_audio_exists(video_file.name):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
         
-        if not check_transcript_exists(audio_filename):
+        if not await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
         # Default prompt
@@ -412,7 +412,7 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
         if not check_audio_exists(video_file.name):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
         
-        if not check_transcript_exists(audio_filename):
+        if not await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
         
         # Always use the centralized refinement prompt (user_prompt is ignored)

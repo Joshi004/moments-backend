@@ -145,7 +145,7 @@ async def process_moment_refinement(
         
         # Load transcript
         audio_filename = video_filename.rsplit('.', 1)[0] + ".wav"
-        transcript_data = load_transcript(audio_filename)
+        transcript_data = await load_transcript(audio_filename)
         
         if transcript_data is None:
             raise Exception(f"Transcript not found for {audio_filename}")

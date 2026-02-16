@@ -75,10 +75,10 @@ async def list_videos(db: AsyncSession = Depends(get_db)):
             video_filename = f"{video.identifier}.mp4"
             thumbnail_url = get_thumbnail_url(video_filename)
             
-            # Still check filesystem for audio/transcript (until Phase 4)
+            # Check filesystem for audio; check database for transcript
             has_audio = check_audio_exists(video_filename)
             audio_filename = video.identifier + ".wav"
-            has_transcript = check_transcript_exists(audio_filename) if has_audio else False
+            has_transcript = await check_transcript_exists(audio_filename)
             
             videos.append(VideoResponse(
                 id=video.identifier,
@@ -152,10 +152,10 @@ async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
         video_filename = f"{video.identifier}.mp4"
         thumbnail_url = get_thumbnail_url(video_filename)
         
-        # Still check filesystem for audio/transcript (until Phase 4)
+        # Check filesystem for audio; check database for transcript
         has_audio = check_audio_exists(video_filename)
         audio_filename = video.identifier + ".wav"
-        has_transcript = check_transcript_exists(audio_filename) if has_audio else False
+        has_transcript = await check_transcript_exists(audio_filename)
         
         duration = time.time() - start_time
         log_operation_complete(

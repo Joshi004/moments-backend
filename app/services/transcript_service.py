@@ -4,6 +4,7 @@ import json
 import requests
 import psutil
 import socket
+import warnings
 from pathlib import Path
 from typing import Optional, Dict, List
 from contextlib import asynccontextmanager
@@ -16,12 +17,24 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.model_config import get_model_config, get_transcription_service_url
+from app.database.session import get_session_factory
+from app.repositories import transcript_db_repository, video_db_repository
 
 logger = logging.getLogger(__name__)
 
 
 def get_transcript_directory() -> Path:
-    """Get the path to the transcripts directory."""
+    """
+    Get the path to the transcripts directory.
+    
+    DEPRECATED: Transcripts are now stored in the database. This function is kept for backward
+    compatibility but will be removed in a future version.
+    """
+    warnings.warn(
+        "get_transcript_directory() is deprecated. Transcripts are now stored in the database.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     current_file = Path(__file__).resolve()
     backend_dir = current_file.parent.parent.parent
     transcript_dir = backend_dir / "static" / "transcripts"
@@ -34,57 +47,94 @@ def get_transcript_directory() -> Path:
 
 
 def get_transcript_path(audio_filename: str) -> Path:
-    """Get the path for a transcript file based on audio filename."""
+    """
+    Get the path for a transcript file based on audio filename.
+    
+    DEPRECATED: Transcripts are now stored in the database. This function is kept for backward
+    compatibility but will be removed in a future version.
+    """
+    warnings.warn(
+        "get_transcript_path() is deprecated. Transcripts are now stored in the database.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     transcript_dir = get_transcript_directory()
     # Replace audio extension with .json
     transcript_filename = Path(audio_filename).stem + ".json"
     return transcript_dir / transcript_filename
 
 
-def check_transcript_exists(audio_filename: str) -> bool:
-    """Check if transcript file exists for a given audio filename."""
-    if not audio_filename:
-        return False
-    transcript_path = get_transcript_path(audio_filename)
-    return transcript_path.exists() and transcript_path.is_file()
-
-
-def load_transcript(audio_filename: str) -> Optional[dict]:
+async def check_transcript_exists(audio_filename: str) -> bool:
     """
-    Load transcript data from JSON file.
+    Check if transcript exists in the database for a given audio filename.
     
     Args:
         audio_filename: Name of the audio file (e.g., "motivation.wav")
     
     Returns:
-        Dictionary containing transcript data or None if file doesn't exist
+        True if transcript exists in database, False otherwise
+    """
+    if not audio_filename:
+        return False
+    
+    # Extract identifier from audio filename
+    identifier = Path(audio_filename).stem
+    
+    # Query database
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        exists = await transcript_db_repository.exists_by_identifier(session, identifier)
+        return exists
+
+
+async def load_transcript(audio_filename: str) -> Optional[dict]:
+    """
+    Load transcript data from the database.
+    
+    Args:
+        audio_filename: Name of the audio file (e.g., "motivation.wav")
+    
+    Returns:
+        Dictionary containing transcript data or None if not found
     """
     if not audio_filename:
         return None
     
     try:
-        transcript_path = get_transcript_path(audio_filename)
+        # Extract identifier from audio filename
+        identifier = Path(audio_filename).stem
         
-        if not transcript_path.exists() or not transcript_path.is_file():
-            return None
+        # Query database
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            transcript = await transcript_db_repository.get_by_video_identifier(session, identifier)
+            
+            if transcript is None:
+                return None
+            
+            # Map database columns back to expected JSON format
+            # Note: DB uses "full_text", JSON expects "transcription"
+            transcript_data = {
+                "transcription": transcript.full_text,
+                "word_timestamps": transcript.word_timestamps,
+                "segment_timestamps": transcript.segment_timestamps,
+                "processing_time": transcript.processing_time_seconds,
+            }
+            
+            logger.info(f"Successfully loaded transcript from database for {identifier}")
+            return transcript_data
         
-        with open(transcript_path, 'r', encoding='utf-8') as f:
-            transcript_data = json.load(f)
-        
-        logger.info(f"Successfully loaded transcript from {transcript_path}")
-        return transcript_data
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parsing transcript JSON for {audio_filename}: {str(e)}")
-        return None
     except Exception as e:
         logger.error(f"Error loading transcript for {audio_filename}: {str(e)}")
         return None
 
 
-def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
+async def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
     """
-    Save transcription data to a JSON file.
+    Save transcription data to the database (and also to JSON file as backup).
+    
+    This function performs a dual-write: saves to both database and JSON file
+    for safety during the transition period.
     
     Args:
         audio_filename: Name of the audio file
@@ -100,7 +150,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
         logger="app.services.transcript_service",
         function="save_transcript",
         operation=operation,
-        message="Saving transcript to file",
+        message="Saving transcript to database (with JSON backup)",
         context={
             "audio_filename": audio_filename,
             "has_segments": "segment_timestamps" in transcription_data if transcription_data else False,
@@ -110,12 +160,60 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
     )
     
     try:
-        transcript_path = get_transcript_path(audio_filename)
+        # Extract identifier from audio filename
+        identifier = Path(audio_filename).stem
         
-        # Ensure directory exists
+        # Extract data from transcription response
+        # Note: JSON uses "transcription" key, DB expects "full_text"
+        full_text = transcription_data.get("transcription", "")
+        word_timestamps = transcription_data.get("word_timestamps", [])
+        segment_timestamps = transcription_data.get("segment_timestamps", [])
+        processing_time = transcription_data.get("processing_time")
+        
+        # Compute counts
+        number_of_words = len(word_timestamps) if word_timestamps else 0
+        number_of_segments = len(segment_timestamps) if segment_timestamps else 0
+        
+        # Save to database
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            try:
+                # Look up video by identifier
+                video = await video_db_repository.get_by_identifier(session, identifier)
+                if not video:
+                    logger.error(f"Video '{identifier}' not found in database")
+                    return False
+                
+                # Check if transcript already exists
+                exists = await transcript_db_repository.exists_for_video(session, video.id)
+                if exists:
+                    logger.warning(f"Transcript already exists for video '{identifier}' - skipping database insert")
+                else:
+                    # Insert transcript
+                    transcript = await transcript_db_repository.create(
+                        session=session,
+                        video_id=video.id,
+                        full_text=full_text,
+                        word_timestamps=word_timestamps,
+                        segment_timestamps=segment_timestamps,
+                        language="en",
+                        number_of_words=number_of_words,
+                        number_of_segments=number_of_segments,
+                        transcription_service="parakeet",
+                        processing_time_seconds=processing_time,
+                    )
+                    await session.commit()
+                    logger.info(f"Saved transcript to database (id={transcript.id})")
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Database error saving transcript: {str(e)}")
+                # Continue to save JSON file as backup even if DB fails
+        
+        # Also save to JSON file (dual-write for safety)
+        transcript_path = get_transcript_path(audio_filename)
         transcript_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Save as JSON
         with open(transcript_path, 'w', encoding='utf-8') as f:
             json.dump(transcription_data, f, indent=2, ensure_ascii=False)
         
@@ -126,7 +224,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
             logger="app.services.transcript_service",
             function="save_transcript",
             operation=operation,
-            message="Successfully saved transcript",
+            message="Successfully saved transcript to database and JSON file",
             context={
                 "audio_filename": audio_filename,
                 "transcript_path": str(transcript_path),
@@ -135,6 +233,7 @@ def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
             }
         )
         return True
+        
     except Exception as e:
         duration = time.time() - start_time
         log_operation_error(
@@ -639,11 +738,11 @@ async def process_transcription(
             if transcription_result is None:
                 raise Exception("Transcription service returned no result")
             
-            # Save transcript to file
-            success = save_transcript(audio_filename, transcription_result)
+            # Save transcript to database (and file as backup)
+            success = await save_transcript(audio_filename, transcription_result)
             
             if not success:
-                raise Exception("Failed to save transcript file")
+                raise Exception("Failed to save transcript")
             
             duration = time.time() - start_time
             log_operation_complete(
