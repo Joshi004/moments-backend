@@ -855,42 +855,47 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
     
     await update_pipeline_status(video_id, "processing")
     
-    for stage in stages:
-        # Check for cancellation between stages
-        if await check_cancellation(video_id):
-            await update_pipeline_status(video_id, "cancelled")
-            await clear_cancellation(video_id)
-            logger.info(f"Pipeline cancelled for {video_id}")
-            return {"success": False, "cancelled": True}
-        
-        # Check skip logic
-        should_skip, reason = await should_skip_stage(stage, video_id, config)
-        if should_skip:
-            await mark_stage_skipped(video_id, stage, reason)
-            logger.info(f"Skipping stage {stage.value} for {video_id}: {reason}")
-            continue
-        
-        # Execute stage
-        await update_current_stage(video_id, stage)
-        await mark_stage_started(video_id, stage)
-        
-        try:
-            logger.info(f"Executing stage {stage.value} for {video_id}")
-            await execute_stage(stage, video_id, config)
-            await mark_stage_completed(video_id, stage)
-            logger.info(f"Completed stage {stage.value} for {video_id}")
-        except Exception as e:
-            logger.exception(f"Failed stage {stage.value} for {video_id}: {e}")
-            await mark_stage_failed(video_id, stage, str(e))
-            await update_pipeline_status(video_id, "failed")
-            return {
-                "success": False,
-                "error": str(e),
-                "failed_stage": stage.value
-            }
-        
-        # Refresh lock after each stage
-        await refresh_lock(video_id)
+    try:
+        for stage in stages:
+            # Check for cancellation between stages
+            if await check_cancellation(video_id):
+                await update_pipeline_status(video_id, "cancelled")
+                await clear_cancellation(video_id)
+                logger.info(f"Pipeline cancelled for {video_id}")
+                return {"success": False, "cancelled": True}
+            
+            # Check skip logic
+            should_skip, reason = await should_skip_stage(stage, video_id, config)
+            if should_skip:
+                await mark_stage_skipped(video_id, stage, reason)
+                logger.info(f"Skipping stage {stage.value} for {video_id}: {reason}")
+                continue
+            
+            # Execute stage
+            await update_current_stage(video_id, stage)
+            await mark_stage_started(video_id, stage)
+            
+            try:
+                logger.info(f"Executing stage {stage.value} for {video_id}")
+                await execute_stage(stage, video_id, config)
+                await mark_stage_completed(video_id, stage)
+                logger.info(f"Completed stage {stage.value} for {video_id}")
+            except Exception as e:
+                logger.exception(f"Failed stage {stage.value} for {video_id}: {e}")
+                await mark_stage_failed(video_id, stage, str(e))
+                await update_pipeline_status(video_id, "failed")
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "failed_stage": stage.value
+                }
+            
+            # Refresh lock after each stage
+            await refresh_lock(video_id)
+    except Exception as e:
+        logger.exception(f"Unexpected pipeline error for {video_id}: {e}")
+        await update_pipeline_status(video_id, "failed")
+        return {"success": False, "error": str(e), "failed_stage": "pipeline_error"}
     
     await update_pipeline_status(video_id, "completed")
     logger.info(f"Pipeline completed successfully for {video_id}")

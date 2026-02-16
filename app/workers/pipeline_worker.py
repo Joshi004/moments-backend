@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.services.pipeline.orchestrator import execute_pipeline
 from app.services.pipeline.lock import acquire_lock, release_lock
 from app.services.pipeline.redis_history import archive_active_to_history
-from app.services.pipeline.status import delete_status, get_current_stage
+from app.services.pipeline.status import delete_status, get_current_stage, update_pipeline_status, mark_stage_failed
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,19 @@ class PipelineWorker:
             
         except Exception as e:
             logger.exception(f"Pipeline execution failed: {request_id}")
+            # Mark as failed so UI doesn't show "in progress" forever
+            try:
+                current_stage_str = await get_current_stage(video_id)
+                if current_stage_str:
+                    from app.models.pipeline_schemas import PipelineStage
+                    try:
+                        failed_stage = PipelineStage(current_stage_str)
+                        await mark_stage_failed(video_id, failed_stage, str(e))
+                    except ValueError:
+                        pass
+                await update_pipeline_status(video_id, "failed")
+            except Exception as status_err:
+                logger.error(f"Failed to update status to failed for {video_id}: {status_err}")
             # Try to archive history even on failure
             try:
                 run_id = await archive_active_to_history(video_id)

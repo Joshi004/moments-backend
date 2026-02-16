@@ -180,7 +180,7 @@ start_worker() {
     echo -e "${BLUE}[WORKER]${NC} Starting pipeline worker..."
     echo ""
     
-    python run_worker.py 2>&1 | sed "s/^/[WORKER] /" &
+    ./venv/bin/python run_worker.py 2>&1 | sed "s/^/[WORKER] /" &
     WORKER_PID=$!
     echo $WORKER_PID > "$WORKER_PID_FILE"
     echo -e "${GREEN}[WORKER]${NC} Started with PID: $WORKER_PID"

@@ -84,6 +84,17 @@ if __name__ == "__main__":
             release_pid_lock()
             sys.exit(1)
         
+        # Initialize database connection (worker runs as separate process)
+        try:
+            from app.database.session import init_db
+            await init_db()
+            logger.info("Database connection initialized")
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            logger.error("Please ensure PostgreSQL is running and accessible")
+            release_pid_lock()
+            sys.exit(1)
+        
         # Run worker
         await start_pipeline_worker()
     
