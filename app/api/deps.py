@@ -5,7 +5,6 @@ Provides singleton instances and factory functions for services.
 from functools import lru_cache
 from typing import Optional
 from app.core.config import Settings, get_settings
-from app.repositories.moments_repository import MomentsRepository
 from app.repositories.transcript_repository import TranscriptRepository
 
 
@@ -18,23 +17,6 @@ def get_app_settings() -> Settings:
         Settings instance
     """
     return get_settings()
-
-
-def get_moments_repository(
-    settings: Settings = None
-) -> MomentsRepository:
-    """
-    Get moments repository.
-    
-    Args:
-        settings: Application settings (optional, will get default if not provided)
-        
-    Returns:
-        MomentsRepository instance
-    """
-    if settings is None:
-        settings = get_app_settings()
-    return MomentsRepository(settings.moments_dir)
 
 
 def get_transcript_repository(

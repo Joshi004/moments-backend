@@ -121,7 +121,7 @@ async def process_moment_refinement(
     """
     # Import here to avoid circular imports
     from app.services.transcript_service import load_transcript
-    from app.services.moments_service import add_moment, get_moment_by_id
+    from app.services.moments_service import get_moment_by_id, generate_moment_id
     from app.services.ai.generation_service import ssh_tunnel, call_ai_model_async
     from app.utils.model_config import get_model_config, get_clipping_config, get_model_url
     from app.utils.video import get_video_by_filename
@@ -136,8 +136,8 @@ async def process_moment_refinement(
         clipping_config = get_clipping_config()
         padding = clipping_config['padding']
         
-        # Load the moment to be refined
-        moment = get_moment_by_id(video_filename, moment_id)
+        # Load the moment to be refined (async -- queries database)
+        moment = await get_moment_by_id(video_filename, moment_id)
         if moment is None:
             raise Exception(f"Moment with ID {moment_id} not found")
         
@@ -227,6 +227,10 @@ async def process_moment_refinement(
         
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
+        # Get model configuration (needed by Phase 5 for top_p/top_k and by Phase 6 for model_id)
+        model_config = await get_model_config(model)
+        model_id = model_config.get('model_id')
+        
         # --- Phase 5: Create database records for prompt and generation config ---
         generation_config_id = None
         try:
@@ -291,10 +295,6 @@ async def process_moment_refinement(
         except Exception as db_err:
             logger.warning(f"Failed to create DB records for refinement config: {db_err}")
             # Non-fatal: refinement continues even if DB record creation fails
-        
-        # Get model configuration
-        model_config = await get_model_config(model)
-        model_id = model_config.get('model_id')
         
         # Create SSH tunnel and call AI model
         async with ssh_tunnel(model):
@@ -454,31 +454,42 @@ async def process_moment_refinement(
                 "video_clip_url": video_clip_url if include_video else None
             }
             
-            # Create refined moment
-            refined_moment = {
-                'start_time': refined_start,
-                'end_time': refined_end,
-                'title': moment['title'],
-                'is_refined': True,
-                'parent_id': moment_id,
-                'model_name': model_name,
-                'generation_config': generation_config
-            }
-            
-            # Add generation_config_id if available
-            if generation_config_id is not None:
-                refined_moment['generation_config_id'] = generation_config_id
-            
-            # Add refined moment
-            success, error_message, created_moment = add_moment(
-                video_filename,
-                refined_moment,
-                video_duration
-            )
-            
-            if not success:
-                raise Exception(f"Failed to save refined moment: {error_message}")
-            
+            # --- Phase 6: Save refined moment to database (upsert: one per parent) ---
+            refined_identifier = generate_moment_id(refined_start, refined_end, prefix="refined_")
+
+            try:
+                from app.database.session import get_session_factory as _get_sf
+                from app.repositories import moment_db_repository as moment_db_repo
+                from app.repositories import video_db_repository as _video_db_repo
+
+                _sf = _get_sf()
+                async with _sf() as db_session:
+                    # Look up the parent moment's numeric DB id
+                    parent_moment = await moment_db_repo.get_by_identifier(db_session, moment_id)
+                    if not parent_moment:
+                        raise Exception(f"Parent moment '{moment_id}' not found in database")
+
+                    video_record = await _video_db_repo.get_by_identifier(db_session, video_id)
+                    if not video_record:
+                        raise Exception(f"Video '{video_id}' not found in database")
+
+                    await moment_db_repo.create_or_update_refined(
+                        db_session,
+                        video_id=video_record.id,
+                        parent_db_id=parent_moment.id,
+                        identifier=refined_identifier,
+                        start_time=refined_start,
+                        end_time=refined_end,
+                        title=moment['title'],
+                        generation_config_id=generation_config_id,
+                    )
+                    await db_session.commit()
+
+                logger.info(f"Saved refined moment to database for {video_id}:{moment_id}")
+            except Exception as db_err:
+                logger.error(f"Failed to save refined moment to database: {db_err}")
+                raise
+
             logger.info(f"Moment refinement (async) completed successfully for {video_id}:{moment_id}")
             return True
             

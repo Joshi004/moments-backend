@@ -259,7 +259,7 @@ async def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusR
     
     # Load moments and separate by refinement status
     video_filename = f"{video_id}.mp4"
-    moments = await asyncio.to_thread(load_moments, video_filename) or []
+    moments = await load_moments(video_filename) or []
     
     coarse_moments = [
         MomentSummary(
@@ -443,7 +443,7 @@ async def get_pipeline_history(video_id: str):
         
         # Load moments and separate by refinement status
         video_filename = f"{video_id}.mp4"
-        moments = load_moments(video_filename) or []
+        moments = await load_moments(video_filename) or []
         
         coarse_moments = [
             {

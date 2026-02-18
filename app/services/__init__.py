@@ -22,8 +22,6 @@ from app.services.transcript_service import (
 )
 
 from app.services.moments_service import (
-    get_moments_directory,
-    get_moments_file_path,
     generate_moment_id,
     load_moments,
     save_moments,
@@ -70,8 +68,6 @@ __all__ = [
     "save_transcript",
     
     # Moments service
-    "get_moments_directory",
-    "get_moments_file_path",
     "generate_moment_id",
     "load_moments",
     "save_moments",
