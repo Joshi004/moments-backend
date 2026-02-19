@@ -182,6 +182,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
         refinement_total = status_data.get("refinement_total")
         refinement_processed = status_data.get("refinement_processed")
         refinement_successful = status_data.get("refinement_successful")
+        refinement_errors = status_data.get("refinement_errors")
         
         if refinement_total or refinement_processed:
             progress = {}
@@ -201,6 +202,11 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                     progress["failed"] = progress.get("processed", 0) - progress["successful"]
                 except ValueError:
                     pass
+            if refinement_errors:
+                try:
+                    progress["errors"] = json.loads(refinement_errors)
+                except (json.JSONDecodeError, TypeError):
+                    progress["errors"] = [refinement_errors]
     
     # Determine stage-level error
     stage_error = None

@@ -304,12 +304,11 @@ async def process_moment_refinement(
                 "content": complete_prompt
             }]
             
-            # Call AI model asynchronously
             logger.info(f"Calling AI model ({model}) for moment refinement (async, include_video={include_video})...")
             ai_response = await call_ai_model_async(
-                messages, 
-                model_key=model, 
-                model_id=model_id, 
+                messages,
+                model_key=model,
+                model_id=model_id,
                 temperature=temperature,
                 video_url=video_clip_url if include_video else None
             )

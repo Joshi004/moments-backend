@@ -100,7 +100,10 @@ def extract_model_name(response: Dict) -> str:
 def extract_json_from_markdown(content: str) -> str:
     """
     Extract JSON content from markdown code blocks.
-    
+
+    Also strips redundant double braces ({{ }}) that some models produce when
+    the prompt template uses {{ }} notation -- valid JSON never starts with {{.
+
     Args:
         content: Content string that may contain markdown code blocks
         
@@ -118,7 +121,13 @@ def extract_json_from_markdown(content: str) -> str:
             logger.info("Extracted JSON from markdown code block")
         else:
             logger.warning("Content starts with ``` but no closing ``` found")
-    
+
+    # Strip one layer of redundant double braces produced by models that echo
+    # the {{ }} notation from prompt templates literally.
+    if json_str.startswith('{{') and json_str.endswith('}}'):
+        logger.warning("Response wrapped in double braces {{ }} -- stripping outer layer")
+        json_str = json_str[1:-1].strip()
+
     return json_str
 
 

@@ -64,10 +64,12 @@ async def get_moments(video_id: str):
     start_time = time.time()
     operation = "get_moments"
     
-    log_operation_start(
+    log_event(
+        level="DEBUG",
         logger="app.api.endpoints.moments",
         function="get_moments",
         operation=operation,
+        event="operation_start",
         message=f"Getting moments for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
@@ -97,10 +99,12 @@ async def get_moments(video_id: str):
         moments = await load_moments(video_file.name)
         
         duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="DEBUG",
             logger="app.api.endpoints.moments",
             function="get_moments",
             operation=operation,
+            event="operation_complete",
             message="Successfully retrieved moments",
             context={
                 "video_id": video_id,

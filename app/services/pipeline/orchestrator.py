@@ -3,6 +3,7 @@ Pipeline orchestrator - executes all pipeline stages sequentially.
 All status and lock operations are async for non-blocking Redis operations.
 """
 import asyncio
+import json
 import logging
 from typing import Tuple, Dict, Any
 from pathlib import Path
@@ -728,29 +729,47 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                     ),
                     timeout=600  # 10 minutes per moment
                 )
-                return success
+                return (True, moment_id, None)
             except asyncio.TimeoutError:
-                logger.error(f"Refinement timed out for moment {moment_id}")
-                return False
+                error_msg = f"Refinement timed out after 600s for moment {moment_id}"
+                logger.error(error_msg)
+                return (False, moment_id, error_msg)
             except Exception as e:
-                logger.error(f"Refinement failed for moment {moment_id}: {e}")
-                return False
+                error_msg = f"Refinement failed for moment {moment_id}: {e}"
+                logger.error(error_msg)
+                return (False, moment_id, error_msg)
     
     # Run refinements with progress tracking
     tasks = [refine_one_moment(m) for m in moments_to_refine]
     results = []
+    errors = []
     processed = 0
     successful = 0
     
     for coro in asyncio.as_completed(tasks):
-        result = await coro
-        results.append(result)
+        success, completed_moment_id, error_msg = await coro
+        results.append(success)
         processed += 1
-        if result:
+        if success:
             successful += 1
+        else:
+            errors.append(error_msg)
         await update_refinement_progress(video_id, len(moments_to_refine), processed, successful)
     
     logger.info(f"Refined {successful}/{len(moments_to_refine)} moments for {video_id}")
+
+    # Store per-moment errors in Redis so the UI can surface them
+    if errors:
+        from app.core.redis import get_async_redis_client
+        _redis = await get_async_redis_client()
+        status_key = f"pipeline:{video_id}:active"
+        await _redis.hset(status_key, "refinement_errors", json.dumps(errors))
+        # Individual errors were already logged inside refine_one_moment(); just log the count here.
+        logger.warning(f"{len(errors)} of {len(moments_to_refine)} refinement(s) failed for {video_id}. See individual errors above.")
+
+    # If every single moment failed, raise so execute_pipeline marks the stage failed
+    if successful == 0 and len(moments_to_refine) > 0:
+        raise Exception(f"All {len(moments_to_refine)} refinement(s) failed for {video_id}. See individual errors above.")
 
 
 async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> None:

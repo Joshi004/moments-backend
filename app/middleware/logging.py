@@ -10,6 +10,48 @@ from app.core.logging import (
     log_event
 )
 
+# Path fragments that, when found in a GET request URL, suppress verbose logging.
+# These are all endpoints the UI polls repeatedly to check status or refresh data.
+_QUIET_PATH_FRAGMENTS = [
+    "/refinement-status/",
+    "/generation-status",
+    "/clip-extraction-status",
+    "/audio-extraction-status",
+    "/transcription-status",
+    "/health",
+]
+
+# Last URL segment values that mark a GET request as a routine data read.
+_QUIET_LAST_SEGMENTS = {"url", "moments", "transcript"}
+
+
+def _is_polling_endpoint(path: str, method: str) -> bool:
+    """Return True for GET requests that are pure UI polling or routine data reads.
+
+    These requests happen many times per second and add no meaningful information
+    to the log file.  Errors from these endpoints are still always logged.
+    """
+    if method != "GET":
+        return False
+
+    # Exact match: video list
+    if path == "/api/videos":
+        return True
+
+    for fragment in _QUIET_PATH_FRAGMENTS:
+        if fragment in path:
+            return True
+
+    # /api/pipeline/{id}/status  and  /api/pipeline/{id}/history
+    if "/pipeline/" in path and ("/status" in path or "/history" in path):
+        return True
+
+    # /api/videos/{id}/url, /api/videos/{id}/moments, /api/videos/{id}/transcript
+    if path.startswith("/api/videos/") and path.rstrip("/").split("/")[-1] in _QUIET_LAST_SEGMENTS:
+        return True
+
+    return False
+
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to track request IDs and log all requests/responses."""
@@ -23,18 +65,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Store start time
         start_time = time.time()
         
-        # Check if this is a status endpoint (skip verbose logging for these)
-        is_status_endpoint = (
-            "/refinement-status/" in request.url.path or 
-            "/generation-status" in request.url.path or
-            "/clip-extraction-status" in request.url.path or
-            "/pipeline/" in request.url.path and "/status" in request.url.path or
-            "/audio-extraction-status" in request.url.path or
-            "/transcription-status" in request.url.path
-        )
-        
-        # Skip verbose logging for status endpoints (they handle their own compact logging)
-        if not is_status_endpoint:
+        # Polling / routine-read endpoints are logged silently (errors still logged below)
+        is_polling_endpoint = _is_polling_endpoint(request.url.path, request.method)
+
+        if not is_polling_endpoint:
             # Log request received
             log_event(
                 level="INFO",
@@ -61,8 +95,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Calculate duration
             duration = time.time() - start_time
             
-            # Skip verbose logging for status endpoints
-            if not is_status_endpoint:
+            if not is_polling_endpoint:
                 # Log response
                 log_event(
                     level="INFO",
@@ -87,7 +120,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             # Calculate duration even on error
             duration = time.time() - start_time
             
-            # Always log errors, even for status endpoints
+            # Always log errors, even for polling endpoints
             log_event(
                 level="ERROR",
                 logger="app.middleware.logging",

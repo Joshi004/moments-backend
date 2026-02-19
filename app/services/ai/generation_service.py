@@ -834,7 +834,6 @@ async def process_moments_generation(
                 "content": complete_prompt
             }]
             
-            # Call AI model asynchronously
             logger.info(f"Calling AI model ({model}) for moment generation (async)...")
             ai_response = await call_ai_model_async(messages, model_key=model, model_id=model_id, temperature=temperature)
             
