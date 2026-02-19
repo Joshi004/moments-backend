@@ -256,6 +256,14 @@ The current timestamps may not be precisely aligned with where the content actua
             
             # Additional validation: check if json_str looks like JSON
             json_str_trimmed = json_str.strip()
+
+            # Safety net: some models echo {{ }} notation from prompt templates.
+            # extract_json_from_markdown already handles this, but guard here too.
+            if json_str_trimmed.startswith('{{') and json_str_trimmed.endswith('}}'):
+                logger.warning("parse_response: detected double braces {{ }} -- stripping outer layer")
+                json_str_trimmed = json_str_trimmed[1:-1].strip()
+                json_str = json_str_trimmed
+
             if not (json_str_trimmed.startswith('{') and json_str_trimmed.endswith('}')):
                 logger.warning(f"JSON string doesn't start with {{ and end with }}. Content: {json_str[:200]}")
                 # Try to find JSON object in the string

@@ -60,7 +60,7 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Check if moments exist
-        moments = load_moments(video_file.name)
+        moments = await load_moments(video_file.name)
         
         if not moments or len(moments) == 0:
             raise HTTPException(status_code=400, detail="No moments found for this video")
@@ -185,7 +185,7 @@ async def check_video_availability(video_id: str, moment_id: str):
             raise HTTPException(status_code=404, detail="Video not found")
         
         # Check if moment exists
-        moment = get_moment_by_id(video_file.name, moment_id)
+        moment = await get_moment_by_id(video_file.name, moment_id)
         if moment is None:
             raise HTTPException(status_code=404, detail="Moment not found")
         

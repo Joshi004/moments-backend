@@ -344,14 +344,16 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
     start_time = time.time()
     operation = "get_transcript"
     
-    log_operation_start(
+    log_event(
+        level="DEBUG",
         logger="app.api.endpoints.transcripts",
         function="get_transcript",
         operation=operation,
+        event="operation_start",
         message=f"Getting transcript for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
-    
+
     try:
         # Validate video exists in database
         video = await video_db_repository.get_by_identifier(db, video_id)
@@ -366,10 +368,12 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Transcript not found for this video")
         
         duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="DEBUG",
             logger="app.api.endpoints.transcripts",
             function="get_transcript",
             operation=operation,
+            event="operation_complete",
             message="Successfully retrieved transcript",
             context={
                 "video_id": video_id,

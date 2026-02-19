@@ -7,6 +7,9 @@ from pathlib import Path
 import time
 import cv2
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.schemas import (
     MomentResponse,
@@ -16,7 +19,7 @@ from app.models.schemas import (
     JobStatusResponse
 )
 from app.utils.video import get_video_files
-from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment, save_moments
+from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
 from app.services.audio_service import check_audio_exists
 from app.services.transcript_service import check_transcript_exists
 from app.services.ai.generation_service import (
@@ -61,10 +64,12 @@ async def get_moments(video_id: str):
     start_time = time.time()
     operation = "get_moments"
     
-    log_operation_start(
+    log_event(
+        level="DEBUG",
         logger="app.api.endpoints.moments",
         function="get_moments",
         operation=operation,
+        event="operation_start",
         message=f"Getting moments for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
@@ -91,13 +96,15 @@ async def get_moments(video_id: str):
             )
             raise HTTPException(status_code=404, detail="Video not found")
         
-        moments = load_moments(video_file.name)
+        moments = await load_moments(video_file.name)
         
         duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="DEBUG",
             logger="app.api.endpoints.moments",
             function="get_moments",
             operation=operation,
+            event="operation_complete",
             message="Successfully retrieved moments",
             context={
                 "video_id": video_id,
@@ -170,8 +177,8 @@ async def create_moment(video_id: str, moment: MomentResponse):
             "title": moment.title
         }
         
-        # Add moment with validation
-        success, error_message, created_moment = add_moment(video_file.name, moment_dict, video_duration)
+        # Add moment with validation (async -- saves to database)
+        success, error_message, created_moment = await add_moment(video_file.name, moment_dict, video_duration)
         
         if not success:
             raise HTTPException(status_code=400, detail=error_message)
@@ -266,8 +273,22 @@ Generate moments that:
         user_prompt = request.user_prompt if request.user_prompt else default_prompt
         
         # Call async moment generation with timeout
+        # Phase 6: generation service saves moments to DB directly
         try:
-            validated_moments = await asyncio.wait_for(
+            # Delete existing moments before regeneration
+            try:
+                from app.database.session import get_session_factory
+                from app.repositories import moment_db_repository as moment_db_repo
+                sf = get_session_factory()
+                async with sf() as session:
+                    deleted = await moment_db_repo.delete_all_for_video_identifier(session, video_id)
+                    await session.commit()
+                    if deleted:
+                        logger.info(f"Deleted {deleted} existing moments for {video_id}")
+            except Exception:
+                pass
+
+            result = await asyncio.wait_for(
                 process_moments_generation(
                     video_id=video_id,
                     video_filename=video_file.name,
@@ -281,17 +302,20 @@ Generate moments that:
                 ),
                 timeout=900  # 15 minutes
             )
-            
-            # Save moments directly from result
+
+            if isinstance(result, dict):
+                validated_moments = result.get("moments", [])
+            else:
+                validated_moments = result if result else []
+
             if validated_moments:
-                save_moments(video_file.name, validated_moments)
                 log_event(
                     level="INFO",
                     logger="app.api.endpoints.moments",
                     function="generate_moments",
                     operation=operation,
                     event="moments_saved",
-                    message=f"Saved {len(validated_moments)} moments",
+                    message=f"Generated {len(validated_moments)} moments (saved to DB by generation service)",
                     context={"video_id": video_id, "moment_count": len(validated_moments)}
                 )
             
@@ -401,8 +425,8 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
         if not video_file or not video_file.exists():
             raise HTTPException(status_code=404, detail="Video not found")
         
-        # Check if moment exists
-        moment = get_moment_by_id(video_file.name, moment_id)
+        # Check if moment exists (async -- queries database)
+        moment = await get_moment_by_id(video_file.name, moment_id)
         if moment is None:
             raise HTTPException(status_code=404, detail="Moment not found")
         

@@ -57,7 +57,7 @@ You MUST respond with ONLY a valid JSON array. Nothing else. No exceptions.
 
 CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
 - Your response MUST start with [ and MUST end with ]
-- Do NOT output a JSON object {{ }} - ONLY an array [ ]
+- Do NOT output a JSON object { } - ONLY an array [ ]
 - Do NOT wrap the array in an object
 - Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", "final_output", etc.
 - Do NOT repeat the same data multiple times
@@ -69,16 +69,16 @@ CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
 
 REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
 [
-  {{
+  {
     "start_time": 0.24,
     "end_time": 15.5,
     "title": "Introduction to jobless future concept"
-  }},
-  {{
+  },
+  {
     "start_time": 45.2,
     "end_time": 78.8,
     "title": "Discussion about human potential"
-  }}
+  }
 ]
 
 RULES:
@@ -94,21 +94,21 @@ OUTPUT_FORMAT_OBJECT_TEMPLATE = """OUTPUT FORMAT - CRITICAL - READ CAREFULLY:
 You MUST respond with ONLY a valid JSON object. Nothing else. No exceptions.
 
 CRITICAL REQUIREMENTS - VIOLATION WILL CAUSE REQUEST FAILURE:
-- Your response MUST start with {{ and MUST end with }}
-- Do NOT output a JSON array [ ] - ONLY an object {{ }}
+- Your response MUST start with { and MUST end with }
+- Do NOT output a JSON array [ ] - ONLY an object { }
 - Do NOT wrap the object in an array
 - Do NOT include ANY other fields like "transcript", "analysis", "validation", "output", "notes", "rules", etc.
 - Do NOT include any thinking, reasoning, or explanation
-- NO text before the {{
-- NO text after the }}
+- NO text before the {
+- NO text after the }
 - NO markdown code blocks (no ```json or ```)
 - NO comments or notes
 
 REQUIRED STRUCTURE (this is ALL you should output - nothing more, nothing less):
-{{
+{
   "start_time": 5.12,
   "end_time": 67.84
-}}
+}
 
 RULES:
 - Must have exactly 2 fields: start_time (float), end_time (float)
@@ -117,7 +117,7 @@ RULES:
 - The start_time must be >= 0.00 and < end_time
 - Do not add any other fields
 
-FINAL REMINDER: Output ONLY the JSON object {{ ... }}. Nothing else."""
+FINAL REMINDER: Output ONLY the JSON object { ... }. Nothing else."""
 
 
 def get_output_format_template(output_type: str, **kwargs) -> str:

@@ -48,20 +48,22 @@ async def list_videos(db: AsyncSession = Depends(get_db)):
     start_time = time.time()
     operation = "list_videos"
     
-    log_operation_start(
+    log_event(
+        level="DEBUG",
         logger="app.api.endpoints.videos",
         function="list_videos",
         operation=operation,
+        event="operation_start",
         message="Listing all videos from database",
         context={"request_id": get_request_id()}
     )
-    
+
     try:
         # Query database for all videos
         videos_from_db = await video_db_repository.list_all(db)
         
         log_event(
-            level="INFO",
+            level="DEBUG",
             logger="app.api.endpoints.videos",
             function="list_videos",
             operation=operation,
@@ -94,10 +96,12 @@ async def list_videos(db: AsyncSession = Depends(get_db)):
             ))
         
         duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="DEBUG",
             logger="app.api.endpoints.videos",
             function="list_videos",
             operation=operation,
+            event="operation_complete",
             message="Successfully listed videos",
             context={"video_count": len(videos), "duration_seconds": duration}
         )
@@ -299,10 +303,12 @@ async def get_video_url(video_id: str, db: AsyncSession = Depends(get_db)):
     start_time = time.time()
     operation = "get_video_url"
     
-    log_operation_start(
+    log_event(
+        level="DEBUG",
         logger="app.api.endpoints.videos",
         function="get_video_url",
         operation=operation,
+        event="operation_start",
         message=f"Getting signed URL for video {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
@@ -346,10 +352,12 @@ async def get_video_url(video_id: str, db: AsyncSession = Depends(get_db)):
         expires_in_seconds = int(settings.gcs_signed_url_expiry_hours * 3600)
         
         duration = time.time() - start_time
-        log_operation_complete(
+        log_event(
+            level="DEBUG",
             logger="app.api.endpoints.videos",
             function="get_video_url",
             operation=operation,
+            event="operation_complete",
             message="Generated signed URL",
             context={
                 "video_id": video_id,

@@ -3,6 +3,7 @@ Pipeline orchestrator - executes all pipeline stages sequentially.
 All status and lock operations are async for non-blocking Redis operations.
 """
 import asyncio
+import json
 import logging
 from typing import Tuple, Dict, Any
 from pathlib import Path
@@ -37,7 +38,7 @@ from app.services.transcript_service import (
 )
 from app.services.ai.generation_service import process_moments_generation
 from app.services.ai.refinement_service import process_moment_refinement
-from app.services.moments_service import load_moments, save_moments
+from app.services.moments_service import load_moments
 from app.services.video_clipping_service import (
     get_clip_path,
     check_clip_exists,
@@ -323,7 +324,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
             return False, ""
         
         # Original logic - skip if moments exist
-        moments = load_moments(video_filename)
+        moments = await load_moments(video_filename)
         if moments and len(moments) > 0:
             return True, f"Moments already exist ({len(moments)} moments)"
     
@@ -332,7 +333,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         if config.get("override_existing_moments", False):
             return False, ""
         
-        moments = load_moments(video_filename)
+        moments = await load_moments(video_filename)
         if not moments:
             return True, "No moments to extract clips from"
         all_clips_exist = all(
@@ -347,7 +348,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         if config.get("override_existing_moments", False):
             return False, ""
         
-        moments = load_moments(video_filename)
+        moments = await load_moments(video_filename)
         if not moments:
             return True, "No moments to upload clips for"
         all_uploaded = all(m.get('remote_clip_path') for m in moments)
@@ -355,7 +356,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
             return True, "All clips already uploaded"
     
     elif stage == PipelineStage.MOMENT_REFINEMENT:
-        moments = load_moments(video_filename)
+        moments = await load_moments(video_filename)
         if not moments:
             return True, "No moments to refine"
         
@@ -495,16 +496,30 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
 
 
 async def execute_moment_generation(video_id: str, config: dict) -> None:
-    """Execute moment generation stage."""
-    from app.services.ai.generation_service import process_moments_generation
-    from app.services.moments_service import save_moments, generate_moment_id
-    
+    """Execute moment generation stage.
+
+    Phase 6: Moments are saved to the database by the generation service.
+    Before generating, existing moments for the video are deleted (regeneration).
+    """
     video_filename = f"{video_id}.mp4"
-    
+
     logger.info(f"Starting moment generation for {video_id}")
-    
+
     try:
-        # Call async moment generation function with timeout
+        # Phase 6: Delete existing moments before regenerating
+        try:
+            from app.database.session import get_session_factory
+            from app.repositories import moment_db_repository as moment_db_repo
+
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                deleted = await moment_db_repo.delete_all_for_video_identifier(session, video_id)
+                await session.commit()
+                if deleted:
+                    logger.info(f"Deleted {deleted} existing moments for {video_id} before regeneration")
+        except Exception as del_err:
+            logger.warning(f"Failed to delete existing moments before regeneration: {del_err}")
+
         result = await asyncio.wait_for(
             process_moments_generation(
                 video_id=video_id,
@@ -519,43 +534,24 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
             ),
             timeout=900  # 15 minutes
         )
-        
-        # Handle new return type (dict with "moments" and "generation_config_id")
-        # Also support backward compatibility if function returns a list
+
         if isinstance(result, dict):
             validated_moments = result.get("moments", [])
             generation_config_id = result.get("generation_config_id")
         else:
-            # Backward compatibility: result is a list
             validated_moments = result
             generation_config_id = None
-        
-        # Log generation_config_id for Phase 6 and Phase 9
+
         if generation_config_id:
             logger.info(f"Generation config ID: {generation_config_id}")
-            # TODO Phase 9: Store in pipeline context/history
-        
-        # Save moments (replaces existing) - handle empty list gracefully
+
         if validated_moments:
-            # Ensure all required fields are present
-            for moment in validated_moments:
-                if 'id' not in moment or not moment['id']:
-                    moment['id'] = generate_moment_id(moment['start_time'], moment['end_time'])
-                if 'is_refined' not in moment:
-                    moment['is_refined'] = False
-                if 'parent_id' not in moment:
-                    moment['parent_id'] = None
-            
-            logger.info(f"Saving {len(validated_moments)} moments for {video_id}")
-            success = save_moments(video_filename, validated_moments)
-            
-            if not success:
-                raise Exception("Failed to save moments to file")
+            logger.info(f"Generated {len(validated_moments)} moments for {video_id} (saved to database by generation service)")
         else:
-            logger.warning(f"No moments to save for {video_filename}")
-        
+            logger.warning(f"No moments generated for {video_filename}")
+
         logger.info(f"Moment generation completed for {video_id}")
-        
+
     except asyncio.TimeoutError:
         error_msg = f"Moment generation timed out after 900 seconds"
         logger.error(error_msg)
@@ -589,7 +585,7 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
             else:
                 raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
     
-    moments = load_moments(video_filename)
+    moments = await load_moments(video_filename)
     if not moments:
         raise Exception("No moments found for clip extraction")
     
@@ -642,22 +638,16 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
 async def execute_clip_upload(video_id: str) -> None:
     """Execute clip upload stage to GCS."""
     video_filename = f"{video_id}.mp4"
-    moments = load_moments(video_filename)
-    
+    moments = await load_moments(video_filename)
+
     if not moments:
         raise Exception("No moments found for clip upload")
-    
+
     # Create progress callback for Redis updates - uses sync client
     def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
-        """
-        Update clip upload progress in Redis.
-        
-        Note: bytes_uploaded and total_bytes are cumulative across all clips.
-        """
         try:
             from app.core.redis import get_redis_client
             redis_client = get_redis_client()
-            # Calculate overall percentage from cumulative bytes
             overall_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
             status_key = f"pipeline:{video_id}:active"
             redis_client.hset(status_key, mapping={
@@ -669,17 +659,14 @@ async def execute_clip_upload(video_id: str) -> None:
             })
         except Exception as e:
             logger.error(f"Failed to update clip upload progress: {e}")
-    
+
     uploader = GCSUploader()
     updated_moments = await uploader.upload_all_clips(
-        video_id, 
+        video_id,
         moments,
         progress_callback=clip_upload_progress_callback
     )
-    
-    # Save updated moments with GCS paths and signed URLs
-    save_moments(video_filename, updated_moments)
-    
+
     uploaded_count = sum(1 for m in updated_moments if m.get('gcs_clip_path'))
     logger.info(f"Uploaded {uploaded_count} clips for {video_id} to GCS")
 
@@ -687,26 +674,21 @@ async def execute_clip_upload(video_id: str) -> None:
 async def execute_moment_refinement(video_id: str, config: dict) -> None:
     """
     Execute moment refinement stage using async/await.
-    
-    This function uses the new async process_moment_refinement() which:
-    - Directly awaits AI model calls (no polling)
-    - Uses asyncio.wait_for() for timeout handling
-    - Has native exception propagation
-    - No longer requires JobRepository
+
+    Phase 6: Loads moments from database. Only refines original (non-refined)
+    moments. The refinement service uses create_or_update_refined to ensure
+    exactly one refined copy per parent.
     """
     video_filename = f"{video_id}.mp4"
-    moments = load_moments(video_filename)
-    
+    moments = await load_moments(video_filename)
+
     if not moments:
         raise Exception("No moments found for refinement")
-    
-    # Check override flag to determine which moments to refine
-    if config.get("override_existing_refinement", False):
-        # Re-refine ALL moments (including already refined ones)
-        moments_to_refine = moments
-    else:
-        # Only refine moments that haven't been refined yet
-        moments_to_refine = [m for m in moments if not m.get('is_refined', False)]
+
+    # Only refine original (non-refined) moments.
+    # The create_or_update_refined upsert in the refinement service handles
+    # re-refinement automatically (updates the existing refined moment).
+    moments_to_refine = [m for m in moments if not m.get('is_refined', False)]
     
     if not moments_to_refine:
         logger.info(f"All moments already refined for {video_id}")
@@ -747,29 +729,47 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
                     ),
                     timeout=600  # 10 minutes per moment
                 )
-                return success
+                return (True, moment_id, None)
             except asyncio.TimeoutError:
-                logger.error(f"Refinement timed out for moment {moment_id}")
-                return False
+                error_msg = f"Refinement timed out after 600s for moment {moment_id}"
+                logger.error(error_msg)
+                return (False, moment_id, error_msg)
             except Exception as e:
-                logger.error(f"Refinement failed for moment {moment_id}: {e}")
-                return False
+                error_msg = f"Refinement failed for moment {moment_id}: {e}"
+                logger.error(error_msg)
+                return (False, moment_id, error_msg)
     
     # Run refinements with progress tracking
     tasks = [refine_one_moment(m) for m in moments_to_refine]
     results = []
+    errors = []
     processed = 0
     successful = 0
     
     for coro in asyncio.as_completed(tasks):
-        result = await coro
-        results.append(result)
+        success, completed_moment_id, error_msg = await coro
+        results.append(success)
         processed += 1
-        if result:
+        if success:
             successful += 1
+        else:
+            errors.append(error_msg)
         await update_refinement_progress(video_id, len(moments_to_refine), processed, successful)
     
     logger.info(f"Refined {successful}/{len(moments_to_refine)} moments for {video_id}")
+
+    # Store per-moment errors in Redis so the UI can surface them
+    if errors:
+        from app.core.redis import get_async_redis_client
+        _redis = await get_async_redis_client()
+        status_key = f"pipeline:{video_id}:active"
+        await _redis.hset(status_key, "refinement_errors", json.dumps(errors))
+        # Individual errors were already logged inside refine_one_moment(); just log the count here.
+        logger.warning(f"{len(errors)} of {len(moments_to_refine)} refinement(s) failed for {video_id}. See individual errors above.")
+
+    # If every single moment failed, raise so execute_pipeline marks the stage failed
+    if successful == 0 and len(moments_to_refine) > 0:
+        raise Exception(f"All {len(moments_to_refine)} refinement(s) failed for {video_id}. See individual errors above.")
 
 
 async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> None:

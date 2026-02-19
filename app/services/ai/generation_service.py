@@ -834,7 +834,6 @@ async def process_moments_generation(
                 "content": complete_prompt
             }]
             
-            # Call AI model asynchronously
             logger.info(f"Calling AI model ({model}) for moment generation (async)...")
             ai_response = await call_ai_model_async(messages, model_key=model, model_id=model_id, temperature=temperature)
             
@@ -966,6 +965,39 @@ async def process_moments_generation(
             if not validated_moments:
                 logger.warning("No valid moments after validation - returning empty result")
             
+            # --- Phase 6: Bulk insert moments into database ---
+            if validated_moments:
+                try:
+                    from app.database.session import get_session_factory as _get_sf
+                    from app.repositories import moment_db_repository as moment_db_repo
+                    from app.repositories import video_db_repository as _video_db_repo
+                    from app.services.moments_service import generate_moment_id
+
+                    _sf = _get_sf()
+                    async with _sf() as db_session:
+                        video_record = await _video_db_repo.get_by_identifier(db_session, video_id)
+                        if video_record:
+                            moments_data = []
+                            for m in validated_moments:
+                                if 'id' not in m or not m['id']:
+                                    m['id'] = generate_moment_id(m['start_time'], m['end_time'])
+                                moments_data.append({
+                                    "identifier": m['id'],
+                                    "video_id": video_record.id,
+                                    "start_time": m['start_time'],
+                                    "end_time": m['end_time'],
+                                    "title": m['title'],
+                                    "is_refined": False,
+                                    "generation_config_id": generation_config_id,
+                                })
+                            await moment_db_repo.bulk_create(db_session, moments_data)
+                            await db_session.commit()
+                            logger.info(f"Saved {len(moments_data)} moments to database for {video_id}")
+                        else:
+                            logger.warning(f"Video '{video_id}' not found in DB, moments not saved to database")
+                except Exception as db_err:
+                    logger.warning(f"Failed to save moments to database: {db_err}")
+
             duration = time.time() - start_time
             log_operation_complete(
                 logger="app.services.ai.generation_service",
