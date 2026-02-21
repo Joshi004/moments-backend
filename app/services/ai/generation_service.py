@@ -142,19 +142,27 @@ async def create_ssh_tunnel(model_key: str = "minimax") -> Optional[subprocess.P
         # Wait a moment for tunnel to establish
         time.sleep(2.0)
         
-        # Check if SSH tunnel process is actually running
+        # Check if SSH tunnel process is actually running by looking for an SSH process
+        # listening on the local port. Uses lsof (reliable on macOS without root).
         tunnel_running = False
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                cmdline = proc.info.get('cmdline', [])
-                if cmdline and 'ssh' in cmdline:
-                    cmd_str = ' '.join(cmdline)
-                    if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
-                        logger.info(f"Found SSH tunnel process (PID: {proc.info['pid']})")
+        try:
+            lsof_result = subprocess.run(
+                ['lsof', '-ti', f':{ssh_local_port}'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            pids = [p.strip() for p in lsof_result.stdout.decode().strip().split('\n') if p.strip()]
+            for pid_str in pids:
+                try:
+                    proc = psutil.Process(int(pid_str))
+                    if 'ssh' in proc.name().lower():
+                        logger.info(f"Found SSH tunnel process (PID: {pid_str})")
                         tunnel_running = True
                         break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+                except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+                    continue
+        except Exception as e:
+            logger.warning(f"lsof tunnel check failed: {e}")
         
         if not tunnel_running:
             logger.warning("SSH tunnel process not found, but command succeeded. Tunnel may have failed silently.")
@@ -219,24 +227,40 @@ async def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, mo
                 logger.info(f"SSH tunnel force-killed (PID: {tunnel_process.pid})")
                 return True
         else:
-            # Find and kill SSH processes using the tunnel port
+            # Find and kill any SSH process listening on the local port, regardless of
+            # which remote worker it targets. This correctly handles stale tunnels that
+            # were created under a previous config pointing to a different worker.
+            # Uses lsof to find PIDs, which is reliable on macOS without root privileges.
+            # psutil.net_connections() raises AccessDenied on macOS, so we avoid it here.
+            ssh_local_port = config['ssh_local_port']
             killed = False
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    cmdline = proc.info.get('cmdline', [])
-                    if cmdline and 'ssh' in cmdline:
-                        # Check if this is our tunnel command
-                        cmd_str = ' '.join(cmdline)
-                        if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
+            try:
+                lsof_result = subprocess.run(
+                    ['lsof', '-ti', f':{ssh_local_port}'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                pids = [p.strip() for p in lsof_result.stdout.decode().strip().split('\n') if p.strip()]
+                for pid_str in pids:
+                    try:
+                        pid = int(pid_str)
+                        proc = psutil.Process(pid)
+                        if 'ssh' in proc.name().lower():
+                            old_cmdline = ' '.join(proc.cmdline())
                             proc.terminate()
                             try:
                                 proc.wait(timeout=5)
                             except psutil.TimeoutExpired:
                                 proc.kill()
-                            logger.info(f"SSH tunnel closed (PID: {proc.info['pid']})")
+                            logger.info(
+                                f"Killed SSH tunnel on port {ssh_local_port} "
+                                f"(PID: {pid}, was targeting: {old_cmdline})"
+                            )
                             killed = True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+                        continue
+            except Exception as e:
+                logger.warning(f"lsof-based port kill failed: {e}")
             
             return killed
             
@@ -760,6 +784,11 @@ async def process_moments_generation(
         
         logger.debug(f"Complete prompt length: {len(complete_prompt)} characters")
         
+        # Get model configuration here so it is available both for the DB block below
+        # and for the SSH tunnel call that follows.
+        model_config = await get_model_config(model)
+        model_id = model_config.get('model_id')
+        
         # --- Phase 5: Create database records for prompt and generation config ---
         generation_config_id = None
         try:
@@ -821,10 +850,6 @@ async def process_moments_generation(
         except Exception as db_err:
             logger.warning(f"Failed to create DB records for generation config: {db_err}")
             # Non-fatal: pipeline continues even if DB record creation fails
-        
-        # Get model configuration
-        model_config = await get_model_config(model)
-        model_id = model_config.get('model_id')
         
         # Create SSH tunnel and call AI model
         async with ssh_tunnel(model):

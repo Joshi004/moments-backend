@@ -31,15 +31,14 @@ from app.services.moments_service import (
 )
 
 from app.services.video_clipping_service import (
-    get_moment_clips_directory,
+    get_temp_clips_directory,
     get_clip_path,
     check_clip_exists,
-    get_clip_url,
+    get_clip_signed_url,
+    get_clip_gcs_signed_url_async,
     get_video_duration,
     get_clip_duration,
-    extract_video_clip,
-    process_clip_extraction_async,
-    extract_clips_for_video
+    extract_clips_parallel,
 )
 
 from app.services.thumbnail_service import (
@@ -76,15 +75,14 @@ __all__ = [
     "add_moment",
     
     # Video clipping service
-    "get_moment_clips_directory",
+    "get_temp_clips_directory",
     "get_clip_path",
     "check_clip_exists",
-    "get_clip_url",
+    "get_clip_signed_url",
+    "get_clip_gcs_signed_url_async",
     "get_video_duration",
     "get_clip_duration",
-    "extract_video_clip",
-    "process_clip_extraction_async",
-    "extract_clips_for_video",
+    "extract_clips_parallel",
     
     # Thumbnail service
     "get_thumbnails_directory",

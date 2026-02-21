@@ -53,9 +53,9 @@ app.mount("/static/audios", StaticFiles(directory=str(audio_dir)), name="audios"
 # Transcripts are now served from database via API, not as static files
 # JSON files kept on disk as backup only
 
-moment_clips_dir = Path(__file__).parent.parent / "static" / "moment_clips"
-moment_clips_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/moment_clips", StaticFiles(directory=str(moment_clips_dir)), name="moment_clips")
+# Clips are now served via GCS signed URLs through /api/clips/{moment_id}/stream
+# and /api/clips/{moment_id}/url endpoints (Phase 7).
+# static/moment_clips/ files are kept as backup but no longer served directly.
 
 
 # Root and health endpoints

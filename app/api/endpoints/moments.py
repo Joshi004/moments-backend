@@ -454,8 +454,8 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
                     detail=f"Model '{request.model}' does not support video. Use 'qwen3_vl_fp8' for video refinement."
                 )
             
-            # Check if clip exists
-            if not check_clip_exists(moment_id, video_file.name):
+            # Check if clip exists in the database (Phase 7: DB is source of truth)
+            if not await check_clip_exists(moment_id):
                 raise HTTPException(
                     status_code=400,
                     detail="Video clip not available. Extract clips first or disable video refinement."

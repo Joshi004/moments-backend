@@ -40,8 +40,6 @@ from app.services.ai.generation_service import process_moments_generation
 from app.services.ai.refinement_service import process_moment_refinement
 from app.services.moments_service import load_moments
 from app.services.video_clipping_service import (
-    get_clip_path,
-    check_clip_exists,
     extract_clips_parallel,
 )
 from app.utils.video import get_video_by_filename
@@ -332,28 +330,39 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         # Always re-extract when moments are overridden (old clips will be deleted)
         if config.get("override_existing_moments", False):
             return False, ""
-        
+
         moments = await load_moments(video_filename)
         if not moments:
             return True, "No moments to extract clips from"
-        all_clips_exist = all(
-            check_clip_exists(m['id'], video_filename) 
-            for m in moments
-        )
+
+        # Check DB for existing clip records (Phase 7: DB is source of truth)
+        original_moments = [m for m in moments if not m.get("is_refined", False)]
+        if not original_moments:
+            return True, "No original moments to extract clips from"
+
+        from app.database.session import get_session_factory
+        from app.repositories import moment_db_repository, clip_db_repository
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            all_clips_exist = True
+            for m in original_moments:
+                moment = await moment_db_repository.get_by_identifier(session, m["id"])
+                if not moment:
+                    all_clips_exist = False
+                    break
+                exists = await clip_db_repository.exists_for_moment(session, moment.id)
+                if not exists:
+                    all_clips_exist = False
+                    break
+
         if all_clips_exist:
-            return True, "All clips already extracted"
-    
+            return True, "All clips already in database"
+
     elif stage == PipelineStage.CLIP_UPLOAD:
-        # Always re-upload when moments are overridden (new clips will be generated)
-        if config.get("override_existing_moments", False):
-            return False, ""
-        
-        moments = await load_moments(video_filename)
-        if not moments:
-            return True, "No moments to upload clips for"
-        all_uploaded = all(m.get('remote_clip_path') for m in moments)
-        if all_uploaded:
-            return True, "All clips already uploaded"
+        # CLIP_UPLOAD is now a pass-through verification stage (Phase 7).
+        # Upload happens during CLIP_EXTRACTION. Always skip this stage.
+        return True, "Clip upload is handled during extraction (Phase 7)"
     
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         moments = await load_moments(video_filename)
@@ -562,54 +571,47 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
 
 
 async def execute_clip_extraction(video_id: str, config: dict) -> None:
-    """Execute clip extraction stage."""
+    """
+    Execute clip extraction stage.
+
+    Phase 7: Extraction, GCS upload, and database registration happen atomically
+    per clip inside extract_clips_parallel(). No separate CLIP_UPLOAD stage needed.
+    """
     video_filename = f"{video_id}.mp4"
     video_path = get_video_by_filename(video_filename)
-    
+
     cloud_url = None
     if not video_path:
         # Fallback: look up cloud_url from database
         logger.info(f"Local video not found for {video_id}, querying database for cloud_url")
         from app.database.session import get_session_factory
         from app.repositories import video_db_repository
-        
+
         session_factory = get_session_factory()
         async with session_factory() as session:
             video = await video_db_repository.get_by_identifier(session, video_id)
             if video and video.cloud_url:
                 cloud_url = video.cloud_url
                 logger.info(f"Found cloud_url in database: {cloud_url}")
-                # Create a dummy path object for the identifier
                 from pathlib import Path
                 video_path = Path(f"{video_id}.mp4")
             else:
                 raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
-    
+
     moments = await load_moments(video_filename)
     if not moments:
         raise Exception("No moments found for clip extraction")
-    
-    # Cleanup existing clips if moments were regenerated
+
+    # Delete existing GCS clips + DB records when moments are being regenerated
     if config.get("override_existing_moments", False):
         from app.services.video_clipping_service import delete_all_clips_for_video
-        
+
         logger.info(f"Cleaning up existing clips for {video_id} (moments were regenerated)")
-        
-        # Delete local clips
-        deleted_local = await asyncio.to_thread(delete_all_clips_for_video, video_id)
-        logger.info(f"Cleaned up {deleted_local} local clips for {video_id}")
-        
-        # Delete GCS clips
-        try:
-            uploader = GCSUploader()
-            deleted_gcs = await uploader.delete_clips_for_video(video_id)
-            logger.info(f"Cleaned up {deleted_gcs} GCS clips for {video_id}")
-        except Exception as e:
-            logger.warning(f"GCS clip cleanup failed for {video_id}: {e}")
-    
-    # Create progress callback for pipeline status
+        deleted_db = await delete_all_clips_for_video(video_id)
+        logger.info(f"Cleaned up {deleted_db} clip records for {video_id}")
+
+    # Progress callback updates Redis with current extraction counts
     def progress_callback(total: int, processed: int, failed: int):
-        """Update pipeline status with clip extraction progress."""
         from app.core.redis import get_redis_client
         redis_client = get_redis_client()
         status_key = f"pipeline:{video_id}:active"
@@ -618,57 +620,70 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
             "clips_processed": str(processed),
             "clips_failed": str(failed),
         })
-    
-    # Extract clips in parallel
+
+    # Each clip: FFmpeg extract → GCS upload → DB insert → delete temp file
     success = await extract_clips_parallel(
         video_path=video_path,
         video_filename=video_filename,
         moments=moments,
         override_existing=config.get("override_existing_clips", False),
         progress_callback=progress_callback,
-        cloud_url=cloud_url
+        cloud_url=cloud_url,
     )
-    
+
     if not success:
         raise Exception("Clip extraction failed")
-    
-    logger.info(f"Extracted {len(moments)} clips for {video_id}")
+
+    original_count = sum(1 for m in moments if not m.get("is_refined", False))
+    logger.info(f"Clip extraction complete: {original_count} original moments processed for {video_id}")
 
 
 async def execute_clip_upload(video_id: str) -> None:
-    """Execute clip upload stage to GCS."""
-    video_filename = f"{video_id}.mp4"
-    moments = await load_moments(video_filename)
+    """
+    Phase 7: Clip upload is now handled atomically during CLIP_EXTRACTION.
 
-    if not moments:
-        raise Exception("No moments found for clip upload")
-
-    # Create progress callback for Redis updates - uses sync client
-    def clip_upload_progress_callback(clip_index: int, total_clips: int, bytes_uploaded: int, total_bytes: int):
-        try:
-            from app.core.redis import get_redis_client
-            redis_client = get_redis_client()
-            overall_percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
-            status_key = f"pipeline:{video_id}:active"
-            redis_client.hset(status_key, mapping={
-                "clip_upload_current": str(clip_index),
-                "clip_upload_total_clips": str(total_clips),
-                "clip_upload_bytes": str(bytes_uploaded),
-                "clip_upload_total_bytes": str(total_bytes),
-                "clip_upload_percentage": str(overall_percentage),
-            })
-        except Exception as e:
-            logger.error(f"Failed to update clip upload progress: {e}")
-
-    uploader = GCSUploader()
-    updated_moments = await uploader.upload_all_clips(
-        video_id,
-        moments,
-        progress_callback=clip_upload_progress_callback
+    This stage is kept as a pass-through to avoid breaking existing pipeline
+    stage definitions stored in Redis. It verifies that clips are in the
+    database and logs a warning for any original moments that are missing clips.
+    """
+    logger.info(
+        f"CLIP_UPLOAD stage reached for {video_id} - "
+        "clips are uploaded during extraction (Phase 7). Verifying DB state."
     )
 
-    uploaded_count = sum(1 for m in updated_moments if m.get('gcs_clip_path'))
-    logger.info(f"Uploaded {uploaded_count} clips for {video_id} to GCS")
+    video_filename = f"{video_id}.mp4"
+    moments = await load_moments(video_filename)
+    if not moments:
+        logger.warning(f"No moments found for {video_id} during CLIP_UPLOAD verification")
+        return
+
+    original_moments = [m for m in moments if not m.get("is_refined", False)]
+
+    from app.database.session import get_session_factory
+    from app.repositories import moment_db_repository, clip_db_repository
+
+    session_factory = get_session_factory()
+    missing = []
+    async with session_factory() as session:
+        for m in original_moments:
+            moment = await moment_db_repository.get_by_identifier(session, m["id"])
+            if not moment:
+                missing.append(m["id"])
+                continue
+            exists = await clip_db_repository.exists_for_moment(session, moment.id)
+            if not exists:
+                missing.append(m["id"])
+
+    if missing:
+        logger.warning(
+            f"CLIP_UPLOAD verification: {len(missing)} moment(s) are missing clips in the DB "
+            f"for {video_id}: {missing}"
+        )
+    else:
+        logger.info(
+            f"CLIP_UPLOAD verification: all {len(original_moments)} original moment clips "
+            f"are registered in the database for {video_id}"
+        )
 
 
 async def execute_moment_refinement(video_id: str, config: dict) -> None:
@@ -704,15 +719,26 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
         async with limits.refinement:
             moment_id = moment['id']
             
-            # Generate GCS signed URL for video if needed
+            # Generate fresh GCS signed URL from the clips table (Phase 7)
             video_clip_url = None
             if config.get("include_video_refinement", True):
-                from app.services.video_clipping_service import get_clip_gcs_signed_url_async
-                video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_filename)
-                if video_clip_url:
-                    logger.info(f"Generated GCS signed URL for clip refinement: {moment_id}")
-                else:
-                    logger.warning(f"Failed to generate GCS signed URL for clip: {moment_id}")
+                from app.database.session import get_session_factory
+                from app.repositories import moment_db_repository, clip_db_repository
+                from app.services.pipeline.upload_service import GCSUploader
+
+                session_factory = get_session_factory()
+                async with session_factory() as session:
+                    moment_record = await moment_db_repository.get_by_identifier(session, moment_id)
+                    if moment_record:
+                        clip_record = await clip_db_repository.get_by_moment_id(session, moment_record.id)
+                        if clip_record:
+                            uploader = GCSUploader()
+                            video_clip_url = uploader.generate_signed_url(clip_record.cloud_url)
+                            logger.info(f"Generated fresh GCS signed URL for clip refinement: {moment_id}")
+                        else:
+                            logger.warning(f"No clip found in database for moment: {moment_id}")
+                    else:
+                        logger.warning(f"Moment not found in database: {moment_id}")
             
             try:
                 # Use asyncio.wait_for() for timeout handling - no more polling!

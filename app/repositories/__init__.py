@@ -7,10 +7,14 @@ from app.repositories import video_db_repository
 from app.repositories import transcript_db_repository
 from app.repositories import prompt_db_repository
 from app.repositories import generation_config_db_repository
+from app.repositories import moment_db_repository
+from app.repositories import clip_db_repository
 
 __all__ = [
     'video_db_repository',
     'transcript_db_repository',
     'prompt_db_repository',
     'generation_config_db_repository',
+    'moment_db_repository',
+    'clip_db_repository',
 ]

@@ -174,19 +174,22 @@ async def model_supports_video(model_key: str) -> bool:
 
 def get_video_clip_url(moment_id: str, video_filename: str) -> str:
     """
-    Get the full URL for a video clip.
-    
+    Get the URL for accessing a video clip.
+
+    Phase 7: Clips are now served via the /api/clips/{moment_id}/stream endpoint
+    which redirects to a fresh GCS signed URL. The local static file mount for
+    /moment_clips has been removed.
+
     Args:
         moment_id: Unique identifier for the moment
-        video_filename: Original video filename (e.g., "ProjectUpdateVideo.mp4")
-    
+        video_filename: Original video filename (kept for signature compatibility)
+
     Returns:
-        Full URL for the video clip
+        API stream URL for the clip (302 redirect to GCS signed URL)
     """
-    video_stem = Path(video_filename).stem
-    clip_filename = f"{video_stem}_{moment_id}_clip.mp4"
     config = get_video_server_config()
-    return f"{config['base_url']}/{config['clips_path']}/{clip_filename}"
+    base_url = config.get("base_url", "")
+    return f"{base_url}/api/clips/{moment_id}/stream"
 
 
 def get_duration_tolerance() -> float:
