@@ -24,10 +24,10 @@ class PipelineHistory(Base):
         nullable=False,
         index=True
     )
-    generation_config_id: Mapped[int] = mapped_column(
+    generation_config_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("generation_configs.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("generation_configs.id", ondelete="SET NULL"),
+        nullable=True,
         index=True
     )
     pipeline_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -47,7 +47,7 @@ class PipelineHistory(Base):
     
     # Relationships
     video: Mapped["Video"] = relationship("Video", back_populates="pipeline_runs")
-    generation_config: Mapped["GenerationConfig"] = relationship(
+    generation_config: Mapped["GenerationConfig | None"] = relationship(
         "GenerationConfig",
         back_populates="pipeline_runs"
     )

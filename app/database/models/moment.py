@@ -36,7 +36,7 @@ class Moment(Base):
     )
     generation_config_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("generation_configs.id", ondelete="CASCADE"),
+        ForeignKey("generation_configs.id", ondelete="SET NULL"),
         nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

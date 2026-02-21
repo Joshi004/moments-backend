@@ -5,7 +5,8 @@ All status and lock operations are async for non-blocking Redis operations.
 import asyncio
 import json
 import logging
-from typing import Tuple, Dict, Any
+import time
+from typing import Optional, Tuple, Dict, Any
 from pathlib import Path
 
 from app.models.pipeline_schemas import PipelineStage
@@ -504,11 +505,14 @@ async def execute_transcription(video_id: str, audio_signed_url: str) -> None:
         raise
 
 
-async def execute_moment_generation(video_id: str, config: dict) -> None:
+async def execute_moment_generation(video_id: str, config: dict) -> Optional[int]:
     """Execute moment generation stage.
 
     Phase 6: Moments are saved to the database by the generation service.
     Before generating, existing moments for the video are deleted (regeneration).
+
+    Returns:
+        generation_config_id if one was created, otherwise None
     """
     video_filename = f"{video_id}.mp4"
 
@@ -553,6 +557,12 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
 
         if generation_config_id:
             logger.info(f"Generation config ID: {generation_config_id}")
+            # Store in Redis active hash so it's available to the worker and archive function
+            from app.core.redis import get_async_redis_client
+            _redis = await get_async_redis_client()
+            status_key = f"pipeline:{video_id}:active"
+            await _redis.hset(status_key, "generation_config_id", str(generation_config_id))
+            logger.info(f"Stored generation_config_id={generation_config_id} in Redis for {video_id}")
 
         if validated_moments:
             logger.info(f"Generated {len(validated_moments)} moments for {video_id} (saved to database by generation service)")
@@ -560,6 +570,7 @@ async def execute_moment_generation(video_id: str, config: dict) -> None:
             logger.warning(f"No moments generated for {video_filename}")
 
         logger.info(f"Moment generation completed for {video_id}")
+        return generation_config_id
 
     except asyncio.TimeoutError:
         error_msg = f"Moment generation timed out after 900 seconds"
@@ -798,14 +809,17 @@ async def execute_moment_refinement(video_id: str, config: dict) -> None:
         raise Exception(f"All {len(moments_to_refine)} refinement(s) failed for {video_id}. See individual errors above.")
 
 
-async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> None:
+async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> Any:
     """
     Execute a single pipeline stage.
-    
+
     Args:
         stage: Pipeline stage to execute
         video_id: Video identifier
         config: Pipeline configuration
+
+    Returns:
+        Stage-specific return value (e.g. generation_config_id for MOMENT_GENERATION)
     """
     if stage == PipelineStage.VIDEO_DOWNLOAD:
         await execute_video_download(video_id, config)
@@ -849,7 +863,7 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
         await execute_transcription(video_id, audio_signed_url)
     
     elif stage == PipelineStage.MOMENT_GENERATION:
-        await execute_moment_generation(video_id, config)
+        return await execute_moment_generation(video_id, config)
     
     elif stage == PipelineStage.CLIP_EXTRACTION:
         await execute_clip_extraction(video_id, config)
@@ -860,42 +874,77 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> No
     elif stage == PipelineStage.MOMENT_REFINEMENT:
         await execute_moment_refinement(video_id, config)
 
+    return None
 
-async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
+
+def determine_pipeline_type(skipped_stages: set) -> str:
+    """
+    Classify the pipeline run based on which stages were skipped.
+
+    Args:
+        skipped_stages: Set of PipelineStage values that were skipped
+
+    Returns:
+        'full', 'moments_only', or 'clips_only'
+    """
+    if PipelineStage.MOMENT_GENERATION in skipped_stages:
+        return "clips_only"
+    if PipelineStage.TRANSCRIPTION in skipped_stages:
+        return "moments_only"
+    if PipelineStage.VIDEO_DOWNLOAD in skipped_stages:
+        return "moments_only"
+    return "full"
+
+
+async def execute_pipeline(
+    video_id: str,
+    config: dict,
+    pipeline_history_id: Optional[int] = None,
+) -> Dict[str, Any]:
     """
     Execute complete pipeline based on model selection.
-    
+
     Args:
         video_id: Video identifier
         config: Pipeline configuration dictionary
-    
+        pipeline_history_id: Optional numeric DB id of the pipeline_history record.
+                             When provided, the orchestrator updates it with the
+                             generation_config_id after moment generation.
+
     Returns:
-        Result dictionary with success status and details
+        Result dictionary with success status, timing, counts, and error details.
     """
     generation_model = config.get("generation_model", "qwen3_vl_fp8")
     refinement_model = config.get("refinement_model", "qwen3_vl_fp8")
-    
-    logger.info(f"Starting pipeline for {video_id} with generation_model={generation_model}, refinement_model={refinement_model}")
-    
+
+    logger.info(
+        f"Starting pipeline for {video_id} with generation_model={generation_model}, "
+        f"refinement_model={refinement_model}, pipeline_history_id={pipeline_history_id}"
+    )
+
+    pipeline_start = time.time()
+    skipped_stages: set = set()
+    generation_config_id: Optional[int] = None
+
     # Use existing helper from model_config.py
     from app.utils.model_config import model_supports_video
     refinement_needs_video = await model_supports_video(refinement_model)
-    
+
     # Select stages based on refinement model's video capability
     if refinement_needs_video:
         stages = QWEN_STAGES
     else:
         stages = MINIMAX_STAGES
-        # Mark skipped stages for non-video models
-        await mark_stage_skipped(video_id, PipelineStage.CLIP_EXTRACTION, 
-                          "Refinement model does not support video")
-        await mark_stage_skipped(video_id, PipelineStage.CLIP_UPLOAD, 
-                          "Refinement model does not support video")
-        # Force disable video refinement
+        skipped_stages.add(PipelineStage.CLIP_EXTRACTION)
+        skipped_stages.add(PipelineStage.CLIP_UPLOAD)
+        await mark_stage_skipped(video_id, PipelineStage.CLIP_EXTRACTION,
+                                 "Refinement model does not support video")
+        await mark_stage_skipped(video_id, PipelineStage.CLIP_UPLOAD,
+                                 "Refinement model does not support video")
         config["include_video_refinement"] = False
-    
+
     await update_pipeline_status(video_id, "processing")
-    
+
     try:
         for stage in stages:
             # Check for cancellation between stages
@@ -903,41 +952,115 @@ async def execute_pipeline(video_id: str, config: dict) -> Dict[str, Any]:
                 await update_pipeline_status(video_id, "cancelled")
                 await clear_cancellation(video_id)
                 logger.info(f"Pipeline cancelled for {video_id}")
-                return {"success": False, "cancelled": True}
-            
+                return {
+                    "success": False,
+                    "cancelled": True,
+                    "duration_seconds": time.time() - pipeline_start,
+                    "pipeline_type": determine_pipeline_type(skipped_stages),
+                    "generation_config_id": generation_config_id,
+                }
+
             # Check skip logic
             should_skip, reason = await should_skip_stage(stage, video_id, config)
             if should_skip:
                 await mark_stage_skipped(video_id, stage, reason)
+                skipped_stages.add(stage)
                 logger.info(f"Skipping stage {stage.value} for {video_id}: {reason}")
                 continue
-            
+
             # Execute stage
             await update_current_stage(video_id, stage)
             await mark_stage_started(video_id, stage)
-            
+
             try:
                 logger.info(f"Executing stage {stage.value} for {video_id}")
-                await execute_stage(stage, video_id, config)
+                stage_result = await execute_stage(stage, video_id, config)
                 await mark_stage_completed(video_id, stage)
                 logger.info(f"Completed stage {stage.value} for {video_id}")
+
+                # After MOMENT_GENERATION, capture config_id and update DB record
+                if stage == PipelineStage.MOMENT_GENERATION and stage_result is not None:
+                    generation_config_id = stage_result
+                    if pipeline_history_id and generation_config_id:
+                        try:
+                            from app.database.session import get_session_factory
+                            from app.repositories import pipeline_history_db_repository
+                            session_factory = get_session_factory()
+                            async with session_factory() as session:
+                                await pipeline_history_db_repository.set_generation_config_id(
+                                    session, pipeline_history_id, generation_config_id
+                                )
+                                await session.commit()
+                            logger.info(
+                                f"Updated pipeline_history id={pipeline_history_id} "
+                                f"with generation_config_id={generation_config_id}"
+                            )
+                        except Exception as db_err:
+                            logger.error(f"Failed to update generation_config_id in DB: {db_err}")
+
             except Exception as e:
                 logger.exception(f"Failed stage {stage.value} for {video_id}: {e}")
                 await mark_stage_failed(video_id, stage, str(e))
                 await update_pipeline_status(video_id, "failed")
                 return {
                     "success": False,
-                    "error": str(e),
-                    "failed_stage": stage.value
+                    "error_stage": stage.value,
+                    "error_message": str(e),
+                    "duration_seconds": time.time() - pipeline_start,
+                    "pipeline_type": determine_pipeline_type(skipped_stages),
+                    "generation_config_id": generation_config_id,
+                    "total_moments_generated": 0,
+                    "total_clips_created": 0,
                 }
-            
+
             # Refresh lock after each stage
             await refresh_lock(video_id)
+
     except Exception as e:
         logger.exception(f"Unexpected pipeline error for {video_id}: {e}")
         await update_pipeline_status(video_id, "failed")
-        return {"success": False, "error": str(e), "failed_stage": "pipeline_error"}
-    
+        return {
+            "success": False,
+            "error_stage": "pipeline_error",
+            "error_message": str(e),
+            "duration_seconds": time.time() - pipeline_start,
+            "pipeline_type": determine_pipeline_type(skipped_stages),
+            "generation_config_id": generation_config_id,
+            "total_moments_generated": 0,
+            "total_clips_created": 0,
+        }
+
     await update_pipeline_status(video_id, "completed")
     logger.info(f"Pipeline completed successfully for {video_id}")
-    return {"success": True}
+
+    # Collect outcome counts from Redis
+    total_moments = 0
+    total_clips = 0
+    try:
+        from app.core.redis import get_async_redis_client
+        _redis = await get_async_redis_client()
+        status_key = f"pipeline:{video_id}:active"
+        status_data = await _redis.hgetall(status_key)
+        clips_processed_str = status_data.get("clips_processed", b"0")
+        if isinstance(clips_processed_str, bytes):
+            clips_processed_str = clips_processed_str.decode()
+        total_clips = int(clips_processed_str) if clips_processed_str else 0
+
+        # Count moments from DB (most accurate after Phase 6)
+        from app.database.session import get_session_factory
+        from app.repositories import moment_db_repository
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            moments = await moment_db_repository.get_by_video_identifier(session, video_id)
+            total_moments = sum(1 for m in moments if not m.is_refined)
+    except Exception as count_err:
+        logger.warning(f"Could not collect outcome counts: {count_err}")
+
+    return {
+        "success": True,
+        "duration_seconds": time.time() - pipeline_start,
+        "pipeline_type": determine_pipeline_type(skipped_stages),
+        "generation_config_id": generation_config_id,
+        "total_moments_generated": total_moments,
+        "total_clips_created": total_clips,
+    }

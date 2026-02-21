@@ -8,10 +8,13 @@ import asyncio
 import json
 import time
 import logging
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import get_async_redis_client
+from app.database.dependencies import get_db
 from app.models.pipeline_schemas import (
     PipelineStartRequest,
     PipelineStartResponse,
@@ -359,27 +362,62 @@ async def start_pipeline(video_id: str, request: PipelineStartRequest):
 
 
 @router.get("/{video_id}/status", response_model=PipelineStatusResponse)
-async def get_pipeline_status(video_id: str):
+async def get_pipeline_status(video_id: str, db: AsyncSession = Depends(get_db)):
     """
     Get current pipeline status for a video.
-    
+
+    Fallback chain:
+    1. Active Redis hash (pipeline currently running)
+    2. Cached Redis run hash (completed within last 24h)
+    3. Most recent pipeline_history DB record (permanent fallback)
+    4. never_run (no history at all)
+
     Args:
         video_id: Video identifier
-    
+
     Returns:
         Pipeline status response
     """
-    # Check Redis for active pipeline
+    # 1. Check Redis for active pipeline
     status_data = await get_active_status(video_id)
     if status_data:
         return await _build_status_response(status_data)
-    
-    # Not active - check Redis history for last run
+
+    # 2. Not active - check Redis history for last run
     latest_run = await get_latest_run(video_id)
     if latest_run:
         return await _build_status_response(latest_run)
-    
-    # Never run
+
+    # 3. DB fallback - most recent pipeline_history record
+    try:
+        from app.repositories import pipeline_history_db_repository
+        db_runs = await pipeline_history_db_repository.get_by_video_identifier(
+            db, video_id, limit=1
+        )
+        if db_runs:
+            run = db_runs[0]
+            started_at_ts = run.started_at.timestamp() if run.started_at else 0.0
+            completed_at_ts = run.completed_at.timestamp() if run.completed_at else None
+            return PipelineStatusResponse(
+                request_id=run.identifier,
+                video_id=video_id,
+                status=run.status,
+                generation_model="",
+                refinement_model="",
+                started_at=started_at_ts,
+                completed_at=completed_at_ts,
+                total_duration_seconds=run.duration_seconds,
+                current_stage=None,
+                stages={},
+                error_stage=run.error_stage,
+                error_message=run.error_message,
+                coarse_moments=[],
+                refined_moments=[],
+            )
+    except Exception as db_err:
+        logger.warning(f"DB fallback for status failed for {video_id}: {db_err}")
+
+    # 4. Never run
     return PipelineStatusResponse(
         request_id="",
         video_id=video_id,
@@ -425,73 +463,71 @@ async def cancel_pipeline(video_id: str):
     return {"message": "Cancellation requested", "video_id": video_id}
 
 
+def _history_record_to_dict(run) -> Dict[str, Any]:
+    """Convert a PipelineHistory ORM instance to an API response dict."""
+    return {
+        "id": run.id,
+        "identifier": run.identifier,
+        "pipeline_type": run.pipeline_type,
+        "status": run.status,
+        "started_at": run.started_at.isoformat() + "Z" if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() + "Z" if run.completed_at else None,
+        "total_duration_seconds": run.duration_seconds,
+        "total_moments_generated": run.total_moments_generated,
+        "total_clips_created": run.total_clips_created,
+        "error_stage": run.error_stage,
+        "error_message": run.error_message,
+        "generation_config_id": run.generation_config_id,
+        # Fields used by the frontend to display video_id and for sorting
+        "video_id": video_id_from_run(run),
+        "start_time": run.started_at.timestamp() if run.started_at else None,
+    }
+
+
+def video_id_from_run(run) -> str:
+    """Extract video string identifier from a PipelineHistory record's identifier field.
+
+    The identifier is 'pipeline:{video_id}:{timestamp}', so we extract the middle part.
+    Falls back gracefully if the format differs.
+    """
+    try:
+        parts = run.identifier.split(":")
+        if len(parts) >= 3 and parts[0] == "pipeline":
+            return ":".join(parts[1:-1])
+    except Exception:
+        pass
+    return ""
+
+
 @router.get("/{video_id}/history")
-async def get_pipeline_history(video_id: str):
+async def get_pipeline_history(
+    video_id: str,
+    limit: int = 20,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Get all historical pipeline runs for a video from Redis.
-    
+    Get historical pipeline runs for a video from the database (permanent).
+
     Args:
-        video_id: Video identifier
-    
+        video_id: Video string identifier
+        limit: Maximum number of runs to return (default 20)
+        status: Optional filter by status ('completed', 'failed', 'cancelled', 'running')
+
     Returns:
-        History object with list of runs
+        History object with list of runs ordered newest first
     """
-    # Get all runs from Redis (newest first)
-    runs_data = await get_all_runs(video_id)
-    
-    # Build response list from Redis data
-    runs = []
-    for run_data in runs_data:
-        # Build stages from Redis hash data
-        stages = {}
-        for stage in PipelineStage:
-            stages[stage.value] = _build_stage_status_response(run_data, stage)
-        
-        # Load moments and separate by refinement status
-        video_filename = f"{video_id}.mp4"
-        moments = await load_moments(video_filename) or []
-        
-        coarse_moments = [
-            {
-                "id": m['id'],
-                "title": m['title'],
-                "start_time": m['start_time'],
-                "end_time": m['end_time']
-            }
-            for m in moments if not m.get('is_refined', False)
-        ]
-        
-        refined_moments = [
-            {
-                "id": m['id'],
-                "title": m['title'],
-                "start_time": m['start_time'],
-                "end_time": m['end_time']
-            }
-            for m in moments if m.get('is_refined', False)
-        ]
-        
-        # Build run entry
-        run_entry = {
-            "request_id": run_data.get("request_id", ""),
-            "video_id": run_data.get("video_id", ""),
-            "status": run_data.get("status", "unknown"),
-            "generation_model": run_data.get("generation_model", ""),
-            "refinement_model": run_data.get("refinement_model", ""),
-            "started_at": float(run_data.get("started_at", "0")),
-            "completed_at": float(run_data.get("completed_at", "0")) if run_data.get("completed_at") else None,
-            "total_duration_seconds": None,
-            "stages": stages,
-            "error_stage": run_data.get("error_stage") or None,
-            "error_message": run_data.get("error_message") or None,
-            "coarse_moments": coarse_moments,
-            "refined_moments": refined_moments,
-        }
-        
-        # Calculate total duration
-        if run_entry["started_at"] and run_entry["completed_at"]:
-            run_entry["total_duration_seconds"] = run_entry["completed_at"] - run_entry["started_at"]
-        
-        runs.append(run_entry)
-    
-    return {"video_id": video_id, "runs": runs, "count": len(runs)}
+    from app.repositories import pipeline_history_db_repository
+
+    runs = await pipeline_history_db_repository.get_by_video_identifier(
+        db, video_id, limit=limit, status_filter=status
+    )
+
+    run_dicts = []
+    for run in runs:
+        d = _history_record_to_dict(run)
+        # Override video_id with the one from the URL path (more reliable)
+        d["video_id"] = video_id
+        run_dicts.append(d)
+
+    return {"video_id": video_id, "total_runs": len(run_dicts), "runs": run_dicts, "count": len(run_dicts)}
