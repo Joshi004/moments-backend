@@ -183,6 +183,7 @@ class GCSUploader:
         self.audio_prefix = settings.gcs_audio_prefix
         self.clips_prefix = settings.gcs_clips_prefix
         self.videos_prefix = settings.gcs_videos_prefix
+        self.thumbnails_prefix = settings.gcs_thumbnails_prefix
         self.expiry_hours = settings.gcs_signed_url_expiry_hours
         self.timeout = settings.gcs_upload_timeout_seconds
         self.max_retries = settings.gcs_max_retries
@@ -751,5 +752,117 @@ class GCSUploader:
         
         return moments
 
+    async def upload_thumbnail(
+        self,
+        local_path: Path,
+        entity_type: str,
+        entity_id: str,
+    ) -> Tuple[str, str]:
+        """
+        Upload a thumbnail JPEG to GCS and return (gcs_path, signed_url).
 
+        Args:
+            local_path: Path to the local JPEG file
+            entity_type: Either "video" or "clip"
+            entity_id: The video identifier or clip DB id (as string)
 
+        Returns:
+            Tuple of (gcs_path, signed_url)
+
+        Raises:
+            FileNotFoundError: If local_path does not exist
+            Exception: If upload fails after retries
+        """
+        if not local_path.exists():
+            raise FileNotFoundError(f"Thumbnail file not found: {local_path}")
+
+        gcs_path = f"{self.thumbnails_prefix}{entity_type}/{entity_id}.jpg"
+
+        file_size_mb = self._get_file_size_mb(local_path)
+        logger.info(
+            f"Starting GCS thumbnail upload: {local_path} -> gs://{self.bucket_name}/{gcs_path} "
+            f"({file_size_mb:.3f} MB)"
+        )
+
+        # Use retry-aware upload; set content_type so browsers render inline
+        async def _do_upload():
+            blob = self.bucket.blob(gcs_path)
+            blob.content_type = "image/jpeg"
+            loop = asyncio.get_event_loop()
+            from functools import partial
+            upload_func = partial(
+                blob.upload_from_filename,
+                str(local_path),
+                content_type="image/jpeg",
+                timeout=self.timeout,
+            )
+            await loop.run_in_executor(None, upload_func)
+
+        await retry_with_backoff(
+            _do_upload,
+            max_retries=self.max_retries,
+            base_delay=self.retry_base_delay,
+            operation_name=f"GCS thumbnail upload ({entity_type}/{entity_id})",
+        )
+
+        logger.info(f"Successfully uploaded thumbnail to GCS: gs://{self.bucket_name}/{gcs_path}")
+
+        signed_url = self.generate_signed_url(gcs_path)
+        return (gcs_path, signed_url)
+
+    def get_thumbnail_signed_url(self, gcs_path: str) -> Optional[str]:
+        """
+        Generate a fresh signed URL for an existing thumbnail blob.
+
+        Args:
+            gcs_path: GCS blob path (e.g., "thumbnails/video/motivation.jpg")
+
+        Returns:
+            Signed URL string, or None if the blob does not exist
+        """
+        blob = self.bucket.blob(gcs_path)
+        if not blob.exists():
+            logger.warning(f"Thumbnail blob does not exist: gs://{self.bucket_name}/{gcs_path}")
+            return None
+        signed_url = self.generate_signed_url(gcs_path)
+        logger.debug(f"Generated signed URL for thumbnail: {gcs_path}")
+        return signed_url
+
+    def delete_thumbnail(self, entity_type: str, entity_id: str) -> bool:
+        """
+        Delete a single thumbnail blob from GCS.
+
+        Args:
+            entity_type: Either "video" or "clip"
+            entity_id: The video identifier or clip DB id (as string)
+
+        Returns:
+            True if the blob was deleted, False if it did not exist
+        """
+        gcs_path = f"{self.thumbnails_prefix}{entity_type}/{entity_id}.jpg"
+        try:
+            blob = self.bucket.blob(gcs_path)
+            if blob.exists():
+                blob.delete()
+                logger.info(f"Deleted GCS thumbnail: gs://{self.bucket_name}/{gcs_path}")
+                return True
+            logger.debug(f"Thumbnail blob not found (nothing to delete): {gcs_path}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to delete GCS thumbnail {gcs_path}: {e}")
+            return False
+
+    def delete_thumbnails_for_video(self, video_identifier: str) -> int:
+        """
+        Delete all thumbnail blobs for a video (prefix-based deletion).
+
+        Args:
+            video_identifier: Video identifier (e.g., "motivation")
+
+        Returns:
+            Number of blobs deleted
+        """
+        prefix = f"{self.thumbnails_prefix}video/{video_identifier}"
+        count = self._delete_by_prefix(prefix)
+        logger.info(f"Deleted {count} GCS thumbnail(s) for video: {video_identifier}")
+        return count

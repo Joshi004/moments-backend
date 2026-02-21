@@ -41,11 +41,12 @@ app.include_router(generate_moments.router, prefix="/api", tags=["generate_momen
 app.include_router(delete.router, prefix="/api", tags=["delete"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
 
-# Mount static files
-thumbnails_dir = Path(__file__).parent.parent / "static" / "thumbnails"
-thumbnails_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
+# Thumbnails are now served via GCS signed URLs through the API endpoint:
+#   GET /api/videos/{video_id}/thumbnail  → 302 redirect to GCS signed URL
+#   GET /api/videos/{video_id}/thumbnail/url  → JSON with signed URL (Phase 8)
+# static/thumbnails/ files are kept as backup but are no longer served directly.
 
+# Mount static files
 audio_dir = Path(__file__).parent.parent / "static" / "audios"
 audio_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static/audios", StaticFiles(directory=str(audio_dir)), name="audios")

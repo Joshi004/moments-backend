@@ -33,6 +33,7 @@ async def delete_video(
     # GCS options
     skip_gcs_audio: bool = Query(False, description="Keep GCS audio file"),
     skip_gcs_clips: bool = Query(False, description="Keep GCS video clips"),
+    skip_gcs_thumbnails: bool = Query(False, description="Keep GCS thumbnail file"),
     # State options
     skip_redis: bool = Query(False, description="Keep Redis state"),
     skip_registry: bool = Query(False, description="Keep URL registry entry")
@@ -67,21 +68,22 @@ async def delete_video(
         function="delete_video",
         operation=operation,
         message=f"Starting video deletion: {video_id}",
-        context={
-            "video_id": video_id,
-            "force": force,
-            "skip_local_video": skip_local_video,
-            "skip_local_audio": skip_local_audio,
-            "skip_local_thumbnail": skip_local_thumbnail,
-            "skip_local_transcript": skip_local_transcript,
-            "skip_local_moments": skip_local_moments,
-            "skip_local_clips": skip_local_clips,
-            "skip_gcs_audio": skip_gcs_audio,
-            "skip_gcs_clips": skip_gcs_clips,
-            "skip_redis": skip_redis,
-            "skip_registry": skip_registry,
-            "request_id": get_request_id()
-        }
+            context={
+                "video_id": video_id,
+                "force": force,
+                "skip_local_video": skip_local_video,
+                "skip_local_audio": skip_local_audio,
+                "skip_local_thumbnail": skip_local_thumbnail,
+                "skip_local_transcript": skip_local_transcript,
+                "skip_local_moments": skip_local_moments,
+                "skip_local_clips": skip_local_clips,
+                "skip_gcs_audio": skip_gcs_audio,
+                "skip_gcs_clips": skip_gcs_clips,
+                "skip_gcs_thumbnails": skip_gcs_thumbnails,
+                "skip_redis": skip_redis,
+                "skip_registry": skip_registry,
+                "request_id": get_request_id()
+            }
     )
     
     try:
@@ -97,6 +99,7 @@ async def delete_video(
             skip_local_clips=skip_local_clips,
             skip_gcs_audio=skip_gcs_audio,
             skip_gcs_clips=skip_gcs_clips,
+            skip_gcs_thumbnails=skip_gcs_thumbnails,
             skip_redis=skip_redis,
             skip_registry=skip_registry,
             force=force

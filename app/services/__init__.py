@@ -42,12 +42,11 @@ from app.services.video_clipping_service import (
 )
 
 from app.services.thumbnail_service import (
-    get_thumbnails_directory,
-    get_thumbnail_path,
+    get_thumbnails_temp_directory,
+    get_thumbnail_temp_path,
     extract_frame_from_video,
-    generate_thumbnail,
-    generate_thumbnails_for_all_videos,
-    get_thumbnail_url
+    get_thumbnail_url_async,
+    generate_thumbnail_async,
 )
 
 __all__ = [
@@ -84,12 +83,11 @@ __all__ = [
     "get_clip_duration",
     "extract_clips_parallel",
     
-    # Thumbnail service
-    "get_thumbnails_directory",
-    "get_thumbnail_path",
+    # Thumbnail service (Phase 8: GCS + DB backed)
+    "get_thumbnails_temp_directory",
+    "get_thumbnail_temp_path",
     "extract_frame_from_video",
-    "generate_thumbnail",
-    "generate_thumbnails_for_all_videos",
-    "get_thumbnail_url",
+    "get_thumbnail_url_async",
+    "generate_thumbnail_async",
 ]
 

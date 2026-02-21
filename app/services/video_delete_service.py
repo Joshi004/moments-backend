@@ -248,45 +248,56 @@ class GCSDeleter:
     def delete_all(
         self,
         skip_audio: bool = False,
-        skip_clips: bool = False
+        skip_clips: bool = False,
+        skip_thumbnails: bool = False,
     ) -> Dict[str, int]:
         """
         Delete GCS files for video_id based on skip flags.
-        
+
         Args:
             skip_audio: If True, keep GCS audio files
             skip_clips: If True, keep GCS clip files
-        
+            skip_thumbnails: If True, keep GCS thumbnail files
+
         Returns:
             Dictionary with counts of deleted files
         """
         result = {
             "audio_files": 0,
-            "clip_files": 0
+            "clip_files": 0,
+            "thumbnail_files": 0,
         }
-        
+
         if not self.client or not self.bucket:
             logger.warning("GCS client not initialized, skipping GCS deletion")
             return result
-        
+
         # Delete audio files
         if not skip_audio:
             audio_count = self._delete_by_prefix(f"{self.settings.gcs_audio_prefix}{self.video_id}/")
             result["audio_files"] = audio_count
         else:
             logger.info(f"Skipping GCS audio deletion (skip_audio=True)")
-        
+
         # Delete clip files
         if not skip_clips:
             clips_count = self._delete_by_prefix(f"{self.settings.gcs_clips_prefix}{self.video_id}/")
             result["clip_files"] = clips_count
         else:
             logger.info(f"Skipping GCS clips deletion (skip_clips=True)")
-        
-        total = result["audio_files"] + result["clip_files"]
+
+        # Delete thumbnail files (Phase 8)
+        if not skip_thumbnails:
+            thumbnail_prefix = f"{self.settings.gcs_thumbnails_prefix}video/{self.video_id}"
+            thumbnail_count = self._delete_by_prefix(thumbnail_prefix)
+            result["thumbnail_files"] = thumbnail_count
+        else:
+            logger.info(f"Skipping GCS thumbnail deletion (skip_thumbnails=True)")
+
+        total = result["audio_files"] + result["clip_files"] + result["thumbnail_files"]
         if total > 0:
             logger.info(f"Deleted {total} files from GCS for {self.video_id}")
-        
+
         return result
     
     def _delete_by_prefix(self, prefix: str) -> int:
@@ -424,6 +435,7 @@ class VideoDeleteService:
         # GCS options
         skip_gcs_audio: bool = False,
         skip_gcs_clips: bool = False,
+        skip_gcs_thumbnails: bool = False,
         # State options
         skip_redis: bool = False,
         skip_registry: bool = False,
@@ -442,6 +454,7 @@ class VideoDeleteService:
             skip_local_clips: If True, keep local video clips
             skip_gcs_audio: If True, keep GCS audio files
             skip_gcs_clips: If True, keep GCS clip files
+            skip_gcs_thumbnails: If True, keep GCS thumbnail files
             skip_redis: If True, keep Redis state
             skip_registry: If True, keep URL registry entry
             force: If True, skip active pipeline check
@@ -519,7 +532,8 @@ class VideoDeleteService:
             gcs_deleter = GCSDeleter(video_id)
             gcs_result = gcs_deleter.delete_all(
                 skip_audio=skip_gcs_audio,
-                skip_clips=skip_gcs_clips
+                skip_clips=skip_gcs_clips,
+                skip_thumbnails=skip_gcs_thumbnails,
             )
             result.deleted["gcs"] = gcs_result
         except Exception as e:
