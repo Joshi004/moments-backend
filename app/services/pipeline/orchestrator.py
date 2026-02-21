@@ -62,7 +62,6 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     import json
     import subprocess
     from app.services.gcs_downloader import GCSDownloader
-    from app.services.url_registry import URLRegistry
     from app.utils.video import get_videos_directory
     from app.database.session import get_session_factory
     from app.repositories import video_db_repository
@@ -229,19 +228,6 @@ async def execute_video_download(video_id: str, config: dict) -> None:
             logger.error(f"Failed to insert into database: {e}")
             raise Exception(f"Database insert failed: {e}")
     
-    # Register in URL registry (backward compatibility)
-    try:
-        registry = URLRegistry()
-        file_size = dest_path.stat().st_size
-        registry.register(
-            url=video_url,
-            video_id=video_id,
-            file_size=file_size,
-            force_downloaded=config.get("force_download", False)
-        )
-        logger.info(f"Video registered in URL registry")
-    except Exception as e:
-        logger.warning(f"Failed to register in URL registry: {e}")
 
 
 # Stage sequences for each model

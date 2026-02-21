@@ -161,9 +161,6 @@ class Settings(BaseSettings):
     clip_extraction_max_concurrent: int = 4  # Max total FFmpeg clip extractions
     refinement_max_concurrent: int = 1  # Max concurrent refinement API calls
     
-    # URL Registry
-    url_registry_file: Path = Path("static/url_registry.json")
-    
     # Generic filename patterns (trigger hash-based ID)
     video_download_generic_names: List[str] = [
         "video", "clip", "output", "download", "untitled", 

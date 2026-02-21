@@ -36,13 +36,12 @@ async def delete_video(
     skip_gcs_thumbnails: bool = Query(False, description="Keep GCS thumbnail file"),
     # State options
     skip_redis: bool = Query(False, description="Keep Redis state"),
-    skip_registry: bool = Query(False, description="Keep URL registry entry")
 ):
     """
     Delete video and all associated resources.
-    
+
     By default, deletes everything. Use skip_* parameters to preserve specific resources.
-    
+
     Args:
         video_id: Video identifier
         force: Skip active pipeline check (delete anyway)
@@ -55,7 +54,6 @@ async def delete_video(
         skip_gcs_audio: Keep GCS audio file
         skip_gcs_clips: Keep GCS video clips
         skip_redis: Keep Redis state (pipeline status, locks)
-        skip_registry: Keep URL registry entry
     
     Returns:
         Deletion result with status and details
@@ -81,7 +79,6 @@ async def delete_video(
                 "skip_gcs_clips": skip_gcs_clips,
                 "skip_gcs_thumbnails": skip_gcs_thumbnails,
                 "skip_redis": skip_redis,
-                "skip_registry": skip_registry,
                 "request_id": get_request_id()
             }
     )
@@ -101,7 +98,6 @@ async def delete_video(
             skip_gcs_clips=skip_gcs_clips,
             skip_gcs_thumbnails=skip_gcs_thumbnails,
             skip_redis=skip_redis,
-            skip_registry=skip_registry,
             force=force
         )
         

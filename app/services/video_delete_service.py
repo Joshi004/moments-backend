@@ -12,7 +12,6 @@ from google.cloud import storage
 
 from app.core.config import get_settings
 from app.core.redis import get_async_redis_client
-from app.services.url_registry import URLRegistry
 from app.services.pipeline.status import get_status as get_pipeline_status
 from app.utils.video import get_videos_directory
 
@@ -350,17 +349,12 @@ class StateDeleter:
         """
         result = {
             "redis_keys": 0,
-            "url_registry": False
         }
-        
+
         # Delete Redis keys
         redis_count = await self._delete_redis_keys()
         result["redis_keys"] = redis_count
-        
-        # Delete URL registry entry
-        registry_deleted = self._delete_url_registry()
-        result["url_registry"] = registry_deleted
-        
+
         return result
     
     async def _delete_redis_keys(self) -> int:
@@ -403,19 +397,6 @@ class StateDeleter:
             logger.error(f"Failed to delete Redis keys for {self.video_id}: {e}")
             return 0
     
-    def _delete_url_registry(self) -> bool:
-        """Delete URL registry entry."""
-        try:
-            registry = URLRegistry()
-            success = registry.unregister(self.video_id)
-            if success:
-                logger.info(f"Deleted URL registry entry for {self.video_id}")
-            return success
-        except Exception as e:
-            logger.error(f"Failed to delete URL registry entry for {self.video_id}: {e}")
-            return False
-
-
 class VideoDeleteService:
     """Main service for video deletion orchestration."""
     
@@ -438,12 +419,11 @@ class VideoDeleteService:
         skip_gcs_thumbnails: bool = False,
         # State options
         skip_redis: bool = False,
-        skip_registry: bool = False,
         force: bool = False
     ) -> DeleteResult:
         """
         Delete video and all associated resources.
-        
+
         Args:
             video_id: Video identifier
             skip_local_video: If True, keep local video file
@@ -456,7 +436,6 @@ class VideoDeleteService:
             skip_gcs_clips: If True, keep GCS clip files
             skip_gcs_thumbnails: If True, keep GCS thumbnail files
             skip_redis: If True, keep Redis state
-            skip_registry: If True, keep URL registry entry
             force: If True, skip active pipeline check
         
         Returns:
@@ -472,9 +451,8 @@ class VideoDeleteService:
                 "local": {},
                 "gcs": {},
                 "redis_keys": 0,
-                "url_registry": False
             },
-            errors=[]
+            errors=[],
         )
         
         # Pre-deletion checks
@@ -495,37 +473,21 @@ class VideoDeleteService:
             logger.warning(f"No resources found for video: {video_id}")
             # Still proceed with deletion to clean up any orphaned state
         
-        # Delete in order: Redis -> Registry -> GCS -> Local
-        
+        # Delete in order: Redis -> GCS -> Local
+
         # 1. Delete Redis state (unless skipped)
         if not skip_redis:
             try:
                 state_deleter = StateDeleter(video_id)
                 state_result = await state_deleter.delete_all()
                 result.deleted["redis_keys"] = state_result["redis_keys"]
-                
-                # URL registry is part of state deletion
-                if not skip_registry:
-                    result.deleted["url_registry"] = state_result["url_registry"]
-                else:
-                    logger.info("Skipping URL registry deletion (skip_registry=True)")
             except Exception as e:
-                error_msg = f"Redis/Registry deletion failed: {e}"
+                error_msg = f"Redis deletion failed: {e}"
                 logger.error(error_msg)
                 result.errors.append(error_msg)
                 result.status = "partial"
         else:
             logger.info("Skipping Redis deletion (skip_redis=True)")
-            if not skip_registry:
-                # Delete registry separately if Redis is skipped
-                try:
-                    state_deleter = StateDeleter(video_id)
-                    registry_deleted = state_deleter._delete_url_registry()
-                    result.deleted["url_registry"] = registry_deleted
-                except Exception as e:
-                    error_msg = f"Registry deletion failed: {e}"
-                    logger.error(error_msg)
-                    result.errors.append(error_msg)
         
         # 2. Delete GCS files (with granular control)
         try:
@@ -567,8 +529,7 @@ class VideoDeleteService:
         total_deleted = (
             sum(1 for v in result.deleted["local"].values() if v) +
             sum(result.deleted["gcs"].values()) +
-            result.deleted["redis_keys"] +
-            (1 if result.deleted["url_registry"] else 0)
+            result.deleted["redis_keys"]
         )
         
         logger.info(
