@@ -8,6 +8,7 @@ import asyncio
 import json
 import time
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -245,21 +246,30 @@ async def _build_status_response(status_data: Dict[str, str]) -> PipelineStatusR
     error_stage = status_data.get("error_stage", "")
     error_message = status_data.get("error_message", "")
     
-    started_at = 0.0
+    started_at_epoch = 0.0
     try:
-        started_at = float(started_at_str)
+        started_at_epoch = float(started_at_str)
     except ValueError:
         pass
-    
-    completed_at = None
+
+    completed_at_epoch = None
     total_duration = None
     if completed_at_str:
         try:
-            completed_at = float(completed_at_str)
-            if started_at:
-                total_duration = completed_at - started_at
+            completed_at_epoch = float(completed_at_str)
+            if started_at_epoch:
+                total_duration = completed_at_epoch - started_at_epoch
         except ValueError:
             pass
+
+    # Convert epoch floats to ISO 8601 strings (canonical format)
+    started_at: Optional[str] = None
+    if started_at_epoch:
+        started_at = datetime.fromtimestamp(started_at_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    completed_at: Optional[str] = None
+    if completed_at_epoch:
+        completed_at = datetime.fromtimestamp(completed_at_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     
     # Build stages dictionary
     stages = {}
@@ -396,16 +406,14 @@ async def get_pipeline_status(video_id: str, db: AsyncSession = Depends(get_db))
         )
         if db_runs:
             run = db_runs[0]
-            started_at_ts = run.started_at.timestamp() if run.started_at else 0.0
-            completed_at_ts = run.completed_at.timestamp() if run.completed_at else None
             return PipelineStatusResponse(
                 request_id=run.identifier,
                 video_id=video_id,
                 status=run.status,
                 generation_model="",
                 refinement_model="",
-                started_at=started_at_ts,
-                completed_at=completed_at_ts,
+                started_at=run.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if run.started_at else None,
+                completed_at=run.completed_at.strftime("%Y-%m-%dT%H:%M:%SZ") if run.completed_at else None,
                 total_duration_seconds=run.duration_seconds,
                 current_stage=None,
                 stages={},
@@ -424,7 +432,7 @@ async def get_pipeline_status(video_id: str, db: AsyncSession = Depends(get_db))
         status="never_run",
         generation_model="",
         refinement_model="",
-        started_at=0,
+        started_at=None,
         completed_at=None,
         total_duration_seconds=None,
         current_stage=None,
@@ -470,17 +478,15 @@ def _history_record_to_dict(run) -> Dict[str, Any]:
         "identifier": run.identifier,
         "pipeline_type": run.pipeline_type,
         "status": run.status,
-        "started_at": run.started_at.isoformat() + "Z" if run.started_at else None,
-        "completed_at": run.completed_at.isoformat() + "Z" if run.completed_at else None,
+        "started_at": run.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if run.started_at else None,
+        "completed_at": run.completed_at.strftime("%Y-%m-%dT%H:%M:%SZ") if run.completed_at else None,
         "total_duration_seconds": run.duration_seconds,
         "total_moments_generated": run.total_moments_generated,
         "total_clips_created": run.total_clips_created,
         "error_stage": run.error_stage,
         "error_message": run.error_message,
         "generation_config_id": run.generation_config_id,
-        # Fields used by the frontend to display video_id and for sorting
         "video_id": video_id_from_run(run),
-        "start_time": run.started_at.timestamp() if run.started_at else None,
     }
 
 

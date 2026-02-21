@@ -72,8 +72,8 @@ class PipelineStatusResponse(BaseModel):
     status: str  # pending|processing|completed|failed|cancelled|not_running|never_run
     generation_model: str
     refinement_model: str
-    started_at: float
-    completed_at: Optional[float] = None
+    started_at: Optional[str] = None  # ISO 8601 string, e.g. "2026-02-11T10:38:17Z"
+    completed_at: Optional[str] = None  # ISO 8601 string or null
     total_duration_seconds: Optional[float] = None
     current_stage: Optional[str] = None
     stages: Dict[str, StageStatusResponse]
