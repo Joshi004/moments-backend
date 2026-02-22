@@ -5,6 +5,7 @@ This module implements the prompt building and response parsing logic
 for the moment generation task.
 """
 import json
+import math
 import re
 import time
 import logging
@@ -90,14 +91,19 @@ class GenerationTask(BasePromptTask):
             max_moment_length = context.get("max_moment_length", 90.0)
             min_moments = context.get("min_moments", 1)
             max_moments = context.get("max_moments", 10)
+            # Floor to 2 decimal places so the value given to the AI is always
+            # strictly <= the real duration. Standard rounding can produce a value
+            # slightly above the real duration (e.g. 54.775873 → 54.78), causing
+            # the AI's end_time to be rejected by the strict bounds check.
+            floored_duration = math.floor(video_duration * 100) / 100
             
             return f"""CONSTRAINTS:
-- Video duration: {video_duration:.2f} seconds
+- Video duration: {floored_duration} seconds
 - Moment length: Between {min_moment_length:.2f} and {max_moment_length:.2f} seconds
 - Number of moments: Between {min_moments} and {max_moments}
 - All moments must be non-overlapping
 - All start_time values must be >= 0
-- All end_time values must be <= {video_duration:.2f}
+- All end_time values must be <= {floored_duration}
 - Each moment's end_time must be > start_time"""
         
         return None

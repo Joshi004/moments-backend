@@ -980,7 +980,11 @@ async def process_moments_generation(
             validated_moments = non_overlapping
             
             if not validated_moments:
-                logger.warning("No valid moments after validation - returning empty result")
+                raise Exception(
+                    f"Moment generation failed: AI generated {len(moments)} moment(s) "
+                    f"but none passed validation for video '{video_id}'. "
+                    f"Check bounds, duration, and overlap constraints."
+                )
             
             # --- Phase 6: Bulk insert moments into database ---
             if validated_moments:
