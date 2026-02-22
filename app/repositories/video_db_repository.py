@@ -142,6 +142,22 @@ async def update(session: AsyncSession, id: int, **fields) -> Optional[Video]:
     return result.scalar_one_or_none()
 
 
+async def delete_by_id(session: AsyncSession, id: int) -> bool:
+    """
+    Delete a video by its numeric database ID.
+
+    Args:
+        session: Async database session
+        id: Video database ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    stmt = delete(Video).where(Video.id == id)
+    result = await session.execute(stmt)
+    return result.rowcount > 0
+
+
 async def delete_by_identifier(session: AsyncSession, identifier: str) -> bool:
     """
     Delete a video by its identifier.

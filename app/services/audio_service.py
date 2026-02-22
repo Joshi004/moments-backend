@@ -2,7 +2,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Dict, List
 import logging
 from app.utils.logging_config import (
     log_event,
@@ -38,15 +38,17 @@ def check_audio_exists(video_identifier: str) -> bool:
     return audio_path.exists() and audio_path.is_file()
 
 
-def extract_audio_from_video(video_path: Path, output_path: Path, cloud_url: Optional[str] = None) -> bool:
+def extract_audio_from_video(video_path: Path, output_path: Path) -> bool:
     """
     Extract audio from a video file and save it as WAV.
-    
+
+    The video must already exist locally before calling this function.
+    Pre-downloading is the orchestrator's responsibility via ensure_local_video_async().
+
     Args:
-        video_path: Path to the video file
+        video_path: Path to the local video file
         output_path: Path where audio file should be saved
-        cloud_url: Optional GCS URL for downloading video if local file doesn't exist
-    
+
     Returns:
         True if successful, False otherwise
     """
@@ -61,43 +63,19 @@ def extract_audio_from_video(video_path: Path, output_path: Path, cloud_url: Opt
         context={
             "video_path": str(video_path),
             "output_path": str(output_path),
-            "cloud_url": cloud_url,
             "request_id": get_request_id()
         }
     )
     
     try:
-        # If video doesn't exist locally and cloud_url is provided, download it
-        if not video_path.exists() and cloud_url:
-            log_event(
-                level="INFO",
-                logger="app.services.audio_service",
-                function="extract_audio_from_video",
-                operation=operation,
-                event="download_start",
-                message="Local video not found, downloading from cloud",
-                context={
-                    "original_path": str(video_path),
-                    "cloud_url": cloud_url
-                }
+        # The orchestrator pre-downloads the video before calling this function.
+        # If the file is missing here, something went wrong upstream.
+        if not video_path.exists():
+            raise FileNotFoundError(
+                f"Video file not found: {video_path}. "
+                f"The orchestrator must pre-download the video before calling audio extraction."
             )
-            
-            from app.utils.video import ensure_local_video
-            identifier = video_path.stem
-            video_path = ensure_local_video(identifier, cloud_url)
-            
-            log_event(
-                level="INFO",
-                logger="app.services.audio_service",
-                function="extract_audio_from_video",
-                operation=operation,
-                event="download_complete",
-                message="Downloaded video from cloud",
-                context={
-                    "downloaded_path": str(video_path)
-                }
-            )
-        
+
         # Ensure output directory exists
         log_event(
             level="DEBUG",

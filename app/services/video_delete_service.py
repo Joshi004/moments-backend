@@ -309,7 +309,7 @@ class VideoDeleteService:
                 async with session_factory() as session:
                     video = await video_db_repository.get_by_identifier(session, video_id)
                     if video:
-                        await video_db_repository.delete(session, video.id)
+                        await video_db_repository.delete_by_id(session, video.id)
                         await session.commit()
                         result.deleted["database"] = True
                         logger.info(

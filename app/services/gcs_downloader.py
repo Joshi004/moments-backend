@@ -153,7 +153,7 @@ class GCSDownloader:
         redis = await get_async_redis_client()
         semaphore_key = "download:active_count"
         
-        max_wait_seconds = 300  # 5 minutes
+        max_wait_seconds = 900  # 15 minutes
         check_interval = 5  # 5 seconds
         elapsed = 0
         

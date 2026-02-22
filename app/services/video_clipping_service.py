@@ -576,8 +576,8 @@ async def extract_clips_parallel(
         # --- Ensure local video exists ---
         if not video_path.exists() and cloud_url:
             logger.info(f"Local video not found for {video_id}, downloading from cloud")
-            from app.utils.video import ensure_local_video
-            video_path = await asyncio.to_thread(ensure_local_video, video_id, cloud_url)
+            from app.utils.video import ensure_local_video_async
+            video_path = await ensure_local_video_async(video_id, cloud_url)
             logger.info(f"Downloaded video to {video_path}")
 
         # --- Load clipping config ---

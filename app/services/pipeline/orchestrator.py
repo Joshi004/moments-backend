@@ -89,19 +89,27 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     else:
         logger.info(f"Starting video download: {video_url} -> {dest_path}")
         
-        # Progress callback to update Redis - uses sync client
+        # Capture the running loop now (async context) so the sync callback can
+        # schedule coroutines onto it from any thread via run_coroutine_threadsafe.
+        _download_loop = asyncio.get_running_loop()
+
+        async def _update_download_progress(fields: dict) -> None:
+            from app.core.redis import get_async_redis_client
+            redis = await get_async_redis_client()
+            await redis.hset(f"pipeline:{video_id}:active", mapping=fields)
+
         def progress_callback(bytes_downloaded: int, total_bytes: int):
-            """Update download progress in Redis."""
+            """Update download progress in Redis without blocking the event loop."""
             try:
-                from app.core.redis import get_redis_client
-                redis_client = get_redis_client()
                 percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
-                status_key = f"pipeline:{video_id}:active"
-                redis_client.hset(status_key, mapping={
-                    "download_bytes": str(bytes_downloaded),
-                    "download_total": str(total_bytes),
-                    "download_percentage": str(percentage),
-                })
+                asyncio.run_coroutine_threadsafe(
+                    _update_download_progress({
+                        "download_bytes": str(bytes_downloaded),
+                        "download_total": str(total_bytes),
+                        "download_percentage": str(percentage),
+                    }),
+                    _download_loop,
+                )
             except Exception as e:
                 logger.error(f"Failed to update download progress: {e}")
         
@@ -389,7 +397,6 @@ async def execute_audio_extraction(video_id: str) -> None:
             extract_audio_from_video,
             video_path,
             audio_path,
-            None  # cloud_url not needed -- video is already local after pre-download
         )
     
     if not success:
@@ -585,16 +592,25 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
         deleted_db = await delete_all_clips_for_video(video_id)
         logger.info(f"Cleaned up {deleted_db} clip records for {video_id}")
 
-    # Progress callback updates Redis with current extraction counts
+    # Capture the running loop now (async context) so the sync callback can
+    # schedule coroutines onto it from any thread via run_coroutine_threadsafe.
+    _clips_loop = asyncio.get_running_loop()
+
+    async def _update_clips_progress(fields: dict) -> None:
+        from app.core.redis import get_async_redis_client
+        redis = await get_async_redis_client()
+        await redis.hset(f"pipeline:{video_id}:active", mapping=fields)
+
     def progress_callback(total: int, processed: int, failed: int):
-        from app.core.redis import get_redis_client
-        redis_client = get_redis_client()
-        status_key = f"pipeline:{video_id}:active"
-        redis_client.hset(status_key, mapping={
-            "clips_total": str(total),
-            "clips_processed": str(processed),
-            "clips_failed": str(failed),
-        })
+        """Update clip extraction progress in Redis without blocking the event loop."""
+        asyncio.run_coroutine_threadsafe(
+            _update_clips_progress({
+                "clips_total": str(total),
+                "clips_processed": str(processed),
+                "clips_failed": str(failed),
+            }),
+            _clips_loop,
+        )
 
     # Each clip: FFmpeg extract → GCS upload → DB insert → delete temp file
     success = await extract_clips_parallel(
@@ -792,19 +808,27 @@ async def execute_stage(stage: PipelineStage, video_id: str, config: dict) -> An
         await execute_audio_extraction(video_id)
     
     elif stage == PipelineStage.AUDIO_UPLOAD:
-        # Create progress callback for Redis updates - uses sync client
+        # Capture the running loop now (async context) so the sync callback can
+        # schedule coroutines onto it from any thread via run_coroutine_threadsafe.
+        _upload_loop = asyncio.get_running_loop()
+
+        async def _update_upload_progress(fields: dict) -> None:
+            from app.core.redis import get_async_redis_client
+            redis = await get_async_redis_client()
+            await redis.hset(f"pipeline:{video_id}:active", mapping=fields)
+
         def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
-            """Update upload progress in Redis."""
+            """Update audio upload progress in Redis without blocking the event loop."""
             try:
-                from app.core.redis import get_redis_client
-                redis_client = get_redis_client()
                 percentage = int((bytes_uploaded / total_bytes) * 100) if total_bytes > 0 else 0
-                status_key = f"pipeline:{video_id}:active"
-                redis_client.hset(status_key, mapping={
-                    "upload_bytes": str(bytes_uploaded),
-                    "upload_total": str(total_bytes),
-                    "upload_percentage": str(percentage),
-                })
+                asyncio.run_coroutine_threadsafe(
+                    _update_upload_progress({
+                        "upload_bytes": str(bytes_uploaded),
+                        "upload_total": str(total_bytes),
+                        "upload_percentage": str(percentage),
+                    }),
+                    _upload_loop,
+                )
             except Exception as e:
                 logger.error(f"Failed to update upload progress: {e}")
         
