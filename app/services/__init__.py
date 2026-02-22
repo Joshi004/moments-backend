@@ -5,10 +5,8 @@ Contains business logic and orchestration for various operations.
 
 # Main services
 from app.services.audio_service import (
-    get_audio_directory,
     get_audio_path,
     check_audio_exists,
-    get_audio_url,
     extract_audio_from_video,
     process_audio_async
 )
@@ -51,10 +49,8 @@ from app.services.thumbnail_service import (
 
 __all__ = [
     # Audio service
-    "get_audio_directory",
     "get_audio_path",
     "check_audio_exists",
-    "get_audio_url",
     "extract_audio_from_video",
     "process_audio_async",
     

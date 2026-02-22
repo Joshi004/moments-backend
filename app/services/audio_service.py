@@ -15,48 +15,27 @@ from app.utils.logging_config import (
 logger = logging.getLogger(__name__)
 
 
-def get_audio_directory() -> Path:
-    """Get the path to the audio directory."""
-    current_file = Path(__file__).resolve()
-    backend_dir = current_file.parent.parent.parent
-    audio_dir = backend_dir / "static" / "audios"
-    audio_dir = audio_dir.resolve()
-    
-    # Create directory if it doesn't exist
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    
-    return audio_dir
-
-
-def get_audio_path(video_filename: str) -> Path:
-    """Get the path for an audio file based on video filename."""
-    audio_dir = get_audio_directory()
-    # Replace video extension with .wav
-    audio_filename = Path(video_filename).stem + ".wav"
-    return audio_dir / audio_filename
-
-
-def check_audio_exists(video_filename: str) -> bool:
-    """Check if audio file exists for a given video filename."""
-    audio_path = get_audio_path(video_filename)
-    return audio_path.exists() and audio_path.is_file()
-
-
-def get_audio_url(video_filename: str) -> Optional[str]:
+def get_audio_path(video_identifier: str) -> Path:
     """
-    Get the URL path for an audio file if it exists.
-    
+    Get the temp path for an audio file based on the video identifier (stem).
+
     Args:
-        video_filename: Name of the video file
-    
+        video_identifier: Video identifier stem (e.g. "motivation") or full
+                          filename (e.g. "motivation.mp4") -- stem is extracted
+                          automatically so callers can pass either form.
+
     Returns:
-        URL path to audio file or None if it doesn't exist
+        Path to temp/audio/{identifier}/{identifier}.wav
     """
-    audio_path = get_audio_path(video_filename)
-    if audio_path.exists():
-        # Return relative URL path
-        return f"/static/audios/{audio_path.name}"
-    return None
+    from app.services.temp_file_manager import get_temp_file_path
+    identifier = Path(video_identifier).stem
+    return get_temp_file_path("audio", identifier, f"{identifier}.wav")
+
+
+def check_audio_exists(video_identifier: str) -> bool:
+    """Check if a temp audio file exists for the given video identifier."""
+    audio_path = get_audio_path(video_identifier)
+    return audio_path.exists() and audio_path.is_file()
 
 
 def extract_audio_from_video(video_path: Path, output_path: Path, cloud_url: Optional[str] = None) -> bool:
@@ -344,7 +323,7 @@ def process_audio_async(video_id: str, video_path: Path) -> None:
     
     def extract():
         try:
-            output_path = get_audio_path(video_path.name)
+            output_path = get_audio_path(video_path.stem)
             
             log_event(
                 level="DEBUG",

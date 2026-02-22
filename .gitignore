@@ -133,6 +133,9 @@ dmypy.json
 # FastAPI / Uvicorn
 *.pid
 
+# Managed temp directory (intermediate processing files, auto-cleaned by scheduler)
+temp/
+
 # Video files (large files)
 static/videos/*
 

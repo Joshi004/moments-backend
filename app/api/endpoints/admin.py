@@ -1,9 +1,9 @@
 """
-Admin API endpoints for model configuration management.
+Admin API endpoints for model configuration management and temp file operations.
 """
 import logging
-from fastapi import APIRouter, HTTPException, status
-from typing import Dict
+from fastapi import APIRouter, HTTPException, Query, status
+from typing import Dict, Optional
 
 from app.models.admin_schemas import (
     ModelConfigCreate,
@@ -252,3 +252,100 @@ async def get_default_configs():
         Dictionary of default configurations
     """
     return DEFAULT_MODELS
+
+
+# ---------------------------------------------------------------------------
+# Temp file management endpoints (Phase 11)
+# ---------------------------------------------------------------------------
+
+@router.get("/temp-stats")
+async def get_temp_stats():
+    """
+    Return disk usage statistics for the managed temp directory.
+
+    Shows total file counts and sizes broken down by purpose
+    (videos, audio, clips, thumbnails), the age of the oldest file,
+    and the configured cleanup threshold.
+
+    Returns:
+        Dict with total_files, total_size_bytes, total_size_human,
+        by_purpose breakdown, oldest_file_age_hours, and
+        cleanup_threshold_hours.
+    """
+    try:
+        from app.services.temp_file_manager import get_temp_stats
+        return await get_temp_stats()
+    except Exception as e:
+        logger.error(f"Error retrieving temp stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve temp stats: {str(e)}"
+        )
+
+
+@router.post("/cleanup-temp")
+async def cleanup_temp(
+    max_age_hours: Optional[float] = Query(
+        default=None,
+        description="Delete files older than this many hours. Defaults to the configured value (temp_max_age_hours).",
+    )
+):
+    """
+    Trigger an immediate temp file cleanup.
+
+    Deletes files older than max_age_hours (or the configured default).
+    Safe to call while pipelines are running -- active files are newer
+    than the threshold and will not be deleted.
+
+    Args:
+        max_age_hours: Override the default cleanup age threshold.
+
+    Returns:
+        Dict with files_deleted, bytes_freed, bytes_freed_human,
+        dirs_removed, and duration_ms.
+    """
+    try:
+        from app.core.config import get_settings
+        from app.services.temp_file_manager import cleanup_old_files, _human_size
+
+        settings = get_settings()
+        effective_age = max_age_hours if max_age_hours is not None else settings.temp_max_age_hours
+
+        result = await cleanup_old_files(max_age_hours=effective_age)
+        result["bytes_freed_human"] = _human_size(result["bytes_freed"])
+        result["max_age_hours_used"] = effective_age
+        return result
+    except Exception as e:
+        logger.error(f"Error during temp cleanup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Temp cleanup failed: {str(e)}"
+        )
+
+
+@router.post("/cleanup-temp-all")
+async def cleanup_temp_all():
+    """
+    Delete ALL files in the temp directory regardless of age.
+
+    Use only in emergency situations (e.g. disk critically low). This
+    will delete temp files that belong to currently running pipelines,
+    which may cause those pipelines to fail or re-download from GCS.
+
+    Returns:
+        Dict with files_deleted, bytes_freed, bytes_freed_human,
+        dirs_removed, duration_ms, and a warning message.
+    """
+    try:
+        from app.services.temp_file_manager import cleanup_all, _human_size
+
+        result = await cleanup_all()
+        result["bytes_freed_human"] = _human_size(result["bytes_freed"])
+        result["warning"] = "All temp files deleted, including files from active pipelines"
+        return result
+    except Exception as e:
+        logger.error(f"Error during emergency temp cleanup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Emergency temp cleanup failed: {str(e)}"
+        )

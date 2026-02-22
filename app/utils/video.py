@@ -119,75 +119,71 @@ def get_video_by_id(video_id: str):
 
 def get_temp_video_path(identifier: str) -> Path:
     """
-    Get the path to a video in the temp processing directory.
-    
+    Get the path to a video in the managed temp directory.
+
     Args:
         identifier: Video identifier (e.g., 'motivation')
-    
+
     Returns:
-        Path object for temp/processing/{identifier}.mp4
-        
+        Path object for temp/videos/{identifier}/{identifier}.mp4
+
     Note:
         This function ensures the parent directory exists but does not
         verify the file itself exists. Use for constructing paths before
         downloading or when you want to check if a temp file exists.
     """
-    from app.core.config import get_settings
-    
-    settings = get_settings()
-    temp_dir = settings.temp_processing_dir
-    
-    # Ensure the temp processing directory exists
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    
-    return temp_dir / f"{identifier}.mp4"
+    from app.services.temp_file_manager import get_temp_file_path
+    return get_temp_file_path("videos", identifier, f"{identifier}.mp4")
 
 
 def ensure_local_video(identifier: str, cloud_url: str) -> Path:
     """
     Guarantee that a local copy of the video exists and return its path.
-    
-    This function implements a fallback chain:
-    1. Check static/videos/{identifier}.mp4 (original local file)
-    2. Check temp/processing/{identifier}.mp4 (previously downloaded temp copy)
-    3. Download from GCS to temp/processing/{identifier}.mp4
-    
+
+    Fallback chain:
+    1. Check temp/videos/{identifier}/{identifier}.mp4 (managed temp directory)
+    2. Check static/videos/{identifier}.mp4 (legacy fallback, removed in Phase 12)
+    3. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
+
     Args:
         identifier: Video identifier (e.g., 'motivation')
         cloud_url: GCS path (e.g., 'gs://bucket/videos/motivation/motivation.mp4')
-    
+
     Returns:
-        Path to a local copy of the video (either original or temp)
-        
+        Path to a local copy of the video
+
     Raises:
         Exception: If download from GCS fails
-        
+
     Note:
         This function is sync and uses asyncio.run() internally to call
         the async GCSDownloader. It's designed to be called from sync
         contexts like FFmpeg processing functions.
     """
     logger = logging.getLogger(__name__)
-    
-    # Priority 1: Check original local file in static/videos/
-    original_path = get_video_by_filename(f"{identifier}.mp4")
-    if original_path and original_path.exists():
-        logger.info(f"Using original local video: {original_path}")
-        return original_path
-    
-    # Priority 2: Check temp processing directory
+
+    # Priority 1: Check managed temp directory
     temp_path = get_temp_video_path(identifier)
     if temp_path.exists():
         logger.info(f"Using cached temp video: {temp_path}")
         return temp_path
-    
+
+    # Priority 2: Legacy fallback -- static/videos/ (removed in Phase 12)
+    try:
+        original_path = get_video_by_filename(f"{identifier}.mp4")
+        if original_path and original_path.exists():
+            logger.info(f"Using legacy local video: {original_path}")
+            return original_path
+    except Exception:
+        pass
+
     # Priority 3: Download from GCS to temp directory
     logger.info(f"Video not found locally, downloading from GCS: {cloud_url}")
-    
+
     async def download_video():
         """Async helper to download video from GCS."""
         from app.services.gcs_downloader import GCSDownloader
-        
+
         downloader = GCSDownloader()
         success = await downloader.download(
             url=cloud_url,
@@ -195,13 +191,12 @@ def ensure_local_video(identifier: str, cloud_url: str) -> Path:
             video_id=identifier,
             progress_callback=None
         )
-        
+
         if not success:
             raise Exception(f"Failed to download video from GCS: {cloud_url}")
-        
+
         return temp_path
-    
-    # Run async download in sync context
+
     try:
         result_path = asyncio.run(download_video())
         logger.info(f"Successfully downloaded video to temp: {result_path}")
@@ -219,9 +214,9 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
     Safe to call from async FastAPI endpoints (does not use asyncio.run()).
 
     Fallback chain:
-    1. static/videos/{identifier}.mp4 (original local file)
-    2. temp/processing/{identifier}.mp4 (previously downloaded temp copy)
-    3. Download from GCS to temp/processing/{identifier}.mp4
+    1. temp/videos/{identifier}/{identifier}.mp4 (managed temp directory)
+    2. static/videos/{identifier}.mp4 (legacy fallback, removed in Phase 12)
+    3. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
 
     Args:
         identifier: Video identifier (e.g., 'motivation')
@@ -235,20 +230,20 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
     """
     logger = logging.getLogger(__name__)
 
-    # Priority 1: Check original local file in static/videos/
-    try:
-        original_path = get_video_by_filename(f"{identifier}.mp4")
-        if original_path and original_path.exists():
-            logger.info(f"Using original local video: {original_path}")
-            return original_path
-    except Exception:
-        pass
-
-    # Priority 2: Check temp processing directory
+    # Priority 1: Check managed temp directory
     temp_path = get_temp_video_path(identifier)
     if temp_path.exists():
         logger.info(f"Using cached temp video: {temp_path}")
         return temp_path
+
+    # Priority 2: Legacy fallback -- static/videos/ (removed in Phase 12)
+    try:
+        original_path = get_video_by_filename(f"{identifier}.mp4")
+        if original_path and original_path.exists():
+            logger.info(f"Using legacy local video: {original_path}")
+            return original_path
+    except Exception:
+        pass
 
     # Priority 3: Download from GCS to temp directory (async, no asyncio.run())
     logger.info(f"Video not found locally, downloading from GCS: {cloud_url}")

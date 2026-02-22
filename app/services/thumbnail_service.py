@@ -26,22 +26,30 @@ logger = logging.getLogger(__name__)
 # Directory helpers
 # ---------------------------------------------------------------------------
 
-def get_thumbnails_temp_directory() -> Path:
+def get_thumbnails_temp_directory(video_identifier: str = "") -> Path:
     """
     Get (and create) the temp directory used for thumbnail generation.
-    Thumbnails are written here transiently during generation, then uploaded
-    to GCS and deleted.
+
+    Args:
+        video_identifier: When provided, returns the per-video subdirectory
+                          temp/thumbnails/{identifier}/. When empty, returns
+                          the thumbnails root temp directory.
+
+    Returns:
+        Path to temp/thumbnails/{video_identifier}/ (created if absent)
     """
-    from app.core.config import get_settings
-    settings = get_settings()
-    temp_dir = Path(settings.temp_processing_dir) / "thumbnails"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    return temp_dir
+    from app.services.temp_file_manager import get_temp_dir, _get_temp_base
+    if video_identifier:
+        return get_temp_dir("thumbnails", video_identifier)
+    base = _get_temp_base() / "thumbnails"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 def get_thumbnail_temp_path(video_identifier: str) -> Path:
     """Return the transient temp path for a video's thumbnail JPEG."""
-    return get_thumbnails_temp_directory() / f"{video_identifier}.jpg"
+    from app.services.temp_file_manager import get_temp_file_path
+    return get_temp_file_path("thumbnails", video_identifier, f"{video_identifier}.jpg")
 
 
 # ---------------------------------------------------------------------------

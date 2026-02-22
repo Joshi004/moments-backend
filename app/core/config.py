@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     moments_dir: Path = Path("static/moments")
     thumbnails_dir: Path = Path("static/thumbnails")
     moment_clips_dir: Path = Path("static/moment_clips")
-    temp_processing_dir: Path = Path("temp/processing")
+    temp_base_dir: Path = Path("temp")
+    temp_cleanup_interval_hours: float = 6.0    # Run cleanup every 6 hours
+    temp_max_age_hours: float = 24.0            # Delete files older than 24 hours
     
     # SSH Tunnel Configuration
     ssh_user: str = "naresh"

@@ -62,7 +62,6 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     import json
     import subprocess
     from app.services.gcs_downloader import GCSDownloader
-    from app.utils.video import get_videos_directory
     from app.database.session import get_session_factory
     from app.repositories import video_db_repository
     
@@ -70,9 +69,9 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     if not video_url:
         raise ValueError("video_url not found in config")
     
-    # Destination path
-    videos_dir = get_videos_directory()
-    dest_path = videos_dir / f"{video_id}.mp4"
+    # Destination path -- write to managed temp directory
+    from app.services.temp_file_manager import get_temp_file_path
+    dest_path = get_temp_file_path("videos", video_id, f"{video_id}.mp4")
     
     # Get database session
     session_factory = get_session_factory()
@@ -267,24 +266,17 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
     video_filename = f"{video_id}.mp4"
     
     if stage == PipelineStage.VIDEO_DOWNLOAD:
-        # Check if video already exists in database
+        # Check if video already exists in database (source of truth after Phase 11)
         from app.database.session import get_session_factory
         from app.repositories import video_db_repository
-        
+
         session_factory = get_session_factory()
         async with session_factory() as session:
             existing = await video_db_repository.get_by_identifier(session, video_id)
             if existing:
                 return True, "Video already exists in database"
-        
-        # Check if video already exists locally
-        from app.utils.video import get_video_by_id
-        video = get_video_by_id(video_id)
-        if video and video.exists():
-            # File exists locally but not in DB - will upload to GCS and register
-            return False, ""
-        
-        # If no video exists, check if download URL is provided
+
+        # Video not in database -- a download URL is required
         if not config.get("video_url"):
             raise ValueError("Video not found and no download URL provided")
         return False, ""
@@ -387,9 +379,10 @@ async def execute_audio_extraction(video_id: str) -> None:
             if video and video.cloud_url:
                 cloud_url = video.cloud_url
                 logger.info(f"Found cloud_url in database: {cloud_url}")
-                # Create a dummy path object for the identifier
-                from pathlib import Path
-                video_path = Path(f"{video_id}.mp4")
+                # Pre-download on the event loop before entering the thread -- avoids asyncio.run() conflict
+                from app.utils.video import ensure_local_video_async
+                video_path = await ensure_local_video_async(video_id, cloud_url)
+                logger.info(f"Pre-downloaded video to: {video_path}")
             else:
                 raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
     
@@ -407,7 +400,7 @@ async def execute_audio_extraction(video_id: str) -> None:
             extract_audio_from_video,
             video_path,
             audio_path,
-            cloud_url
+            None  # cloud_url not needed -- video is already local after pre-download
         )
     
     if not success:

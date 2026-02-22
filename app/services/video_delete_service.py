@@ -451,6 +451,7 @@ class VideoDeleteService:
                 "local": {},
                 "gcs": {},
                 "redis_keys": 0,
+                "temp": {},
             },
             errors=[],
         )
@@ -521,7 +522,19 @@ class VideoDeleteService:
             logger.error(error_msg)
             result.errors.append(error_msg)
             result.status = "partial"
-        
+
+        # 4. Delete managed temp files (Phase 11)
+        try:
+            from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
+            import asyncio
+            temp_result = await cleanup_temp_video(video_id)
+            result.deleted["temp"] = temp_result
+        except Exception as e:
+            error_msg = f"Temp file cleanup failed: {e}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            result.status = "partial"
+
         # Calculate duration
         result.duration_ms = int((time.time() - start_time) * 1000)
         

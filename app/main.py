@@ -1,8 +1,8 @@
 import os
 import asyncio
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.logging import setup_logging
@@ -41,22 +41,51 @@ app.include_router(generate_moments.router, prefix="/api", tags=["generate_momen
 app.include_router(delete.router, prefix="/api", tags=["delete"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
 
-# Thumbnails are now served via GCS signed URLs through the API endpoint:
-#   GET /api/videos/{video_id}/thumbnail  → 302 redirect to GCS signed URL
-#   GET /api/videos/{video_id}/thumbnail/url  → JSON with signed URL (Phase 8)
-# static/thumbnails/ files are kept as backup but are no longer served directly.
+# All media is now served via GCS signed URLs through API endpoints (Phases 3, 7, 8).
+# Transcripts and moments are served from the database (Phases 4, 6).
+# No static file mounts remain -- all intermediate files go to temp/ (Phase 11).
 
-# Mount static files
-audio_dir = Path(__file__).parent.parent / "static" / "audios"
-audio_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/audios", StaticFiles(directory=str(audio_dir)), name="audios")
 
-# Transcripts are now served from database via API, not as static files
-# JSON files kept on disk as backup only
+# Background task handle for the temp file cleanup scheduler
+_cleanup_task: asyncio.Task = None
 
-# Clips are now served via GCS signed URLs through /api/clips/{moment_id}/stream
-# and /api/clips/{moment_id}/url endpoints (Phase 7).
-# static/moment_clips/ files are kept as backup but no longer served directly.
+
+async def _cleanup_scheduler() -> None:
+    """
+    Background asyncio task that periodically removes old temp files.
+
+    Runs every temp_cleanup_interval_hours (default 6h), deletes files
+    older than temp_max_age_hours (default 24h). Errors are logged but
+    never crash the scheduler -- the next iteration will retry.
+    """
+    from app.core.config import get_settings
+    from app.services.temp_file_manager import cleanup_old_files
+
+    settings = get_settings()
+    interval_seconds = settings.temp_cleanup_interval_hours * 3600
+    _logger = logging.getLogger(__name__)
+
+    _logger.info(
+        f"Temp cleanup scheduler started "
+        f"(interval={settings.temp_cleanup_interval_hours}h, "
+        f"max_age={settings.temp_max_age_hours}h)"
+    )
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            result = await cleanup_old_files(max_age_hours=settings.temp_max_age_hours)
+            _logger.info(
+                f"Temp cleanup: deleted {result['files_deleted']} files, "
+                f"freed {result['bytes_freed'] / (1024 ** 3):.2f} GB, "
+                f"removed {result['dirs_removed']} dirs ({result['duration_ms']}ms)"
+            )
+        except asyncio.CancelledError:
+            _logger.info("Temp cleanup scheduler stopped.")
+            break
+        except Exception as exc:
+            _logger.error(f"Temp cleanup scheduler error: {exc}", exc_info=True)
+            # Continue -- next iteration will retry after the configured interval
 
 
 # Root and health endpoints
@@ -141,6 +170,14 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Failed to start pipeline worker: {e}")
 
+    # Start temp file cleanup scheduler
+    global _cleanup_task
+    try:
+        _cleanup_task = asyncio.create_task(_cleanup_scheduler())
+        logger.info("Temp file cleanup scheduler started")
+    except Exception as e:
+        logger.error(f"Failed to start temp cleanup scheduler: {e}")
+
 
 # Shutdown event to cleanup resources
 @app.on_event("shutdown")
@@ -149,8 +186,18 @@ async def shutdown_event():
     import logging
     logger = logging.getLogger(__name__)
     
+    # Cancel temp cleanup scheduler
+    global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Temp file cleanup scheduler stopped")
+
     cleanup_resources()
-    
+
     # Close database connection pool
     try:
         from app.database.session import close_db
@@ -158,5 +205,5 @@ async def shutdown_event():
         logger.info("Database connection pool closed")
     except Exception as e:
         logger.error(f"Failed to close database: {e}")
-    
+
     await close_async_redis_client()

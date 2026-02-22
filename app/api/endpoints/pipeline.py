@@ -29,7 +29,6 @@ from app.services.pipeline.status import initialize_status, get_status, get_acti
 from app.services.pipeline.lock import is_locked, set_cancellation_flag
 from app.services.pipeline.redis_history import get_latest_run, get_all_runs
 from app.services.moments_service import load_moments
-from app.utils.video import get_video_by_id
 
 logger = logging.getLogger(__name__)
 
@@ -333,10 +332,15 @@ async def start_pipeline(video_id: str, request: PipelineStartRequest):
     Raises:
         HTTPException: If video not found or pipeline already running
     """
-    # Validate video exists
-    video = get_video_by_id(video_id)
-    if not video:
-        raise HTTPException(status_code=404, detail=f"Video not found: {video_id}")
+    # Validate video exists in database (source of truth after Phase 11)
+    from app.database.session import get_session_factory
+    from app.repositories import video_db_repository
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        video = await video_db_repository.get_by_identifier(session, video_id)
+        if not video:
+            raise HTTPException(status_code=404, detail=f"Video not found: {video_id}")
     
     # Check if already processing
     locked, lock_info = await is_locked(video_id)

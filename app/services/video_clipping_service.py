@@ -18,13 +18,25 @@ from app.utils.timestamp import calculate_padded_boundaries
 logger = logging.getLogger(__name__)
 
 
-def get_temp_clips_directory() -> Path:
-    """Get the path to the temporary clip processing directory."""
-    current_file = Path(__file__).resolve()
-    backend_dir = current_file.parent.parent.parent
-    clips_dir = backend_dir / "temp" / "processing" / "clips"
-    clips_dir.mkdir(parents=True, exist_ok=True)
-    return clips_dir
+def get_temp_clips_directory(video_identifier: str = "") -> Path:
+    """
+    Get the temp directory for clip extraction.
+
+    Args:
+        video_identifier: Video identifier stem (e.g. "motivation"). When
+                          provided, returns the per-video subdirectory.
+                          When empty, returns the clips root directory.
+
+    Returns:
+        Path to temp/clips/{video_identifier}/ (created if absent)
+    """
+    from app.services.temp_file_manager import get_temp_dir, _get_temp_base
+    if video_identifier:
+        return get_temp_dir("clips", video_identifier)
+    # Root-level access -- return base clips dir without creating an identifier subdir
+    base = _get_temp_base() / "clips"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 def get_clip_path(moment_id: str, video_filename: str) -> Path:
@@ -38,13 +50,12 @@ def get_clip_path(moment_id: str, video_filename: str) -> Path:
         video_filename: Original video filename (e.g., "motivation.mp4")
 
     Returns:
-        Path object inside temp/processing/clips/
+        Path object inside temp/clips/{video_stem}/
     """
+    from app.services.temp_file_manager import get_temp_file_path
     video_stem = Path(video_filename).stem
-    clips_dir = get_temp_clips_directory() / video_stem
-    clips_dir.mkdir(parents=True, exist_ok=True)
     clip_filename = f"{video_stem}_{moment_id}_clip.mp4"
-    return clips_dir / clip_filename
+    return get_temp_file_path("clips", video_stem, clip_filename)
 
 
 async def check_clip_exists(moment_identifier: str) -> bool:
