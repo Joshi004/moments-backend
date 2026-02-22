@@ -4,14 +4,12 @@ Stores completed pipeline runs with 24-hour TTL.
 
 All functions are async for non-blocking Redis operations.
 """
-import json
 import time
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 from app.core.redis import get_async_redis_client
 from app.core.config import get_settings
-from app.models.pipeline_schemas import PipelineStage
 
 logger = logging.getLogger(__name__)
 

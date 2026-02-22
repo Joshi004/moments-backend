@@ -1,12 +1,11 @@
 import subprocess
 import time
 import json
-import requests
 import psutil
 import socket
 import warnings
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional
 from contextlib import asynccontextmanager
 import logging
 from app.utils.logging_config import (

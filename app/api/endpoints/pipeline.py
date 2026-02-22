@@ -4,7 +4,6 @@ Provides REST API for unified video processing pipeline.
 
 All endpoints use async Redis for non-blocking operations.
 """
-import asyncio
 import json
 import time
 import logging
@@ -25,9 +24,9 @@ from app.models.pipeline_schemas import (
     PipelineStage,
     StageStatus,
 )
-from app.services.pipeline.status import initialize_status, get_status, get_active_status
+from app.services.pipeline.status import initialize_status, get_active_status
 from app.services.pipeline.lock import is_locked, set_cancellation_flag
-from app.services.pipeline.redis_history import get_latest_run, get_all_runs
+from app.services.pipeline.redis_history import get_latest_run
 from app.services.moments_service import load_moments
 
 logger = logging.getLogger(__name__)

@@ -136,31 +136,8 @@ dmypy.json
 # Managed temp directory (intermediate processing files, auto-cleaned by scheduler)
 temp/
 
-# Video files (large files)
-static/videos/*
-
-# Audio files
-static/audios/*
-
-# Moment clips (generated video clips)
-static/moment_clips/*.mp4
-
-# Keep moment_clips directory structure
-!static/moment_clips/.gitkeep
-
-# # Transcript files
-# static/transcripts/*
-
-# # Thumbnail files
-# static/thumbnails/*
-
-# # Moments files
-# static/moments/*
-
-
-
-# Keep videos directory structure
-!static/videos/.gitkeep
+# Static backup archives
+static_backup_*.tar.gz
 
 # Environment variables
 .env

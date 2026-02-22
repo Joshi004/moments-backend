@@ -1,9 +1,7 @@
 import subprocess
 import time
 import json
-import requests
 import psutil
-import re
 from typing import Optional, Dict, List
 from contextlib import asynccontextmanager
 import logging
@@ -676,8 +674,6 @@ async def process_moments_generation(
     try:
         # Import here to avoid circular imports
         from app.services.transcript_service import load_transcript
-        from app.utils.video import get_video_by_filename
-        import cv2
         
         log_operation_start(
             logger="app.services.ai.generation_service",
@@ -748,20 +744,16 @@ async def process_moments_generation(
             )
             raise Exception("No segments found in transcript")
         
-        # Get video duration
-        video_file = get_video_by_filename(video_filename)
-        if not video_file:
-            raise Exception(f"Video file not found: {video_filename}")
-        
-        cap = cv2.VideoCapture(str(video_file))
-        if not cap.isOpened():
-            raise Exception(f"Could not open video file: {video_filename}")
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        video_duration = frame_count / fps if fps > 0 else 0.0
-        cap.release()
-        
+        # Get video duration from database
+        from app.database.session import get_session_factory
+        from app.repositories import video_db_repository as _video_db_repo
+        _session_factory = get_session_factory()
+        async with _session_factory() as _session:
+            _video_record = await _video_db_repo.get_by_identifier(_session, video_id)
+        if not _video_record or not _video_record.duration_seconds:
+            raise Exception(f"Video not found or duration unknown in database: {video_id}")
+        video_duration = _video_record.duration_seconds
+
         if video_duration <= 0:
             raise Exception(f"Could not determine video duration for {video_filename}")
         

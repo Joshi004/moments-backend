@@ -2,7 +2,7 @@
 Generation Config model - AI generation configuration parameters.
 """
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Index
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 

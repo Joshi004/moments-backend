@@ -4,7 +4,6 @@ Handles video listing, retrieval, streaming, and thumbnails.
 """
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
-from pathlib import Path
 import time
 from sqlalchemy.ext.asyncio import AsyncSession
 

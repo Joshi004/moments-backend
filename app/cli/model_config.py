@@ -13,9 +13,6 @@ Usage:
 """
 import sys
 import argparse
-import json
-from datetime import datetime
-from typing import Optional
 
 # Ensure app is in path
 sys.path.insert(0, '/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend')

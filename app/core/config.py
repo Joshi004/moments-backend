@@ -18,13 +18,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     
     # Paths (relative to backend root)
-    videos_dir: Path = Path("static/videos")
     static_dir: Path = Path("static")
-    audios_dir: Path = Path("static/audios")
-    transcripts_dir: Path = Path("static/transcripts")
-    moments_dir: Path = Path("static/moments")
-    thumbnails_dir: Path = Path("static/thumbnails")
-    moment_clips_dir: Path = Path("static/moment_clips")
     temp_base_dir: Path = Path("temp")
     temp_cleanup_interval_hours: float = 6.0    # Run cleanup every 6 hours
     temp_max_age_hours: float = 24.0            # Delete files older than 24 hours
@@ -72,12 +66,9 @@ class Settings(BaseSettings):
     # Video Clipping Configuration
     clip_padding: float = 30.0  # Padding in seconds
     clip_margin: float = 2.0     # Margin for word boundaries in seconds
-    
+
     # Video Server Configuration
-    # Use BACKEND_PORT if available, otherwise default to 7005
-    # The video clips are served by the FastAPI backend itself at /moment_clips
     video_server_port: int = int(os.getenv('BACKEND_PORT', '7005'))
-    video_server_clips_path: str = "moment_clips"
     duration_tolerance: float = 0.5  # Tolerance for transcript-video duration matching
     
     # Redis Configuration
@@ -100,11 +91,6 @@ class Settings(BaseSettings):
     
     # Container identification
     container_id: str = os.getenv("HOSTNAME", f"backend-{os.getpid()}")
-    
-    @property
-    def video_server_base_url(self) -> str:
-        """Get the video server base URL using the backend port."""
-        return f"http://localhost:{self.video_server_port}"
     
     # Video Encoding Configuration
     parallel_workers: int = 4
@@ -262,11 +248,6 @@ class Settings(BaseSettings):
         except ValueError:
             return False
     
-    def get_video_clip_url(self, moment_id: str, video_filename: str) -> str:
-        """Get the full URL for a video clip."""
-        video_stem = Path(video_filename).stem
-        clip_filename = f"{video_stem}_{moment_id}_clip.mp4"
-        return f"{self.video_server_base_url}/{self.video_server_clips_path}/{clip_filename}"
 
 
 # Global settings instance (lazily initialized)

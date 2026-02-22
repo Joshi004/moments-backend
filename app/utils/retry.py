@@ -5,7 +5,7 @@ Used primarily for GCS upload operations.
 import asyncio
 import logging
 import time
-from typing import Callable, TypeVar, Any
+from typing import Callable, TypeVar
 from functools import wraps
 from google.api_core import exceptions as google_exceptions
 import requests

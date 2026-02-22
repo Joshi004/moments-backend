@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import time
 import asyncio
 
-from app.models.schemas import MessageResponse
-from app.utils.video import get_video_files
 from app.database.dependencies import get_db
 from app.repositories import video_db_repository
 from app.services.audio_service import (
@@ -35,11 +33,11 @@ router = APIRouter()
 
 
 @router.post("/videos/{video_id}/process-audio")
-async def process_audio(video_id: str):
+async def process_audio(video_id: str, db: AsyncSession = Depends(get_db)):
     """Start audio extraction process for a video."""
     start_time = time.time()
     operation = "process_audio"
-    
+
     log_operation_start(
         logger="app.api.endpoints.transcripts",
         function="process_audio",
@@ -47,18 +45,10 @@ async def process_audio(video_id: str):
         message=f"Starting audio processing for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video by matching stem
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.transcripts",
@@ -69,7 +59,9 @@ async def process_audio(video_id: str):
                 context={"video_id": video_id}
             )
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
+        video_filename = f"{video_id}.mp4"
+
         # Check if already processing
         if await job_tracker.is_running("audio_extraction", video_id):
             log_event(
@@ -82,9 +74,9 @@ async def process_audio(video_id: str):
                 context={"video_id": video_id}
             )
             raise HTTPException(status_code=409, detail="Audio processing already in progress for this video")
-        
+
         # Check if audio already exists
-        if check_audio_exists(video_file.name):
+        if check_audio_exists(video_filename):
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.transcripts",
@@ -92,18 +84,22 @@ async def process_audio(video_id: str):
                 operation=operation,
                 event="validation_error",
                 message="Audio file already exists",
-                context={"video_id": video_id, "video_filename": video_file.name}
+                context={"video_id": video_id, "video_filename": video_filename}
             )
             raise HTTPException(status_code=400, detail="Audio file already exists for this video")
-        
+
         # Start processing job
-        job_created = await job_tracker.create_job("audio_extraction", video_id, video_filename=video_file.name)
+        job_created = await job_tracker.create_job("audio_extraction", video_id, video_filename=video_filename)
         if not job_created:
             raise HTTPException(status_code=409, detail="Audio processing already in progress for this video")
-        
-        # Start async processing
-        process_audio_async(video_id, video_file)
-        
+
+        # Ensure the video is available locally (downloads from GCS if needed)
+        from app.utils.video import ensure_local_video_async
+        local_video_path = await ensure_local_video_async(video_id, video.cloud_url)
+
+        # Start async processing with the resolved local path
+        process_audio_async(video_id, local_video_path)
+
         duration = time.time() - start_time
         log_operation_complete(
             logger="app.api.endpoints.transcripts",
@@ -112,9 +108,9 @@ async def process_audio(video_id: str):
             message="Audio processing job started",
             context={"video_id": video_id, "duration_seconds": duration}
         )
-        
+
         return {"message": "Audio processing started", "video_id": video_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -131,11 +127,11 @@ async def process_audio(video_id: str):
 
 
 @router.post("/videos/{video_id}/process-transcript")
-async def process_transcript(video_id: str):
+async def process_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
     """Start transcript generation process for a video."""
     start_time = time.time()
     operation = "process_transcript"
-    
+
     log_operation_start(
         logger="app.api.endpoints.transcripts",
         function="process_transcript",
@@ -143,18 +139,10 @@ async def process_transcript(video_id: str):
         message=f"Starting transcript generation for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.transcripts",
@@ -165,24 +153,26 @@ async def process_transcript(video_id: str):
                 context={"video_id": video_id}
             )
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
+        video_filename = f"{video_id}.mp4"
+        audio_filename = f"{video_id}.wav"
+
         # Check if audio exists
-        audio_filename = video_file.stem + ".wav"
-        if not check_audio_exists(video_file.name):
+        if not check_audio_exists(video_filename):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
-        
+
         # Check if already processing
         if await job_tracker.is_running("transcription", video_id):
             raise HTTPException(status_code=409, detail="Transcript generation already in progress for this video")
-        
+
         # Check if transcript already exists
         if await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript already exists for this video")
-        
+
         # Upload audio to GCS
         uploader = GCSUploader()
-        audio_path = get_audio_path(video_file.name)
-        
+        audio_path = get_audio_path(video_filename)
+
         log_event(
             level="INFO",
             logger="app.api.endpoints.transcripts",
@@ -192,16 +182,16 @@ async def process_transcript(video_id: str):
             message="Uploading audio to GCS",
             context={"video_id": video_id, "audio_path": str(audio_path)}
         )
-        
+
         _, audio_signed_url = await uploader.upload_audio(audio_path, video_id)
-        
+
         # Call async transcription with timeout
         try:
-            result = await asyncio.wait_for(
+            await asyncio.wait_for(
                 process_transcription(video_id, audio_signed_url),
                 timeout=600  # 10 minutes
             )
-            
+
             duration = time.time() - start_time
             log_operation_complete(
                 logger="app.api.endpoints.transcripts",
@@ -210,9 +200,9 @@ async def process_transcript(video_id: str):
                 message="Transcription completed successfully",
                 context={"video_id": video_id, "duration_seconds": duration}
             )
-            
+
             return {"message": "Transcription completed", "video_id": video_id}
-            
+
         except asyncio.TimeoutError:
             duration = time.time() - start_time
             log_operation_error(
@@ -224,7 +214,7 @@ async def process_transcript(video_id: str):
                 context={"video_id": video_id, "duration_seconds": duration}
             )
             raise HTTPException(status_code=504, detail="Transcription timed out after 600 seconds")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -241,31 +231,22 @@ async def process_transcript(video_id: str):
 
 
 @router.get("/videos/{video_id}/audio-extraction-status")
-async def get_audio_extraction_status(video_id: str):
+async def get_audio_extraction_status(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get audio extraction status for a video."""
     start_time = time.time()
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Get status
+
         job = await job_tracker.get_job("audio_extraction", video_id)
-        
+
         duration = time.time() - start_time
-        
+
         if job is None:
             return {"status": "not_started", "started_at": None}
-        
+
         started_at = float(job.get("started_at", time.time()))
         return {
             "status": job.get("status"),
@@ -273,7 +254,7 @@ async def get_audio_extraction_status(video_id: str):
             "elapsed_seconds": time.time() - started_at,
             "error": job.get("error")
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -290,31 +271,22 @@ async def get_audio_extraction_status(video_id: str):
 
 
 @router.get("/videos/{video_id}/transcription-status")
-async def get_transcription_status(video_id: str):
+async def get_transcription_status(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get transcription status for a video."""
     start_time = time.time()
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Get status
+
         job = await job_tracker.get_job("transcription", video_id)
-        
+
         duration = time.time() - start_time
-        
+
         if job is None:
             return {"status": "not_started", "started_at": None}
-        
+
         started_at = float(job.get("started_at", time.time()))
         return {
             "status": job.get("status"),
@@ -322,7 +294,7 @@ async def get_transcription_status(video_id: str):
             "elapsed_seconds": time.time() - started_at,
             "error": job.get("error")
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -343,7 +315,7 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get transcript for a video."""
     start_time = time.time()
     operation = "get_transcript"
-    
+
     log_event(
         level="DEBUG",
         logger="app.api.endpoints.transcripts",
@@ -359,14 +331,14 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
         video = await video_db_repository.get_by_identifier(db, video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
         # Load transcript from database
         audio_filename = f"{video_id}.wav"
         transcript_data = await load_transcript(audio_filename)
-        
+
         if transcript_data is None:
             raise HTTPException(status_code=404, detail="Transcript not found for this video")
-        
+
         duration = time.time() - start_time
         log_event(
             level="DEBUG",
@@ -381,9 +353,9 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
                 "duration_seconds": duration
             }
         )
-        
+
         return transcript_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -397,4 +369,3 @@ async def get_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
             context={"video_id": video_id, "duration_seconds": duration}
         )
         raise
-

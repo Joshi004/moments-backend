@@ -19,7 +19,6 @@ from app.services.ai.prompt_tasks.sections import (
 from app.services.ai.prompt_tasks.utils import (
     strip_think_tags,
     extract_json_from_markdown,
-    find_json_in_text,
 )
 from app.utils.logging_config import (
     log_event,

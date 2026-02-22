@@ -7,7 +7,6 @@ import json
 import logging
 import time
 from typing import Optional, Tuple, Dict, Any
-from pathlib import Path
 
 from app.models.pipeline_schemas import PipelineStage
 from app.services.pipeline.status import (
@@ -18,10 +17,7 @@ from app.services.pipeline.status import (
     update_pipeline_status,
     update_current_stage,
     update_refinement_progress,
-    get_stage_status,
-    get_stage_error,
 )
-from app.models.pipeline_schemas import StageStatus
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
 from app.services.pipeline.concurrency import GlobalConcurrencyLimits
@@ -35,7 +31,6 @@ from app.services.audio_service import (
 )
 from app.services.transcript_service import (
     check_transcript_exists,
-    process_transcription,
 )
 from app.services.ai.generation_service import process_moments_generation
 from app.services.ai.refinement_service import process_moment_refinement
@@ -43,7 +38,7 @@ from app.services.moments_service import load_moments
 from app.services.video_clipping_service import (
     extract_clips_parallel,
 )
-from app.utils.video import get_video_by_filename
+from app.utils.video import ensure_local_video_async
 
 logger = logging.getLogger(__name__)
 
@@ -364,27 +359,21 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
 async def execute_audio_extraction(video_id: str) -> None:
     """Execute audio extraction stage with global concurrency control."""
     video_filename = f"{video_id}.mp4"
-    video_path = get_video_by_filename(video_filename)
-    
-    cloud_url = None
-    if not video_path:
-        # Fallback: look up cloud_url from database
-        logger.info(f"Local video not found for {video_id}, querying database for cloud_url")
-        from app.database.session import get_session_factory
-        from app.repositories import video_db_repository
-        
-        session_factory = get_session_factory()
-        async with session_factory() as session:
-            video = await video_db_repository.get_by_identifier(session, video_id)
-            if video and video.cloud_url:
-                cloud_url = video.cloud_url
-                logger.info(f"Found cloud_url in database: {cloud_url}")
-                # Pre-download on the event loop before entering the thread -- avoids asyncio.run() conflict
-                from app.utils.video import ensure_local_video_async
-                video_path = await ensure_local_video_async(video_id, cloud_url)
-                logger.info(f"Pre-downloaded video to: {video_path}")
-            else:
-                raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
+
+    # Look up cloud_url from database and ensure video is available locally
+    from app.database.session import get_session_factory
+    from app.repositories import video_db_repository
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        video = await video_db_repository.get_by_identifier(session, video_id)
+        if not video or not video.cloud_url:
+            raise FileNotFoundError(f"Video not found in database: {video_filename}")
+        cloud_url = video.cloud_url
+
+    logger.info(f"Ensuring local video for audio extraction: {video_id}")
+    video_path = await ensure_local_video_async(video_id, cloud_url)
+    logger.info(f"Video available at: {video_path}")
     
     audio_path = get_audio_path(video_filename)
     
@@ -568,25 +557,21 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
     per clip inside extract_clips_parallel(). No separate CLIP_UPLOAD stage needed.
     """
     video_filename = f"{video_id}.mp4"
-    video_path = get_video_by_filename(video_filename)
 
-    cloud_url = None
-    if not video_path:
-        # Fallback: look up cloud_url from database
-        logger.info(f"Local video not found for {video_id}, querying database for cloud_url")
-        from app.database.session import get_session_factory
-        from app.repositories import video_db_repository
+    # Look up cloud_url from database (extract_clips_parallel handles local download)
+    from app.database.session import get_session_factory
+    from app.repositories import video_db_repository
 
-        session_factory = get_session_factory()
-        async with session_factory() as session:
-            video = await video_db_repository.get_by_identifier(session, video_id)
-            if video and video.cloud_url:
-                cloud_url = video.cloud_url
-                logger.info(f"Found cloud_url in database: {cloud_url}")
-                from pathlib import Path
-                video_path = Path(f"{video_id}.mp4")
-            else:
-                raise FileNotFoundError(f"Video not found locally or in database: {video_filename}")
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        video = await video_db_repository.get_by_identifier(session, video_id)
+        if not video or not video.cloud_url:
+            raise FileNotFoundError(f"Video not found in database: {video_filename}")
+        cloud_url = video.cloud_url
+
+    # Use temp path as a placeholder -- extract_clips_parallel will download from cloud_url if needed
+    from pathlib import Path
+    video_path = Path(f"temp/videos/{video_id}/{video_id}.mp4")
 
     moments = await load_moments(video_filename)
     if not moments:

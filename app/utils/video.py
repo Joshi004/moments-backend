@@ -1,120 +1,6 @@
-import os
-import warnings
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
-
-
-def get_videos_directory() -> Path:
-    """Get the path to the videos directory."""
-    # Use __file__ to find the backend directory - this is the most reliable method
-    # __file__ is app/utils/video_utils.py when imported
-    current_file = Path(__file__).resolve()
-    
-    # Go up 3 levels: app/utils/video_utils.py -> app/utils -> app -> moments-backend
-    backend_dir = current_file.parent.parent.parent
-    videos_dir = backend_dir / "static" / "videos"
-    
-    # Resolve to absolute path and verify it's the correct one
-    videos_dir = videos_dir.resolve()
-    
-    # Ensure we're not accidentally pointing to the root videos directory
-    # The correct path should contain 'moments-backend/static/videos'
-    videos_str = str(videos_dir)
-    if 'moments-backend/static/videos' not in videos_str:
-        # Fallback: use absolute path
-        videos_dir = Path("/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend/static/videos").resolve()
-    
-    # Final verification
-    if not videos_dir.exists():
-        raise FileNotFoundError(f"Videos directory not found at: {videos_dir}")
-    
-    return videos_dir
-
-
-def get_video_files():
-    """
-    Get list of video files from the videos directory.
-    
-    .. deprecated::
-        Use video_db_repository.list_all() for database-backed video listing.
-        This function will be removed after all phases are complete.
-    """
-    warnings.warn(
-        "get_video_files() is deprecated. Use video_db_repository.list_all() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    videos_dir = get_videos_directory()
-    
-    # Verify we have the correct directory
-    expected_path_ending = 'moments-backend/static/videos'
-    actual_path = str(videos_dir)
-    if expected_path_ending not in actual_path:
-        raise ValueError(f"Videos directory path seems incorrect. Expected path containing '{expected_path_ending}', got '{actual_path}'")
-    
-    if not videos_dir.exists():
-        raise FileNotFoundError(f"Videos directory does not exist: {videos_dir}")
-    
-    if not videos_dir.is_dir():
-        raise NotADirectoryError(f"Videos path is not a directory: {videos_dir}")
-    
-    video_extensions = {'.mp4', '.webm', '.mov', '.avi', '.mkv', '.ogg'}
-    video_files = []
-    
-    try:
-        # Use Path.iterdir() - wrap in try-except to catch specific errors
-        dir_iterator = videos_dir.iterdir()
-        for file_path in dir_iterator:
-            try:
-                if file_path.is_file() and file_path.suffix.lower() in video_extensions:
-                    video_files.append(file_path)
-            except (PermissionError, OSError) as e:
-                # Skip individual files we can't access
-                continue
-    except PermissionError as e:
-        raise PermissionError(f"Cannot access videos directory: {videos_dir}. Error: {e}. Path: {videos_dir.resolve()}")
-    except OSError as e:
-        raise OSError(f"OS error accessing videos directory: {videos_dir}. Error: {e}. Path: {videos_dir.resolve()}")
-    except Exception as e:
-        raise Exception(f"Error reading videos directory {videos_dir}: {type(e).__name__}: {e}. Path: {videos_dir.resolve()}")
-    
-    return sorted(video_files)
-
-
-def get_video_by_filename(filename: str):
-    """Get a video file by its filename."""
-    videos_dir = get_videos_directory()
-    video_path = videos_dir / filename
-    
-    if video_path.exists() and video_path.is_file():
-        return video_path
-    return None
-
-
-def get_video_by_id(video_id: str):
-    """
-    Get a video file by its ID (filename without extension).
-    
-    Args:
-        video_id: Video ID (e.g., 'motivation', 'ProjectUpdateVideo')
-    
-    Returns:
-        Path object if video exists, None otherwise
-    
-    .. deprecated::
-        Use video_db_repository.get_by_identifier() for database-backed video lookup.
-        This function will be removed after all phases are complete.
-    """
-    warnings.warn(
-        "get_video_by_id() is deprecated. Use video_db_repository.get_by_identifier() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    # Assume .mp4 extension
-    filename = f"{video_id}.mp4"
-    return get_video_by_filename(filename)
 
 
 def get_temp_video_path(identifier: str) -> Path:
@@ -142,8 +28,7 @@ def ensure_local_video(identifier: str, cloud_url: str) -> Path:
 
     Fallback chain:
     1. Check temp/videos/{identifier}/{identifier}.mp4 (managed temp directory)
-    2. Check static/videos/{identifier}.mp4 (legacy fallback, removed in Phase 12)
-    3. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
+    2. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
 
     Args:
         identifier: Video identifier (e.g., 'motivation')
@@ -168,16 +53,7 @@ def ensure_local_video(identifier: str, cloud_url: str) -> Path:
         logger.info(f"Using cached temp video: {temp_path}")
         return temp_path
 
-    # Priority 2: Legacy fallback -- static/videos/ (removed in Phase 12)
-    try:
-        original_path = get_video_by_filename(f"{identifier}.mp4")
-        if original_path and original_path.exists():
-            logger.info(f"Using legacy local video: {original_path}")
-            return original_path
-    except Exception:
-        pass
-
-    # Priority 3: Download from GCS to temp directory
+    # Priority 2: Download from GCS to temp directory
     logger.info(f"Video not found locally, downloading from GCS: {cloud_url}")
 
     async def download_video():
@@ -215,8 +91,7 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
 
     Fallback chain:
     1. temp/videos/{identifier}/{identifier}.mp4 (managed temp directory)
-    2. static/videos/{identifier}.mp4 (legacy fallback, removed in Phase 12)
-    3. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
+    2. Download from GCS to temp/videos/{identifier}/{identifier}.mp4
 
     Args:
         identifier: Video identifier (e.g., 'motivation')
@@ -236,16 +111,7 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
         logger.info(f"Using cached temp video: {temp_path}")
         return temp_path
 
-    # Priority 2: Legacy fallback -- static/videos/ (removed in Phase 12)
-    try:
-        original_path = get_video_by_filename(f"{identifier}.mp4")
-        if original_path and original_path.exists():
-            logger.info(f"Using legacy local video: {original_path}")
-            return original_path
-    except Exception:
-        pass
-
-    # Priority 3: Download from GCS to temp directory (async, no asyncio.run())
+    # Priority 2: Download from GCS to temp directory (async, no asyncio.run())
     logger.info(f"Video not found locally, downloading from GCS: {cloud_url}")
     from app.services.gcs_downloader import GCSDownloader
 
@@ -262,4 +128,3 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
 
     logger.info(f"Successfully downloaded video to temp: {temp_path}")
     return temp_path
-

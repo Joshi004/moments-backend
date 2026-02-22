@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.services.pipeline.orchestrator import execute_pipeline
 from app.services.pipeline.lock import acquire_lock, release_lock
 from app.services.pipeline.redis_history import archive_active_to_history
-from app.services.pipeline.status import delete_status, get_current_stage, update_pipeline_status, mark_stage_failed
+from app.services.pipeline.status import get_current_stage, update_pipeline_status, mark_stage_failed
 
 logger = logging.getLogger(__name__)
 

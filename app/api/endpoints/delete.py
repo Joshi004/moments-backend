@@ -5,7 +5,6 @@ Handles comprehensive deletion of videos and associated resources.
 import logging
 import time
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
 
 from app.services.video_delete_service import VideoDeleteService
 from app.core.logging import (
@@ -23,85 +22,69 @@ logger = logging.getLogger(__name__)
 async def delete_video(
     video_id: str,
     force: bool = Query(False, description="Skip active pipeline check"),
-    # Local file options
-    skip_local_video: bool = Query(False, description="Keep local video file"),
-    skip_local_audio: bool = Query(False, description="Keep local audio file"),
-    skip_local_thumbnail: bool = Query(False, description="Keep local thumbnail"),
-    skip_local_transcript: bool = Query(False, description="Keep local transcript"),
-    skip_local_moments: bool = Query(False, description="Keep local moments metadata"),
-    skip_local_clips: bool = Query(False, description="Keep local video clips"),
     # GCS options
+    skip_gcs_video: bool = Query(False, description="Keep GCS video file"),
     skip_gcs_audio: bool = Query(False, description="Keep GCS audio file"),
     skip_gcs_clips: bool = Query(False, description="Keep GCS video clips"),
     skip_gcs_thumbnails: bool = Query(False, description="Keep GCS thumbnail file"),
     # State options
-    skip_redis: bool = Query(False, description="Keep Redis state"),
+    skip_redis: bool = Query(False, description="Keep Redis state (pipeline status, locks)"),
+    # Database option
+    skip_database: bool = Query(False, description="Keep database record (and all cascaded data)"),
 ):
     """
     Delete video and all associated resources.
 
-    By default, deletes everything. Use skip_* parameters to preserve specific resources.
+    By default, deletes everything: GCS files, temp files, Redis state, and database records.
+    Database CASCADE automatically removes transcripts, moments, clips, thumbnails, and pipeline history.
 
     Args:
         video_id: Video identifier
         force: Skip active pipeline check (delete anyway)
-        skip_local_video: Keep local video file
-        skip_local_audio: Keep local audio file
-        skip_local_thumbnail: Keep local thumbnail
-        skip_local_transcript: Keep local transcript
-        skip_local_moments: Keep local moments metadata
-        skip_local_clips: Keep local video clips
+        skip_gcs_video: Keep GCS video file
         skip_gcs_audio: Keep GCS audio file
         skip_gcs_clips: Keep GCS video clips
+        skip_gcs_thumbnails: Keep GCS thumbnail file
         skip_redis: Keep Redis state (pipeline status, locks)
-    
+        skip_database: Keep database record (and all cascaded data)
+
     Returns:
         Deletion result with status and details
     """
     start_time = time.time()
     operation = "delete_video"
-    
+
     log_operation_start(
         logger="app.api.endpoints.delete",
         function="delete_video",
         operation=operation,
         message=f"Starting video deletion: {video_id}",
-            context={
-                "video_id": video_id,
-                "force": force,
-                "skip_local_video": skip_local_video,
-                "skip_local_audio": skip_local_audio,
-                "skip_local_thumbnail": skip_local_thumbnail,
-                "skip_local_transcript": skip_local_transcript,
-                "skip_local_moments": skip_local_moments,
-                "skip_local_clips": skip_local_clips,
-                "skip_gcs_audio": skip_gcs_audio,
-                "skip_gcs_clips": skip_gcs_clips,
-                "skip_gcs_thumbnails": skip_gcs_thumbnails,
-                "skip_redis": skip_redis,
-                "request_id": get_request_id()
-            }
+        context={
+            "video_id": video_id,
+            "force": force,
+            "skip_gcs_video": skip_gcs_video,
+            "skip_gcs_audio": skip_gcs_audio,
+            "skip_gcs_clips": skip_gcs_clips,
+            "skip_gcs_thumbnails": skip_gcs_thumbnails,
+            "skip_redis": skip_redis,
+            "skip_database": skip_database,
+            "request_id": get_request_id()
+        }
     )
-    
+
     try:
-        # Create service and perform deletion
         service = VideoDeleteService()
         result = await service.delete_video(
             video_id=video_id,
-            skip_local_video=skip_local_video,
-            skip_local_audio=skip_local_audio,
-            skip_local_thumbnail=skip_local_thumbnail,
-            skip_local_transcript=skip_local_transcript,
-            skip_local_moments=skip_local_moments,
-            skip_local_clips=skip_local_clips,
+            skip_gcs_video=skip_gcs_video,
             skip_gcs_audio=skip_gcs_audio,
             skip_gcs_clips=skip_gcs_clips,
             skip_gcs_thumbnails=skip_gcs_thumbnails,
             skip_redis=skip_redis,
+            skip_database=skip_database,
             force=force
         )
-        
-        # Check if deletion failed
+
         if result.status == "failed":
             duration = time.time() - start_time
             log_operation_error(
@@ -124,8 +107,7 @@ async def delete_video(
                     "all_errors": result.errors
                 }
             )
-        
-        # Log completion
+
         duration = time.time() - start_time
         log_operation_complete(
             logger="app.api.endpoints.delete",
@@ -140,8 +122,7 @@ async def delete_video(
                 "duration_seconds": duration
             }
         )
-        
-        # Return result
+
         return {
             "status": result.status,
             "video_id": result.video_id,
@@ -149,7 +130,7 @@ async def delete_video(
             "errors": result.errors if result.errors else None,
             "duration_ms": result.duration_ms
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:

@@ -10,8 +10,7 @@ from app.utils.logging_config import (
     log_event,
     log_operation_start,
     log_operation_complete,
-    log_operation_error,
-    get_request_id
+    log_operation_error
 )
 from app.utils.timestamp import calculate_padded_boundaries
 

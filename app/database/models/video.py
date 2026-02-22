@@ -2,7 +2,7 @@
 Video model - central entity for all video content.
 """
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, BigInteger, Text, DateTime, Index
+from sqlalchemy import String, Integer, Float, BigInteger, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 

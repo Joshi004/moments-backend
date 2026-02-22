@@ -1,11 +1,11 @@
 """
-Video deletion service for comprehensive cleanup of video resources.
-Handles deletion of local files, GCS files, and Redis state.
+Video deletion service.
+Handles deletion of database records, GCS files, temp files, and Redis state.
+All data operations use database CASCADE deletes and GCS prefix deletion.
 """
 import logging
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 from dataclasses import dataclass, field
 
 from google.cloud import storage
@@ -13,7 +13,6 @@ from google.cloud import storage
 from app.core.config import get_settings
 from app.core.redis import get_async_redis_client
 from app.services.pipeline.status import get_status as get_pipeline_status
-from app.utils.video import get_videos_directory
 
 logger = logging.getLogger(__name__)
 
@@ -28,196 +27,14 @@ class DeleteResult:
     duration_ms: int = 0
 
 
-class LocalDeleter:
-    """Handles deletion of local video files."""
-    
-    def __init__(self, video_id: str):
-        self.video_id = video_id
-        self.settings = get_settings()
-        self.backend_root = Path(__file__).parent.parent.parent
-        
-    def delete_all(
-        self,
-        skip_video: bool = False,
-        skip_audio: bool = False,
-        skip_thumbnail: bool = False,
-        skip_transcript: bool = False,
-        skip_moments: bool = False,
-        skip_clips: bool = False
-    ) -> Dict[str, any]:
-        """
-        Delete local files for video_id based on skip flags.
-        
-        Args:
-            skip_video: If True, keep video file
-            skip_audio: If True, keep audio file
-            skip_thumbnail: If True, keep thumbnail
-            skip_transcript: If True, keep transcript
-            skip_moments: If True, keep moments metadata
-            skip_clips: If True, keep video clips
-        
-        Returns:
-            Dictionary with deletion results
-        """
-        result = {
-            "video": False,
-            "audio": False,
-            "thumbnail": False,
-            "transcript": False,
-            "moments": False,
-            "clips": 0
-        }
-        
-        # Delete video file
-        if not skip_video:
-            video_deleted = self._delete_video_file()
-            result["video"] = video_deleted
-        else:
-            logger.info(f"Skipping video file deletion (skip_video=True)")
-        
-        # Delete audio file
-        if not skip_audio:
-            audio_deleted = self._delete_audio_file()
-            result["audio"] = audio_deleted
-        else:
-            logger.info(f"Skipping audio file deletion (skip_audio=True)")
-        
-        # Delete thumbnail
-        if not skip_thumbnail:
-            thumbnail_deleted = self._delete_thumbnail()
-            result["thumbnail"] = thumbnail_deleted
-        else:
-            logger.info(f"Skipping thumbnail deletion (skip_thumbnail=True)")
-        
-        # Delete transcript
-        if not skip_transcript:
-            transcript_deleted = self._delete_transcript()
-            result["transcript"] = transcript_deleted
-        else:
-            logger.info(f"Skipping transcript deletion (skip_transcript=True)")
-        
-        # Delete moments.json
-        if not skip_moments:
-            moments_deleted = self._delete_moments_file()
-            result["moments"] = moments_deleted
-        else:
-            logger.info(f"Skipping moments file deletion (skip_moments=True)")
-        
-        # Delete video clips
-        if not skip_clips:
-            clips_deleted = self._delete_clips()
-            result["clips"] = clips_deleted
-        else:
-            logger.info(f"Skipping clips deletion (skip_clips=True)")
-        
-        return result
-    
-    def _delete_video_file(self) -> bool:
-        """Delete the main video file."""
-        try:
-            videos_dir = self.backend_root / self.settings.videos_dir
-            # Look for video file with video_id as stem
-            for ext in ['.mp4', '.mov', '.avi', '.mkv']:
-                video_path = videos_dir / f"{self.video_id}{ext}"
-                if video_path.exists():
-                    video_path.unlink()
-                    logger.info(f"Deleted video file: {video_path}")
-                    return True
-            logger.debug(f"No video file found for {self.video_id}")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete video file for {self.video_id}: {e}")
-            return False
-    
-    def _delete_audio_file(self) -> bool:
-        """Delete audio file."""
-        try:
-            audio_path = self.backend_root / self.settings.audios_dir / f"{self.video_id}.wav"
-            if audio_path.exists():
-                audio_path.unlink()
-                logger.info(f"Deleted audio file: {audio_path}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete audio file for {self.video_id}: {e}")
-            return False
-    
-    def _delete_thumbnail(self) -> bool:
-        """Delete thumbnail file."""
-        try:
-            thumbnail_path = self.backend_root / self.settings.thumbnails_dir / f"{self.video_id}.jpg"
-            if thumbnail_path.exists():
-                thumbnail_path.unlink()
-                logger.info(f"Deleted thumbnail: {thumbnail_path}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete thumbnail for {self.video_id}: {e}")
-            return False
-    
-    def _delete_transcript(self) -> bool:
-        """Delete transcript file."""
-        try:
-            transcript_path = self.backend_root / self.settings.transcripts_dir / f"{self.video_id}.json"
-            if transcript_path.exists():
-                transcript_path.unlink()
-                logger.info(f"Deleted transcript: {transcript_path}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete transcript for {self.video_id}: {e}")
-            return False
-    
-    def _delete_moments_file(self) -> bool:
-        """Delete moments.json file."""
-        try:
-            moments_path = self.backend_root / self.settings.moments_dir / f"{self.video_id}.json"
-            if moments_path.exists():
-                moments_path.unlink()
-                logger.info(f"Deleted moments file: {moments_path}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete moments file for {self.video_id}: {e}")
-            return False
-    
-    def _delete_clips(self) -> int:
-        """Delete all video clips for this video."""
-        try:
-            clips_dir = self.backend_root / self.settings.moment_clips_dir
-            if not clips_dir.exists():
-                return 0
-            
-            # Find all clips matching pattern: {video_id}_*_clip.mp4
-            pattern = f"{self.video_id}_*_clip.mp4"
-            clips = list(clips_dir.glob(pattern))
-            
-            deleted_count = 0
-            for clip_path in clips:
-                try:
-                    clip_path.unlink()
-                    deleted_count += 1
-                    logger.debug(f"Deleted clip: {clip_path.name}")
-                except Exception as e:
-                    logger.error(f"Failed to delete clip {clip_path.name}: {e}")
-            
-            if deleted_count > 0:
-                logger.info(f"Deleted {deleted_count} clips for {self.video_id}")
-            
-            return deleted_count
-        except Exception as e:
-            logger.error(f"Failed to delete clips for {self.video_id}: {e}")
-            return 0
-
-
 class GCSDeleter:
-    """Handles deletion of GCS files using bucket listing."""
-    
+    """Handles deletion of GCS files by prefix."""
+
     def __init__(self, video_id: str):
         self.video_id = video_id
         self.settings = get_settings()
         self._init_gcs_client()
-    
+
     def _init_gcs_client(self):
         """Initialize GCS client."""
         try:
@@ -232,36 +49,32 @@ class GCSDeleter:
                     credentials=credentials,
                     project=credentials.project_id
                 )
-                logger.info(f"GCS client initialized with service account")
+                logger.info("GCS client initialized with service account")
             else:
-                import google.auth
                 self.client = storage.Client()
                 logger.info("GCS client initialized with Application Default Credentials")
-            
+
             self.bucket = self.client.bucket(self.settings.gcs_bucket_name)
         except Exception as e:
             logger.error(f"Failed to initialize GCS client: {e}")
             self.client = None
             self.bucket = None
-    
+
     def delete_all(
         self,
+        skip_video: bool = False,
         skip_audio: bool = False,
         skip_clips: bool = False,
         skip_thumbnails: bool = False,
     ) -> Dict[str, int]:
         """
-        Delete GCS files for video_id based on skip flags.
-
-        Args:
-            skip_audio: If True, keep GCS audio files
-            skip_clips: If True, keep GCS clip files
-            skip_thumbnails: If True, keep GCS thumbnail files
+        Delete all GCS files for video_id.
 
         Returns:
-            Dictionary with counts of deleted files
+            Dictionary with counts of deleted files per category
         """
         result = {
+            "video_files": 0,
             "audio_files": 0,
             "clip_files": 0,
             "thumbnail_files": 0,
@@ -271,52 +84,46 @@ class GCSDeleter:
             logger.warning("GCS client not initialized, skipping GCS deletion")
             return result
 
-        # Delete audio files
+        if not skip_video:
+            video_count = self._delete_by_prefix(f"{self.settings.gcs_videos_prefix}{self.video_id}/")
+            result["video_files"] = video_count
+        else:
+            logger.info("Skipping GCS video deletion (skip_video=True)")
+
         if not skip_audio:
             audio_count = self._delete_by_prefix(f"{self.settings.gcs_audio_prefix}{self.video_id}/")
             result["audio_files"] = audio_count
         else:
-            logger.info(f"Skipping GCS audio deletion (skip_audio=True)")
+            logger.info("Skipping GCS audio deletion (skip_audio=True)")
 
-        # Delete clip files
         if not skip_clips:
             clips_count = self._delete_by_prefix(f"{self.settings.gcs_clips_prefix}{self.video_id}/")
             result["clip_files"] = clips_count
         else:
-            logger.info(f"Skipping GCS clips deletion (skip_clips=True)")
+            logger.info("Skipping GCS clips deletion (skip_clips=True)")
 
-        # Delete thumbnail files (Phase 8)
         if not skip_thumbnails:
             thumbnail_prefix = f"{self.settings.gcs_thumbnails_prefix}video/{self.video_id}"
             thumbnail_count = self._delete_by_prefix(thumbnail_prefix)
             result["thumbnail_files"] = thumbnail_count
         else:
-            logger.info(f"Skipping GCS thumbnail deletion (skip_thumbnails=True)")
+            logger.info("Skipping GCS thumbnail deletion (skip_thumbnails=True)")
 
-        total = result["audio_files"] + result["clip_files"] + result["thumbnail_files"]
+        total = sum(result.values())
         if total > 0:
             logger.info(f"Deleted {total} files from GCS for {self.video_id}")
 
         return result
-    
+
     def _delete_by_prefix(self, prefix: str) -> int:
-        """
-        Delete all blobs with given prefix.
-        
-        Args:
-            prefix: GCS prefix (e.g., "audio/video123/")
-        
-        Returns:
-            Number of files deleted
-        """
+        """Delete all blobs with given prefix. Returns count deleted."""
         try:
-            # List all blobs with this prefix
             blobs = list(self.bucket.list_blobs(prefix=prefix))
-            
+
             if not blobs:
                 logger.debug(f"No files found with prefix: {prefix}")
                 return 0
-            
+
             deleted_count = 0
             for blob in blobs:
                 try:
@@ -325,137 +132,114 @@ class GCSDeleter:
                     logger.debug(f"Deleted GCS blob: {blob.name}")
                 except Exception as e:
                     logger.error(f"Failed to delete blob {blob.name}: {e}")
-            
+
             logger.info(f"Deleted {deleted_count} files with prefix: {prefix}")
             return deleted_count
-            
+
         except Exception as e:
             logger.error(f"Failed to list/delete blobs with prefix {prefix}: {e}")
             return 0
 
 
 class StateDeleter:
-    """Handles deletion of Redis state and URL registry entries."""
-    
+    """Handles deletion of Redis pipeline state."""
+
     def __init__(self, video_id: str):
         self.video_id = video_id
-    
-    async def delete_all(self) -> Dict[str, any]:
-        """
-        Delete all state for video_id (async for non-blocking Redis operations).
-        
-        Returns:
-            Dictionary with deletion results
-        """
-        result = {
-            "redis_keys": 0,
-        }
 
-        # Delete Redis keys
+    async def delete_all(self) -> Dict[str, any]:
+        """Delete all Redis state for video_id. Returns deletion results."""
+        result = {"redis_keys": 0}
         redis_count = await self._delete_redis_keys()
         result["redis_keys"] = redis_count
-
         return result
-    
+
     async def _delete_redis_keys(self) -> int:
-        """Delete all Redis keys associated with video_id (async)."""
+        """Delete all Redis keys associated with video_id."""
         try:
             redis = await get_async_redis_client()
             deleted_count = 0
-            
-            # Keys to delete:
-            # - pipeline:{video_id}:active
-            # - pipeline:{video_id}:history
-            # - pipeline:{video_id}:lock
-            # - pipeline:{video_id}:cancel
-            # - pipeline:run:{request_id} (need to scan for these)
-            
+
             keys_to_delete = [
                 f"pipeline:{self.video_id}:active",
                 f"pipeline:{self.video_id}:history",
                 f"pipeline:{self.video_id}:lock",
                 f"pipeline:{self.video_id}:cancel",
             ]
-            
-            # Delete known keys
+
             for key in keys_to_delete:
                 if await redis.exists(key):
                     await redis.delete(key)
                     deleted_count += 1
                     logger.debug(f"Deleted Redis key: {key}")
-            
-            # Scan for run records (pipeline:run:*)
-            # These might contain video_id references but we'll skip them for now
-            # as they expire automatically
-            
+
             if deleted_count > 0:
                 logger.info(f"Deleted {deleted_count} Redis keys for {self.video_id}")
-            
+
             return deleted_count
-            
+
         except Exception as e:
             logger.error(f"Failed to delete Redis keys for {self.video_id}: {e}")
             return 0
-    
+
+
 class VideoDeleteService:
     """Main service for video deletion orchestration."""
-    
+
     def __init__(self):
         self.settings = get_settings()
-    
+
     async def delete_video(
         self,
         video_id: str,
-        # Local file options
-        skip_local_video: bool = False,
-        skip_local_audio: bool = False,
-        skip_local_thumbnail: bool = False,
-        skip_local_transcript: bool = False,
-        skip_local_moments: bool = False,
-        skip_local_clips: bool = False,
         # GCS options
+        skip_gcs_video: bool = False,
         skip_gcs_audio: bool = False,
         skip_gcs_clips: bool = False,
         skip_gcs_thumbnails: bool = False,
         # State options
         skip_redis: bool = False,
+        # Database option
+        skip_database: bool = False,
         force: bool = False
     ) -> DeleteResult:
         """
         Delete video and all associated resources.
 
+        Deletion order:
+          1. GCS files (video, audio, clips, thumbnails)
+          2. Temp files (managed by temp_file_manager)
+          3. Redis state (pipeline keys)
+          4. Database record (CASCADE deletes transcripts, moments, clips, thumbnails, history)
+
         Args:
             video_id: Video identifier
-            skip_local_video: If True, keep local video file
-            skip_local_audio: If True, keep local audio file
-            skip_local_thumbnail: If True, keep local thumbnail
-            skip_local_transcript: If True, keep local transcript
-            skip_local_moments: If True, keep local moments metadata
-            skip_local_clips: If True, keep local video clips
-            skip_gcs_audio: If True, keep GCS audio files
-            skip_gcs_clips: If True, keep GCS clip files
-            skip_gcs_thumbnails: If True, keep GCS thumbnail files
-            skip_redis: If True, keep Redis state
-            force: If True, skip active pipeline check
-        
+            skip_gcs_video: Keep GCS video file
+            skip_gcs_audio: Keep GCS audio files
+            skip_gcs_clips: Keep GCS clip files
+            skip_gcs_thumbnails: Keep GCS thumbnail files
+            skip_redis: Keep Redis state
+            skip_database: Keep database record (and cascaded data)
+            force: Skip active pipeline check
+
         Returns:
             DeleteResult with status and details
         """
         start_time = time.time()
         logger.info(f"Starting deletion for video: {video_id}")
-        
+
         result = DeleteResult(
             status="completed",
             video_id=video_id,
             deleted={
-                "local": {},
                 "gcs": {},
-                "redis_keys": 0,
                 "temp": {},
+                "redis_keys": 0,
+                "database": False,
             },
             errors=[],
         )
-        
+
         # Pre-deletion checks
         if not force:
             pipeline_status = await get_pipeline_status(video_id)
@@ -467,16 +251,41 @@ class VideoDeleteService:
                 )
                 result.duration_ms = int((time.time() - start_time) * 1000)
                 return result
-        
-        # Check if video exists (at least one resource)
-        video_exists = self._check_video_exists(video_id)
-        if not video_exists:
-            logger.warning(f"No resources found for video: {video_id}")
-            # Still proceed with deletion to clean up any orphaned state
-        
-        # Delete in order: Redis -> GCS -> Local
 
-        # 1. Delete Redis state (unless skipped)
+        # Check if video exists in database
+        video_exists = await self._check_video_exists(video_id)
+        if not video_exists:
+            logger.warning(f"No database record found for video: {video_id}")
+            # Still proceed to clean up any orphaned state
+
+        # 1. Delete GCS files
+        try:
+            gcs_deleter = GCSDeleter(video_id)
+            gcs_result = gcs_deleter.delete_all(
+                skip_video=skip_gcs_video,
+                skip_audio=skip_gcs_audio,
+                skip_clips=skip_gcs_clips,
+                skip_thumbnails=skip_gcs_thumbnails,
+            )
+            result.deleted["gcs"] = gcs_result
+        except Exception as e:
+            error_msg = f"GCS deletion failed: {e}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            result.status = "partial"
+
+        # 2. Delete managed temp files
+        try:
+            from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
+            temp_result = await cleanup_temp_video(video_id)
+            result.deleted["temp"] = temp_result
+        except Exception as e:
+            error_msg = f"Temp file cleanup failed: {e}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            result.status = "partial"
+
+        # 3. Delete Redis state
         if not skip_redis:
             try:
                 state_deleter = StateDeleter(video_id)
@@ -489,87 +298,55 @@ class VideoDeleteService:
                 result.status = "partial"
         else:
             logger.info("Skipping Redis deletion (skip_redis=True)")
-        
-        # 2. Delete GCS files (with granular control)
-        try:
-            gcs_deleter = GCSDeleter(video_id)
-            gcs_result = gcs_deleter.delete_all(
-                skip_audio=skip_gcs_audio,
-                skip_clips=skip_gcs_clips,
-                skip_thumbnails=skip_gcs_thumbnails,
-            )
-            result.deleted["gcs"] = gcs_result
-        except Exception as e:
-            error_msg = f"GCS deletion failed: {e}"
-            logger.error(error_msg)
-            result.errors.append(error_msg)
-            result.status = "partial"
-        
-        # 3. Delete local files (with granular control)
-        try:
-            local_deleter = LocalDeleter(video_id)
-            local_result = local_deleter.delete_all(
-                skip_video=skip_local_video,
-                skip_audio=skip_local_audio,
-                skip_thumbnail=skip_local_thumbnail,
-                skip_transcript=skip_local_transcript,
-                skip_moments=skip_local_moments,
-                skip_clips=skip_local_clips
-            )
-            result.deleted["local"] = local_result
-        except Exception as e:
-            error_msg = f"Local file deletion failed: {e}"
-            logger.error(error_msg)
-            result.errors.append(error_msg)
-            result.status = "partial"
 
-        # 4. Delete managed temp files (Phase 11)
-        try:
-            from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
-            import asyncio
-            temp_result = await cleanup_temp_video(video_id)
-            result.deleted["temp"] = temp_result
-        except Exception as e:
-            error_msg = f"Temp file cleanup failed: {e}"
-            logger.error(error_msg)
-            result.errors.append(error_msg)
-            result.status = "partial"
+        # 4. Delete from database (CASCADE handles all related records)
+        if not skip_database:
+            try:
+                from app.database.session import get_session_factory
+                from app.repositories import video_db_repository
 
-        # Calculate duration
+                session_factory = get_session_factory()
+                async with session_factory() as session:
+                    video = await video_db_repository.get_by_identifier(session, video_id)
+                    if video:
+                        await video_db_repository.delete(session, video.id)
+                        await session.commit()
+                        result.deleted["database"] = True
+                        logger.info(
+                            f"Deleted video {video_id} from database "
+                            f"(CASCADE removed transcripts, moments, clips, thumbnails, history)"
+                        )
+                    else:
+                        logger.warning(f"Video {video_id} not found in database during deletion")
+            except Exception as e:
+                error_msg = f"Database deletion failed: {e}"
+                logger.error(error_msg)
+                result.errors.append(error_msg)
+                result.status = "partial"
+        else:
+            logger.info("Skipping database deletion (skip_database=True)")
+
         result.duration_ms = int((time.time() - start_time) * 1000)
-        
-        # Log summary
-        total_deleted = (
-            sum(1 for v in result.deleted["local"].values() if v) +
-            sum(result.deleted["gcs"].values()) +
-            result.deleted["redis_keys"]
-        )
-        
+
+        gcs_total = sum(result.deleted["gcs"].values()) if isinstance(result.deleted["gcs"], dict) else 0
         logger.info(
             f"Deletion completed for {video_id}: status={result.status}, "
-            f"deleted={total_deleted} resources, duration={result.duration_ms}ms"
+            f"gcs={gcs_total} files, database={result.deleted['database']}, "
+            f"redis={result.deleted['redis_keys']} keys, duration={result.duration_ms}ms"
         )
-        
+
         return result
-    
-    def _check_video_exists(self, video_id: str) -> bool:
-        """Check if video has any resources."""
-        # Check if video file exists
-        backend_root = Path(__file__).parent.parent.parent
-        videos_dir = backend_root / self.settings.videos_dir
-        
-        for ext in ['.mp4', '.mov', '.avi', '.mkv']:
-            if (videos_dir / f"{video_id}{ext}").exists():
-                return True
-        
-        # Check other files
-        if (backend_root / self.settings.audios_dir / f"{video_id}.wav").exists():
-            return True
-        if (backend_root / self.settings.thumbnails_dir / f"{video_id}.jpg").exists():
-            return True
-        if (backend_root / self.settings.transcripts_dir / f"{video_id}.json").exists():
-            return True
-        if (backend_root / self.settings.moments_dir / f"{video_id}.json").exists():
-            return True
-        
-        return False
+
+    async def _check_video_exists(self, video_id: str) -> bool:
+        """Check if video exists in the database."""
+        try:
+            from app.database.session import get_session_factory
+            from app.repositories import video_db_repository
+
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                video = await video_db_repository.get_by_identifier(session, video_id)
+                return video is not None
+        except Exception as e:
+            logger.error(f"Failed to check video existence in database: {e}")
+            return False

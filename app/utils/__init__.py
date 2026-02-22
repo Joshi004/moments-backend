@@ -11,13 +11,6 @@ from app.utils.timestamp import (
     denormalize_timestamp
 )
 
-# Video utilities
-from app.utils.video import (
-    get_videos_directory,
-    get_video_files,
-    get_video_by_filename
-)
-
 # Model configuration
 from app.utils.model_config import (
     DEFAULT_MODELS,
@@ -30,7 +23,6 @@ from app.utils.model_config import (
     get_clipping_config,
     get_video_server_config,
     model_supports_video,
-    get_video_clip_url,
     get_duration_tolerance,
     get_encoding_config,
     get_parallel_workers
@@ -61,12 +53,7 @@ __all__ = [
     "extract_words_in_range",
     "normalize_word_timestamps",
     "denormalize_timestamp",
-    
-    # Video utilities
-    "get_videos_directory",
-    "get_video_files",
-    "get_video_by_filename",
-    
+
     # Model configuration
     "MODELS",
     "CLIPPING_CONFIG",
@@ -78,11 +65,10 @@ __all__ = [
     "get_clipping_config",
     "get_video_server_config",
     "model_supports_video",
-    "get_video_clip_url",
     "get_duration_tolerance",
     "get_encoding_config",
     "get_parallel_workers",
-    
+
     # Logging utilities
     "setup_logging",
     "get_request_id",
@@ -97,9 +83,3 @@ __all__ = [
     "operation_logger",
     "log_status_check",
 ]
-
-
-
-
-
-

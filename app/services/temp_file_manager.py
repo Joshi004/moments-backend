@@ -16,7 +16,6 @@ by default, deleting files older than 24 hours). They can also be cleaned up
 immediately when a video is deleted via cleanup_video().
 """
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Optional

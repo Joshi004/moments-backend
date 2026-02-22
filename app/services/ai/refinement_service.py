@@ -1,17 +1,13 @@
 import time
 import json
-import re
 from typing import Optional, Dict, List, Tuple
 import logging
 from app.utils.logging_config import (
     log_event,
-    log_operation_start,
-    log_operation_complete,
-    log_operation_error,
     get_request_id
 )
 from app.services.ai.request_logger import log_ai_request_response
-from app.services.ai.prompt_tasks import RefinementTask, extract_model_name, strip_think_tags
+from app.services.ai.prompt_tasks import RefinementTask, extract_model_name
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps, denormalize_timestamp
 
 logger = logging.getLogger(__name__)
@@ -124,8 +120,6 @@ async def process_moment_refinement(
     from app.services.moments_service import get_moment_by_id, generate_moment_id
     from app.services.ai.generation_service import ssh_tunnel, call_ai_model_async
     from app.utils.model_config import get_model_config, get_clipping_config, get_model_url
-    from app.utils.video import get_video_by_filename
-    import cv2
     
     start_time = time.time()
     
@@ -177,20 +171,16 @@ async def process_moment_refinement(
             f"normalized clip=[{normalized_clip_start:.2f}s - {normalized_clip_end:.2f}s]"
         )
         
-        # Get video duration for validation
-        video_file = get_video_by_filename(video_filename)
-        if not video_file:
-            raise Exception(f"Video file not found: {video_filename}")
-        
-        cap = cv2.VideoCapture(str(video_file))
-        if not cap.isOpened():
-            raise Exception(f"Could not open video file: {video_filename}")
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        video_duration = frame_count / fps if fps > 0 else 0.0
-        cap.release()
-        
+        # Get video duration from database
+        from app.database.session import get_session_factory
+        from app.repositories import video_db_repository as _video_db_repo
+        _session_factory = get_session_factory()
+        async with _session_factory() as _session:
+            _video_record = await _video_db_repo.get_by_identifier(_session, video_id)
+        if not _video_record or not _video_record.duration_seconds:
+            raise Exception(f"Video not found or duration unknown in database: {video_id}")
+        video_duration = _video_record.duration_seconds
+
         if video_duration <= 0:
             raise Exception(f"Could not determine video duration for {video_filename}")
         

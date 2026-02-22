@@ -3,7 +3,6 @@ import asyncio
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 
 from app.core.logging import setup_logging
 from app.core.redis import get_async_redis_client, close_async_redis_client, async_health_check

@@ -5,7 +5,7 @@ This module provides common utilities to calculate precise start/end timestamps
 based on word-level transcript boundaries, ensuring that video clips and transcript
 extractions use identical time boundaries.
 """
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 import logging
 
 logger = logging.getLogger(__name__)

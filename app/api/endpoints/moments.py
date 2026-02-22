@@ -2,24 +2,22 @@
 Moment-related API endpoints.
 Handles moment CRUD, generation, and refinement operations.
 """
-from fastapi import APIRouter, HTTPException
-from pathlib import Path
+from fastapi import APIRouter, HTTPException, Depends
 import time
-import cv2
 import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.dependencies import get_db
+from app.repositories import video_db_repository
 from app.models.schemas import (
     MomentResponse,
     GenerateMomentsRequest,
-    RefineMomentRequest,
-    MessageResponse,
-    JobStatusResponse
+    RefineMomentRequest
 )
-from app.utils.video import get_video_files
-from app.services.moments_service import load_moments, add_moment, get_moment_by_id, validate_moment
+from app.services.moments_service import load_moments, add_moment, get_moment_by_id
 from app.services.audio_service import check_audio_exists
 from app.services.transcript_service import check_transcript_exists
 from app.services.ai.generation_service import (
@@ -43,27 +41,12 @@ from app.core.logging import (
 router = APIRouter()
 
 
-def get_video_duration(video_path: Path) -> float:
-    """Get video duration in seconds."""
-    try:
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            return 0.0
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        duration = frame_count / fps if fps > 0 else 0.0
-        cap.release()
-        return duration
-    except Exception:
-        return 0.0
-
-
 @router.get("/videos/{video_id}/moments", response_model=list[MomentResponse])
-async def get_moments(video_id: str):
+async def get_moments(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get all moments for a video."""
     start_time = time.time()
     operation = "get_moments"
-    
+
     log_event(
         level="DEBUG",
         logger="app.api.endpoints.moments",
@@ -73,18 +56,10 @@ async def get_moments(video_id: str):
         message=f"Getting moments for {video_id}",
         context={"video_id": video_id, "request_id": get_request_id()}
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video by matching stem
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             log_event(
                 level="WARNING",
                 logger="app.api.endpoints.moments",
@@ -95,9 +70,9 @@ async def get_moments(video_id: str):
                 context={"video_id": video_id}
             )
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        moments = await load_moments(video_file.name)
-        
+
+        moments = await load_moments(f"{video_id}.mp4")
+
         duration = time.time() - start_time
         log_event(
             level="DEBUG",
@@ -112,9 +87,9 @@ async def get_moments(video_id: str):
                 "duration_seconds": duration
             }
         )
-        
+
         return [MomentResponse(**moment) for moment in moments]
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -131,11 +106,11 @@ async def get_moments(video_id: str):
 
 
 @router.post("/videos/{video_id}/moments", response_model=MomentResponse, status_code=201)
-async def create_moment(video_id: str, moment: MomentResponse):
+async def create_moment(video_id: str, moment: MomentResponse, db: AsyncSession = Depends(get_db)):
     """Add a new moment to a video."""
     start_time = time.time()
     operation = "create_moment"
-    
+
     log_operation_start(
         logger="app.api.endpoints.moments",
         function="create_moment",
@@ -151,38 +126,29 @@ async def create_moment(video_id: str, moment: MomentResponse):
             "request_id": get_request_id()
         }
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video by matching stem
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Get video duration for validation
-        video_duration = get_video_duration(video_file)
+
+        # Use duration from database; fall back to 0 if not available
+        video_duration = video.duration_seconds if video.duration_seconds else 0.0
         if video_duration <= 0:
             raise HTTPException(status_code=500, detail="Could not determine video duration")
-        
-        # Convert to dict
+
         moment_dict = {
             "start_time": moment.start_time,
             "end_time": moment.end_time,
             "title": moment.title
         }
-        
+
         # Add moment with validation (async -- saves to database)
-        success, error_message, created_moment = await add_moment(video_file.name, moment_dict, video_duration)
-        
+        success, error_message, created_moment = await add_moment(f"{video_id}.mp4", moment_dict, video_duration)
+
         if not success:
             raise HTTPException(status_code=400, detail=error_message)
-        
+
         duration = time.time() - start_time
         log_operation_complete(
             logger="app.api.endpoints.moments",
@@ -195,9 +161,9 @@ async def create_moment(video_id: str, moment: MomentResponse):
                 "duration_seconds": duration
             }
         )
-        
+
         return MomentResponse(**created_moment)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -214,11 +180,11 @@ async def create_moment(video_id: str, moment: MomentResponse):
 
 
 @router.post("/videos/{video_id}/generate-moments")
-async def generate_moments(video_id: str, request: GenerateMomentsRequest):
+async def generate_moments(video_id: str, request: GenerateMomentsRequest, db: AsyncSession = Depends(get_db)):
     """Start moment generation process for a video."""
     start_time = time.time()
     operation = "generate_moments"
-    
+
     log_operation_start(
         logger="app.api.endpoints.moments",
         function="generate_moments",
@@ -238,29 +204,21 @@ async def generate_moments(video_id: str, request: GenerateMomentsRequest):
             "request_id": get_request_id()
         }
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Check prerequisites
-        audio_filename = video_file.stem + ".wav"
-        
-        if not check_audio_exists(video_file.name):
+
+        video_filename = f"{video_id}.mp4"
+        audio_filename = f"{video_id}.wav"
+
+        if not check_audio_exists(video_filename):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
-        
+
         if not await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
-        
+
         # Default prompt
         default_prompt = """Analyze the following video transcript and identify the most important, engaging, or valuable moments. Each moment should represent a distinct topic, insight, or highlight that would be meaningful to viewers.
 
@@ -269,10 +227,9 @@ Generate moments that:
 - Have clear, descriptive titles (5-15 words)
 - Represent complete thoughts or concepts
 - Are non-overlapping and well-spaced throughout the video"""
-        
+
         user_prompt = request.user_prompt if request.user_prompt else default_prompt
-        
-        # Call async moment generation with timeout
+
         # Phase 6: generation service saves moments to DB directly
         try:
             # Delete existing moments before regeneration
@@ -291,7 +248,7 @@ Generate moments that:
             result = await asyncio.wait_for(
                 process_moments_generation(
                     video_id=video_id,
-                    video_filename=video_file.name,
+                    video_filename=video_filename,
                     user_prompt=user_prompt,
                     min_moment_length=request.min_moment_length,
                     max_moment_length=request.max_moment_length,
@@ -318,7 +275,7 @@ Generate moments that:
                     message=f"Generated {len(validated_moments)} moments (saved to DB by generation service)",
                     context={"video_id": video_id, "moment_count": len(validated_moments)}
                 )
-            
+
             duration = time.time() - start_time
             log_operation_complete(
                 logger="app.api.endpoints.moments",
@@ -327,9 +284,9 @@ Generate moments that:
                 message="Moment generation completed successfully",
                 context={"video_id": video_id, "model": request.model, "duration_seconds": duration}
             )
-            
+
             return {"message": "Moment generation completed", "video_id": video_id, "moment_count": len(validated_moments)}
-            
+
         except asyncio.TimeoutError:
             duration = time.time() - start_time
             log_operation_error(
@@ -341,7 +298,7 @@ Generate moments that:
                 context={"video_id": video_id, "duration_seconds": duration}
             )
             raise HTTPException(status_code=504, detail="Moment generation timed out after 900 seconds")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -358,42 +315,33 @@ Generate moments that:
 
 
 @router.get("/videos/{video_id}/generation-status")
-async def get_generation_status_endpoint(video_id: str):
+async def get_generation_status_endpoint(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get moment generation status for a video."""
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Get status
+
         job = await job_tracker.get_job("moment_generation", video_id)
-        
+
         if job is None:
             return {"status": "not_started", "started_at": None}
-        
+
         return {
             "status": job.get("status"),
             "started_at": job.get("started_at")
         }
-        
+
     except HTTPException:
         raise
 
 
 @router.post("/videos/{video_id}/moments/{moment_id}/refine")
-async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequest):
+async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequest, db: AsyncSession = Depends(get_db)):
     """Start moment refinement process."""
     start_time = time.time()
     operation = "refine_moment"
-    
+
     log_operation_start(
         logger="app.api.endpoints.moments",
         function="refine_moment",
@@ -411,65 +359,53 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
             "request_id": get_request_id()
         }
     )
-    
+
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
+        video_filename = f"{video_id}.mp4"
+        audio_filename = f"{video_id}.wav"
+
         # Check if moment exists (async -- queries database)
-        moment = await get_moment_by_id(video_file.name, moment_id)
+        moment = await get_moment_by_id(video_filename, moment_id)
         if moment is None:
             raise HTTPException(status_code=404, detail="Moment not found")
-        
-        # Check prerequisites
-        audio_filename = video_file.stem + ".wav"
-        
-        if not check_audio_exists(video_file.name):
+
+        if not check_audio_exists(video_filename):
             raise HTTPException(status_code=400, detail="Audio file not found. Please process audio first.")
-        
+
         if not await check_transcript_exists(audio_filename):
             raise HTTPException(status_code=400, detail="Transcript not found. Please generate transcript first.")
-        
+
         # Always use the centralized refinement prompt (user_prompt is ignored)
         user_prompt = DEFAULT_REFINEMENT_PROMPT
-        
-        # Handle video inclusion
+
         include_video = request.include_video
         video_clip_url = None
-        
+
         if include_video:
-            # Video refinement only works with qwen3_vl_fp8
             if not model_supports_video(request.model):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Model '{request.model}' does not support video. Use 'qwen3_vl_fp8' for video refinement."
                 )
-            
-            # Check if clip exists in the database (Phase 7: DB is source of truth)
+
             if not await check_clip_exists(moment_id):
                 raise HTTPException(
                     status_code=400,
                     detail="Video clip not available. Extract clips first or disable video refinement."
                 )
-            
-            video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_file.name)
-        
-        # Call async moment refinement with timeout
+
+            video_clip_url = await get_clip_gcs_signed_url_async(moment_id, video_filename)
+
         try:
             success = await asyncio.wait_for(
                 process_moment_refinement(
                     video_id=video_id,
                     moment_id=moment_id,
-                    video_filename=video_file.name,
+                    video_filename=video_filename,
                     user_prompt=user_prompt,
                     model=request.model,
                     temperature=request.temperature,
@@ -478,10 +414,10 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
                 ),
                 timeout=300  # 5 minutes
             )
-            
+
             if not success:
                 raise HTTPException(status_code=500, detail="Moment refinement failed")
-            
+
             duration = time.time() - start_time
             log_operation_complete(
                 logger="app.api.endpoints.moments",
@@ -495,14 +431,14 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
                     "duration_seconds": duration
                 }
             )
-            
+
             return {
                 "message": "Moment refinement completed",
                 "video_id": video_id,
                 "moment_id": moment_id,
                 "include_video": include_video
             }
-            
+
         except asyncio.TimeoutError:
             duration = time.time() - start_time
             log_operation_error(
@@ -514,7 +450,7 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
                 context={"video_id": video_id, "moment_id": moment_id, "duration_seconds": duration}
             )
             raise HTTPException(status_code=504, detail="Moment refinement timed out after 300 seconds")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -531,32 +467,22 @@ async def refine_moment(video_id: str, moment_id: str, request: RefineMomentRequ
 
 
 @router.get("/videos/{video_id}/refinement-status/{moment_id}")
-async def get_refinement_status_endpoint(video_id: str, moment_id: str):
+async def get_refinement_status_endpoint(video_id: str, moment_id: str, db: AsyncSession = Depends(get_db)):
     """Get moment refinement status."""
     try:
-        video_files = get_video_files()
-        
-        # Find video
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-        
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # Get status
+
         job = await job_tracker.get_job("moment_refinement", video_id, sub_id=moment_id)
-        
+
         if job is None:
             return {"status": "not_started", "started_at": None}
-        
+
         return {
             "status": job.get("status"),
             "started_at": job.get("started_at")
         }
-        
+
     except HTTPException:
         raise
-

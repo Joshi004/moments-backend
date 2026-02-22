@@ -9,18 +9,16 @@ import time
 
 from app.models.schemas import ExtractClipsRequest, VideoAvailabilityResponse
 from app.database.dependencies import get_db
-from app.utils.video import get_video_files
-from app.services.moments_service import load_moments, get_moment_by_id
+from app.services.moments_service import get_moment_by_id
 from app.services.video_clipping_service import (
     get_clip_duration,
 )
-from app.repositories import clip_db_repository, moment_db_repository
+from app.repositories import clip_db_repository, moment_db_repository, video_db_repository
 from app.services import job_tracker
 from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_duration_tolerance, get_clipping_config
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
 from app.core.logging import (
-    log_event,
     log_operation_start,
     log_operation_complete,
     log_operation_error,
@@ -41,18 +39,11 @@ async def extract_clips(video_id: str, request: ExtractClipsRequest):
 
 
 @router.get("/videos/{video_id}/clip-extraction-status")
-async def get_clip_extraction_status_endpoint(video_id: str):
+async def get_clip_extraction_status_endpoint(video_id: str, db: AsyncSession = Depends(get_db)):
     """Get clip extraction status for a video."""
     try:
-        video_files = get_video_files()
-
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
 
         job = await job_tracker.get_job("clip_extraction", video_id)
@@ -100,18 +91,11 @@ async def check_video_availability(
     )
 
     try:
-        video_files = get_video_files()
-
-        video_file = None
-        for vf in video_files:
-            if vf.stem == video_id:
-                video_file = vf
-                break
-
-        if not video_file or not video_file.exists():
+        video = await video_db_repository.get_by_identifier(db, video_id)
+        if not video:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        moment = await get_moment_by_id(video_file.name, moment_id)
+        moment = await get_moment_by_id(f"{video_id}.mp4", moment_id)
         if moment is None:
             raise HTTPException(status_code=404, detail="Moment not found")
 
@@ -138,18 +122,18 @@ async def check_video_availability(
         clip_url = uploader.generate_signed_url(clip.cloud_url)
         result.clip_url = clip_url
 
-        # Try to get clip duration from local legacy file (needed for duration validation)
-        clip_duration = get_clip_duration(moment_id, video_file.name)
+        # Try to get clip duration (checks temp directory)
+        clip_duration = get_clip_duration(moment_id, f"{video_id}.mp4")
         if clip_duration is None or clip_duration <= 0:
             # Mark as available even if we can't determine duration
             result.available = True
-            result.warning = "Could not determine video clip duration from local file."
+            result.warning = "Could not determine video clip duration."
             return result
 
         result.clip_duration = clip_duration
 
         # Load transcript for validation
-        audio_filename = video_file.stem + ".wav"
+        audio_filename = f"{video_id}.wav"
         transcript_data = await load_transcript(audio_filename)
 
         if transcript_data is None or "word_timestamps" not in transcript_data:
