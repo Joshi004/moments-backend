@@ -7,14 +7,13 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import time
 
-from app.models.schemas import ExtractClipsRequest, VideoAvailabilityResponse
+from app.models.schemas import VideoAvailabilityResponse
 from app.database.dependencies import get_db
 from app.services.moments_service import get_moment_by_id
 from app.services.video_clipping_service import (
     get_clip_duration,
 )
 from app.repositories import clip_db_repository, moment_db_repository, video_db_repository
-from app.services import job_tracker
 from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_duration_tolerance, get_clipping_config
 from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
@@ -26,47 +25,6 @@ from app.core.logging import (
 )
 
 router = APIRouter()
-
-
-@router.post("/videos/{video_id}/extract-clips")
-async def extract_clips(video_id: str, request: ExtractClipsRequest):
-    """Temporarily disabled -- clips are extracted automatically during the pipeline."""
-    raise HTTPException(
-        status_code=501,
-        detail="Direct clip extraction is temporarily unavailable. "
-               "Clips are extracted automatically during the pipeline.",
-    )
-
-
-@router.get("/videos/{video_id}/clip-extraction-status")
-async def get_clip_extraction_status_endpoint(video_id: str, db: AsyncSession = Depends(get_db)):
-    """Get clip extraction status for a video."""
-    try:
-        video = await video_db_repository.get_by_identifier(db, video_id)
-        if not video:
-            raise HTTPException(status_code=404, detail="Video not found")
-
-        job = await job_tracker.get_job("clip_extraction", video_id)
-
-        if job is None:
-            return {"status": "not_started", "started_at": None}
-
-        response = {
-            "status": job.get("status"),
-            "started_at": job.get("started_at"),
-        }
-
-        if "total_moments" in job:
-            response["total_moments"] = int(job.get("total_moments", 0))
-        if "processed_moments" in job:
-            response["processed_moments"] = int(job.get("processed_moments", 0))
-        if "failed_moments" in job:
-            response["failed_moments"] = int(job.get("failed_moments", 0))
-
-        return response
-
-    except HTTPException:
-        raise
 
 
 @router.get("/videos/{video_id}/moments/{moment_id}/video-availability", response_model=VideoAvailabilityResponse)
