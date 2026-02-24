@@ -8,7 +8,6 @@ from app.services.audio_service import (
     get_audio_path,
     check_audio_exists,
     extract_audio_from_video,
-    process_audio_async
 )
 
 from app.services.transcript_service import (
@@ -52,7 +51,6 @@ __all__ = [
     "get_audio_path",
     "check_audio_exists",
     "extract_audio_from_video",
-    "process_audio_async",
     
     # Transcript service
     "get_transcript_directory",
