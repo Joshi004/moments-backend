@@ -8,7 +8,7 @@ from app.core.logging import setup_logging
 from app.core.redis import get_async_redis_client, close_async_redis_client, async_health_check
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
-from app.api.endpoints import videos, moments, transcripts, clips, pipeline, generate_moments, delete, admin
+from app.api.endpoints import videos, moments, transcripts, clips, pipeline, delete, admin
 from app.api.deps import cleanup_resources
 from app.workers.pipeline_worker import ensure_pipeline_consumer_group, start_pipeline_worker
 
@@ -36,7 +36,6 @@ app.include_router(moments.router, prefix="/api", tags=["moments"])
 app.include_router(transcripts.router, prefix="/api", tags=["transcripts"])
 app.include_router(clips.router, prefix="/api", tags=["clips"])
 app.include_router(pipeline.router, prefix="/api", tags=["pipeline"])
-app.include_router(generate_moments.router, prefix="/api", tags=["generate_moments"])
 app.include_router(delete.router, prefix="/api", tags=["delete"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
 
