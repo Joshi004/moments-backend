@@ -20,6 +20,7 @@ from app.database.models import (
     Clip,
     Thumbnail,
     PipelineHistory,
+    Audio,
 )
 from app.database.base import Base
 from app.core.config import get_settings

@@ -25,7 +25,7 @@ class GenerationConfig(Base):
     )
     transcript_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("transcripts.id", ondelete="CASCADE"),
+        ForeignKey("transcripts.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )

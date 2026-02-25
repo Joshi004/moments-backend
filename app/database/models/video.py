@@ -19,7 +19,7 @@ class Video(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     identifier: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
-    cloud_url: Mapped[str] = mapped_column(Text, nullable=False)
+    cloud_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     file_size_kb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -61,4 +61,10 @@ class Video(Base):
         "PipelineHistory", 
         back_populates="video",
         cascade="all, delete-orphan"
+    )
+    audio: Mapped["Audio"] = relationship(
+        "Audio",
+        back_populates="video",
+        uselist=False,
+        cascade="all, delete-orphan",
     )

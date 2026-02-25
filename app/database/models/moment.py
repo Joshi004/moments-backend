@@ -30,7 +30,7 @@ class Moment(Base):
     is_refined: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     parent_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("moments.id", ondelete="SET NULL"),
+        ForeignKey("moments.id", ondelete="CASCADE"),
         nullable=True,
         index=True
     )

@@ -10,6 +10,7 @@ from app.database.models.generation_config import GenerationConfig
 from app.database.models.clip import Clip
 from app.database.models.thumbnail import Thumbnail
 from app.database.models.pipeline_history import PipelineHistory
+from app.database.models.audio import Audio
 
 __all__ = [
     "Video",
@@ -20,4 +21,5 @@ __all__ = [
     "Clip",
     "Thumbnail",
     "PipelineHistory",
+    "Audio",
 ]
