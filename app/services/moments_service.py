@@ -60,6 +60,13 @@ def _moment_to_dict(moment) -> dict:
         model_name = moment.generation_config.model
         generation_config_dict = _config_to_dict(moment.generation_config)
 
+    clip_data = None
+    if moment.clip is not None:
+        clip_data = {
+            "id": moment.clip.id,
+            "cloud_url": moment.clip.cloud_url,
+        }
+
     return {
         "id": moment.identifier,
         "start_time": moment.start_time,
@@ -69,6 +76,7 @@ def _moment_to_dict(moment) -> dict:
         "parent_id": parent_identifier,
         "model_name": model_name,
         "generation_config": generation_config_dict,
+        "clip": clip_data,
     }
 
 

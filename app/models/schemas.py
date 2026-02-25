@@ -22,6 +22,12 @@ class VideoResponse(BaseModel):
     created_at: Optional[str] = None
 
 
+class ClipInfo(BaseModel):
+    """Minimal clip data embedded in moment responses."""
+    id: int
+    cloud_url: str
+
+
 class MomentResponse(BaseModel):
     """Response model for moment data."""
     id: Optional[str] = None
@@ -32,6 +38,7 @@ class MomentResponse(BaseModel):
     parent_id: Optional[str] = None
     model_name: Optional[str] = None
     generation_config: Optional[Dict[str, Any]] = None
+    clip: Optional[ClipInfo] = None
 
 
 class VideoAvailabilityResponse(BaseModel):

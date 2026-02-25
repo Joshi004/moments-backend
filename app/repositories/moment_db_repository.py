@@ -132,6 +132,7 @@ async def get_by_video_identifier(session: AsyncSession, video_identifier: str) 
         .options(
             selectinload(Moment.generation_config),
             selectinload(Moment.parent),
+            selectinload(Moment.clip),
         )
         .order_by(Moment.start_time.asc())
     )
