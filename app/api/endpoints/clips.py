@@ -2,10 +2,14 @@
 Clip extraction and availability API endpoints.
 Handles video clip extraction for moments and clip serving via GCS signed URLs.
 """
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import time
+
+logger = logging.getLogger(__name__)
 
 from app.models.schemas import VideoAvailabilityResponse
 from app.database.dependencies import get_db
@@ -16,7 +20,7 @@ from app.services.video_clipping_service import (
 from app.repositories import clip_db_repository, moment_db_repository, video_db_repository
 from app.services.transcript_service import load_transcript
 from app.utils.model_config import model_supports_video, get_duration_tolerance, get_clipping_config
-from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range
+from app.utils.timestamp import calculate_padded_boundaries, extract_words_in_range, normalize_word_timestamps
 from app.core.logging import (
     log_operation_start,
     log_operation_complete,
@@ -234,6 +238,69 @@ async def get_clip_url(
         "expires_in_seconds": expires_in_seconds,
         "moment_identifier": moment_identifier,
         "video_identifier": video_identifier,
+    }
+
+
+@router.get("/clips/{moment_identifier}/transcript")
+async def get_clip_transcript(
+    moment_identifier: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the normalized word-level transcript for a clip's exact boundaries.
+
+    Timestamps in the returned words list are relative to the clip start (i.e.
+    the first word starts at or near 0.0), matching the clip's video playback
+    timeline.
+    """
+    clip = await clip_db_repository.get_by_moment_identifier(db, moment_identifier)
+    if not clip:
+        raise HTTPException(status_code=404, detail=f"Clip not found for moment '{moment_identifier}'")
+
+    video = await video_db_repository.get_by_id(db, clip.video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video not found for clip '{moment_identifier}'")
+
+    video_identifier = video.identifier
+
+    transcript_data = await load_transcript(f"{video_identifier}.wav")
+
+    if transcript_data is None or "word_timestamps" not in transcript_data:
+        logger.warning(f"No transcript available for video '{video_identifier}' (moment '{moment_identifier}')")
+        return {
+            "moment_identifier": moment_identifier,
+            "clip_start": clip.start_time,
+            "clip_end": clip.end_time,
+            "moment_start": clip.moment.start_time,
+            "moment_end": clip.moment.end_time,
+            "padding_left": clip.padding_left,
+            "padding_right": clip.padding_right,
+            "transcript_text": "",
+            "words": [],
+            "message": "No transcript available for this video.",
+        }
+
+    word_timestamps = transcript_data["word_timestamps"]
+
+    extracted_words = extract_words_in_range(word_timestamps, clip.start_time, clip.end_time)
+    normalized_words = normalize_word_timestamps(extracted_words, clip.start_time)
+    transcript_text = " ".join(w["word"] for w in normalized_words)
+
+    logger.info(
+        f"Returning transcript for moment '{moment_identifier}': "
+        f"{len(normalized_words)} words, clip [{clip.start_time:.2f}s - {clip.end_time:.2f}s]"
+    )
+
+    return {
+        "moment_identifier": moment_identifier,
+        "clip_start": clip.start_time,
+        "clip_end": clip.end_time,
+        "moment_start": clip.moment.start_time,
+        "moment_end": clip.moment.end_time,
+        "padding_left": clip.padding_left,
+        "padding_right": clip.padding_right,
+        "transcript_text": transcript_text,
+        "words": normalized_words,
     }
 
 
