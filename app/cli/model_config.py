@@ -31,8 +31,8 @@ def list_configs():
         print("Run 'python -m app.cli.model_config seed' to initialize.")
         return
     
-    print(f"\n{'Model Key':<20} {'Worker':<15} {'SSH Host':<25} {'Ports':<15} {'Video':<8} {'Updated':<20}")
-    print("=" * 110)
+    print(f"\n{'Model Key':<20} {'Worker':<15} {'SSH Host':<25} {'Ports':<15} {'Video':<8} {'Mode':<10} {'Updated':<20}")
+    print("=" * 120)
     
     for config in configs:
         model_key = config.get('model_key', 'N/A')
@@ -41,13 +41,14 @@ def list_configs():
         local_port = config.get('ssh_local_port', 'N/A')
         remote_port = config.get('ssh_remote_port', 'N/A')
         supports_video = 'Yes' if config.get('supports_video', False) else 'No'
+        mode = config.get('connection_mode', 'tunnel')
         updated = config.get('updated_at', 'N/A')
         if updated != 'N/A' and 'T' in updated:
             updated = updated.split('T')[0]
         
         ports = f"{local_port}:{remote_port}"
         
-        print(f"{model_key:<20} {worker:<15} {ssh_host:<25} {ports:<15} {supports_video:<8} {updated:<20}")
+        print(f"{model_key:<20} {worker:<15} {ssh_host:<25} {ports:<15} {supports_video:<8} {mode:<10} {updated:<20}")
     
     print(f"\nTotal: {len(configs)} model(s)")
 
@@ -96,6 +97,12 @@ def set_config(model_key: str, args):
         config['top_p'] = float(args.top_p)
     if args.top_k is not None:
         config['top_k'] = int(args.top_k)
+    if args.connection_mode:
+        config['connection_mode'] = args.connection_mode
+    if args.direct_host:
+        config['direct_host'] = args.direct_host
+    if args.direct_port:
+        config['direct_port'] = int(args.direct_port)
     
     if not config:
         print("Error: No configuration fields provided")
@@ -139,6 +146,12 @@ def update_config(model_key: str, args):
         updates['top_p'] = float(args.top_p)
     if args.top_k is not None:
         updates['top_k'] = int(args.top_k)
+    if args.connection_mode:
+        updates['connection_mode'] = args.connection_mode
+    if args.direct_host:
+        updates['direct_host'] = args.direct_host
+    if args.direct_port:
+        updates['direct_port'] = int(args.direct_port)
     
     if not updates:
         print("Error: No fields to update")
@@ -269,6 +282,10 @@ Examples:
     set_parser.add_argument('--supports-video', type=bool, help='Supports video input')
     set_parser.add_argument('--top-p', type=float, help='Sampling top_p')
     set_parser.add_argument('--top-k', type=int, help='Sampling top_k')
+    set_parser.add_argument('--connection-mode', choices=['tunnel', 'direct'],
+                            help='Connection mode: tunnel or direct')
+    set_parser.add_argument('--direct-host', help='Direct server hostname or IP')
+    set_parser.add_argument('--direct-port', type=int, help='Direct server port')
     
     # Update command
     update_parser = subparsers.add_parser('update', help='Partially update model configuration')
@@ -282,6 +299,10 @@ Examples:
     update_parser.add_argument('--supports-video', type=bool, help='Supports video input')
     update_parser.add_argument('--top-p', type=float, help='Sampling top_p')
     update_parser.add_argument('--top-k', type=int, help='Sampling top_k')
+    update_parser.add_argument('--connection-mode', choices=['tunnel', 'direct'],
+                               help='Connection mode: tunnel or direct')
+    update_parser.add_argument('--direct-host', help='Direct server hostname or IP')
+    update_parser.add_argument('--direct-port', type=int, help='Direct server port')
     
     # Workers command (quick batch update)
     workers_parser = subparsers.add_parser('workers', help='Batch update workers (quick mode)')

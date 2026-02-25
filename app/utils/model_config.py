@@ -45,6 +45,9 @@ DEFAULT_MODELS = {
         "ssh_local_port": 8007,
         "ssh_remote_port": 7104,
         "supports_video": False,
+        "connection_mode": "tunnel",
+        "direct_host": "100.80.5.15",
+        "direct_port": 9084,
     },
     "qwen": {
         "name": "Qwen3-VL",
@@ -54,6 +57,9 @@ DEFAULT_MODELS = {
         "ssh_local_port": 6101,
         "ssh_remote_port": 7001,
         "supports_video": False,
+        "connection_mode": "tunnel",
+        "direct_host": None,
+        "direct_port": None,
     },
     "qwen3_omni": {
         "name": "Qwen3-Omini",
@@ -65,6 +71,9 @@ DEFAULT_MODELS = {
         "supports_video": False,
         "top_p": 0.95,
         "top_k": 20,
+        "connection_mode": "tunnel",
+        "direct_host": None,
+        "direct_port": None,
     },
     "qwen3_vl_fp8": {
         "name": "Qwen3-VL-FP8",
@@ -74,6 +83,9 @@ DEFAULT_MODELS = {
         "ssh_local_port": 6010,
         "ssh_remote_port": 8010,
         "supports_video": True,
+        "connection_mode": "tunnel",
+        "direct_host": "100.90.255.107",
+        "direct_port": 8010,
     },
     "parakeet": {
         "name": "Parakeet",
@@ -82,6 +94,9 @@ DEFAULT_MODELS = {
         "ssh_local_port": 6106,
         "ssh_remote_port": 8006,
         "supports_video": False,
+        "connection_mode": "tunnel",
+        "direct_host": "100.80.5.15",
+        "direct_port": 8006,
     }
 }
 
@@ -106,31 +121,6 @@ async def get_model_config(model_key: str) -> dict:
     
     logger.debug(f"Retrieved config for {model_key} from Redis")
     return config
-
-
-async def get_model_url(model_key: str) -> str:
-    """
-    Get the local URL for a model API endpoint.
-    
-    Args:
-        model_key: Model identifier ("minimax", "qwen", or "qwen3_omni")
-    
-    Returns:
-        URL string for the model API endpoint
-    """
-    config = await get_model_config(model_key)
-    return f"http://localhost:{config['ssh_local_port']}/v1/chat/completions"
-
-
-async def get_transcription_service_url() -> str:
-    """
-    Get the local URL for the transcription service endpoint.
-    
-    Returns:
-        URL string for the transcription service API endpoint
-    """
-    config = await get_model_config("parakeet")
-    return f"http://localhost:{config['ssh_local_port']}/transcribe"
 
 
 def get_clipping_config() -> dict:

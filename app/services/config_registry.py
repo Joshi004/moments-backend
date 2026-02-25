@@ -64,7 +64,7 @@ class ConfigRegistry:
             return value.lower() == "true"
         
         # Integer fields
-        if key in ["ssh_local_port", "ssh_remote_port", "top_k"]:
+        if key in ["ssh_local_port", "ssh_remote_port", "top_k", "direct_port"]:
             return int(value) if value else None
         
         # Float fields

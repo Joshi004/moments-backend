@@ -15,7 +15,8 @@ from app.utils.logging_config import (
     log_operation_error,
     get_request_id
 )
-from app.utils.model_config import get_model_config, get_transcription_service_url
+from app.utils.model_config import get_model_config
+from app.services.model_connector import connect, get_service_url
 from app.database.session import get_session_factory
 from app.repositories import transcript_db_repository, video_db_repository
 
@@ -554,7 +555,7 @@ async def call_transcription_service_async(audio_url: str) -> Optional[dict]:
     start_time = time.time()
     
     # Get service URL from config
-    service_url = await get_transcription_service_url()
+    service_url = await get_service_url("parakeet")
     
     log_operation_start(
         logger="app.services.transcript_service",
@@ -730,7 +731,7 @@ async def process_transcription(
         )
         
         # Create SSH tunnel
-        async with ssh_tunnel("parakeet"):
+        async with connect("parakeet"):
             # Call transcription service asynchronously
             transcription_result = await call_transcription_service_async(audio_signed_url)
             

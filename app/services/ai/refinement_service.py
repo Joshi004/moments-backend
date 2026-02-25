@@ -118,8 +118,9 @@ async def process_moment_refinement(
     # Import here to avoid circular imports
     from app.services.transcript_service import load_transcript
     from app.services.moments_service import get_moment_by_id, generate_moment_id
-    from app.services.ai.generation_service import ssh_tunnel, call_ai_model_async
-    from app.utils.model_config import get_model_config, get_clipping_config, get_model_url
+    from app.services.model_connector import connect, get_service_url
+    from app.services.ai.generation_service import call_ai_model_async
+    from app.utils.model_config import get_model_config, get_clipping_config
     
     start_time = time.time()
     
@@ -287,7 +288,7 @@ async def process_moment_refinement(
             # Non-fatal: refinement continues even if DB record creation fails
         
         # Create SSH tunnel and call AI model
-        async with ssh_tunnel(model):
+        async with connect(model):
             # Prepare messages for AI model
             messages = [{
                 "role": "user",
@@ -387,7 +388,7 @@ async def process_moment_refinement(
                 raise
             finally:
                 # Log request/response for debugging
-                model_url = await get_model_url(model)
+                model_url = await get_service_url(model)
                 payload = {
                     "messages": messages,
                     "max_tokens": 15000,

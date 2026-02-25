@@ -5,7 +5,8 @@ import psutil
 from typing import Optional, Dict, List
 from contextlib import asynccontextmanager
 import logging
-from app.utils.model_config import get_model_config, get_model_url
+from app.utils.model_config import get_model_config
+from app.services.model_connector import connect, get_service_url
 from app.utils.logging_config import (
     log_event,
     log_operation_start,
@@ -388,7 +389,7 @@ async def call_ai_model_async(
     model_url = None
     
     try:
-        model_url = await get_model_url(model_key)
+        model_url = await get_service_url(model_key)
         config = await get_model_config(model_key)
         
         # Use provided model_id or get from config
@@ -844,7 +845,7 @@ async def process_moments_generation(
             # Non-fatal: pipeline continues even if DB record creation fails
         
         # Create SSH tunnel and call AI model
-        async with ssh_tunnel(model):
+        async with connect(model):
             # Prepare messages for AI model
             messages = [{
                 "role": "user",
@@ -884,7 +885,7 @@ async def process_moments_generation(
                 raise
             finally:
                 # Log request/response for debugging
-                model_url = await get_model_url(model)
+                model_url = await get_service_url(model)
                 payload = {
                     "messages": messages,
                     "max_tokens": MAX_TOKENS,

@@ -36,7 +36,7 @@ async def list_model_configs():
     try:
         registry = get_config_registry()
         configs = await registry.list_configs()
-        
+
         return ModelConfigListResponse(
             models=configs,
             count=len(configs)
@@ -82,6 +82,56 @@ async def get_model_config(model_key: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get model config: {str(e)}"
         )
+
+
+@router.post("/models/seed", response_model=SeedResponse)
+async def seed_model_configs(request: SeedRequest = SeedRequest()):
+    """
+    Seed Redis with default model configurations.
+
+    Must be registered before POST /models/{model_key} so FastAPI does not
+    match the literal path segment "seed" as a model_key parameter.
+
+    Args:
+        request: Seed request with optional force flag
+
+    Returns:
+        Number of configs seeded
+    """
+    try:
+        count = await seed_default_configs(force=request.force)
+
+        message = (
+            f"Seeded {count} model configs"
+            if not request.force
+            else f"Force-seeded {count} model configs (overwrote existing)"
+        )
+
+        logger.info(message)
+        return SeedResponse(
+            seeded_count=count,
+            message=message
+        )
+    except Exception as e:
+        logger.error(f"Error seeding model configs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to seed model configs: {str(e)}"
+        )
+
+
+@router.get("/models/defaults/all", response_model=Dict)
+async def get_default_configs():
+    """
+    Get default model configurations (for reference).
+
+    Must be registered before GET /models/{model_key} to prevent the path
+    segment "defaults" from being matched as a model_key parameter.
+
+    Returns:
+        Dictionary of default configurations
+    """
+    return DEFAULT_MODELS
 
 
 @router.post("/models/{model_key}", response_model=ModelConfigResponse)
@@ -208,50 +258,6 @@ async def delete_model_config(model_key: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete model config: {str(e)}"
         )
-
-
-@router.post("/models/seed", response_model=SeedResponse)
-async def seed_model_configs(request: SeedRequest = SeedRequest()):
-    """
-    Seed Redis with default model configurations.
-    
-    Args:
-        request: Seed request with optional force flag
-        
-    Returns:
-        Number of configs seeded
-    """
-    try:
-        count = await seed_default_configs(force=request.force)
-        
-        message = (
-            f"Seeded {count} model configs"
-            if not request.force
-            else f"Force-seeded {count} model configs (overwrote existing)"
-        )
-        
-        logger.info(message)
-        return SeedResponse(
-            seeded_count=count,
-            message=message
-        )
-    except Exception as e:
-        logger.error(f"Error seeding model configs: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to seed model configs: {str(e)}"
-        )
-
-
-@router.get("/models/defaults/all", response_model=Dict)
-async def get_default_configs():
-    """
-    Get default model configurations (for reference).
-    
-    Returns:
-        Dictionary of default configurations
-    """
-    return DEFAULT_MODELS
 
 
 # ---------------------------------------------------------------------------
