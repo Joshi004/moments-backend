@@ -679,7 +679,7 @@ async def process_transcription(
             if transcription_result is None:
                 raise Exception("Transcription service returned no result")
             
-            # Save transcript to database (and file as backup)
+            # Save transcript to database
             success = await save_transcript(audio_filename, transcription_result)
             
             if not success:
