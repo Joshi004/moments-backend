@@ -27,7 +27,7 @@ class Audio(Base):
         nullable=False,
         index=True,
     )
-    cloud_url: Mapped[str] = mapped_column(Text, nullable=False)
+    cloud_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size_kb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     format: Mapped[str | None] = mapped_column(String(20), nullable=True)
     sample_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)

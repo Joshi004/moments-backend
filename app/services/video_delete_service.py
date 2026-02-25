@@ -1,18 +1,29 @@
 """
 Video deletion service.
-Handles deletion of database records, GCS files, temp files, and Redis state.
-All data operations use database CASCADE deletes and GCS prefix deletion.
+Handles scoped deletion of DB records, GCS files, temp files, and Redis state.
 """
 import logging
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
 from google.cloud import storage
+from google.api_core.exceptions import NotFound
+
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.redis import get_async_redis_client
 from app.services.pipeline.status import get_status as get_pipeline_status
+from app.database.session import get_session_factory
+from app.database.models.video import Video
+from app.database.models.moment import Moment
+from app.database.models.clip import Clip
+from app.database.models.thumbnail import Thumbnail
+from app.database.models.audio import Audio
+from app.repositories import video_db_repository
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +39,7 @@ class DeleteResult:
 
 
 class GCSDeleter:
-    """Handles deletion of GCS files by prefix."""
+    """Handles deletion of GCS files for a video."""
 
     def __init__(self, video_id: str):
         self.video_id = video_id
@@ -60,6 +71,10 @@ class GCSDeleter:
             self.client = None
             self.bucket = None
 
+    # ------------------------------------------------------------------
+    # Prefix-based bulk deletion (used by scope=all)
+    # ------------------------------------------------------------------
+
     def delete_all(
         self,
         skip_video: bool = False,
@@ -68,10 +83,10 @@ class GCSDeleter:
         skip_thumbnails: bool = False,
     ) -> Dict[str, int]:
         """
-        Delete all GCS files for video_id.
+        Delete all GCS files for video_id by prefix.
 
-        Returns:
-            Dictionary with counts of deleted files per category
+        Kept for backward compatibility with scope=all.
+        Returns a dict with counts per category.
         """
         result = {
             "video_files": 0,
@@ -85,29 +100,24 @@ class GCSDeleter:
             return result
 
         if not skip_video:
-            video_count = self._delete_by_prefix(f"{self.settings.gcs_videos_prefix}{self.video_id}/")
-            result["video_files"] = video_count
-        else:
-            logger.info("Skipping GCS video deletion (skip_video=True)")
+            result["video_files"] = self._delete_by_prefix(
+                f"{self.settings.gcs_videos_prefix}{self.video_id}/"
+            )
 
         if not skip_audio:
-            audio_count = self._delete_by_prefix(f"{self.settings.gcs_audio_prefix}{self.video_id}/")
-            result["audio_files"] = audio_count
-        else:
-            logger.info("Skipping GCS audio deletion (skip_audio=True)")
+            result["audio_files"] = self._delete_by_prefix(
+                f"{self.settings.gcs_audio_prefix}{self.video_id}/"
+            )
 
         if not skip_clips:
-            clips_count = self._delete_by_prefix(f"{self.settings.gcs_clips_prefix}{self.video_id}/")
-            result["clip_files"] = clips_count
-        else:
-            logger.info("Skipping GCS clips deletion (skip_clips=True)")
+            result["clip_files"] = self._delete_by_prefix(
+                f"{self.settings.gcs_clips_prefix}{self.video_id}/"
+            )
 
         if not skip_thumbnails:
-            thumbnail_prefix = f"{self.settings.gcs_thumbnails_prefix}video/{self.video_id}"
-            thumbnail_count = self._delete_by_prefix(thumbnail_prefix)
-            result["thumbnail_files"] = thumbnail_count
-        else:
-            logger.info("Skipping GCS thumbnail deletion (skip_thumbnails=True)")
+            result["thumbnail_files"] = self._delete_by_prefix(
+                f"{self.settings.gcs_thumbnails_prefix}video/{self.video_id}"
+            )
 
         total = sum(result.values())
         if total > 0:
@@ -140,6 +150,77 @@ class GCSDeleter:
             logger.error(f"Failed to list/delete blobs with prefix {prefix}: {e}")
             return 0
 
+    # ------------------------------------------------------------------
+    # Single-file deletion (used by scope=video_file, moments, refined_moments)
+    # ------------------------------------------------------------------
+
+    def delete_by_url(self, url: str) -> bool:
+        """
+        Delete a single GCS blob by its GCS path or gs:// URI.
+
+        Strips gs://{bucket}/ prefix if present to extract the blob name.
+        Returns True if deleted, False if not found or on error.
+        """
+        if not self.client or not self.bucket:
+            logger.warning("GCS client not initialized, skipping single-file deletion")
+            return False
+
+        if not url:
+            return False
+
+        # Strip gs://bucket-name/ prefix if present
+        gs_prefix = f"gs://{self.settings.gcs_bucket_name}/"
+        if url.startswith(gs_prefix):
+            blob_name = url[len(gs_prefix):]
+        else:
+            blob_name = url
+
+        try:
+            blob = self.bucket.blob(blob_name)
+            blob.delete()
+            logger.debug(f"Deleted GCS blob: {blob_name}")
+            return True
+        except NotFound:
+            logger.warning(f"GCS blob not found (already deleted?): {blob_name}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to delete GCS blob {blob_name}: {e}")
+            return False
+
+    def delete_video_file(self, video_url: str) -> bool:
+        """Delete the video GCS file by its cloud_url."""
+        return self.delete_by_url(video_url)
+
+    def delete_audio_file(self, audio_url: str) -> bool:
+        """Delete the audio GCS file by its cloud_url."""
+        return self.delete_by_url(audio_url)
+
+    async def delete_clip_thumbnails_for_clips(
+        self, clip_ids: list[int], session: AsyncSession
+    ) -> int:
+        """
+        Delete all clip thumbnail GCS files for the given clip DB IDs.
+
+        Queries thumbnail cloud_url values from DB using the provided session,
+        then deletes each from GCS. Returns total count of successfully deleted files.
+        """
+        if not clip_ids:
+            return 0
+
+        stmt = select(Thumbnail).where(Thumbnail.clip_id.in_(clip_ids))
+        result = await session.execute(stmt)
+        thumbnails = list(result.scalars().all())
+
+        deleted_count = 0
+        for thumbnail in thumbnails:
+            if thumbnail.cloud_url and self.delete_by_url(thumbnail.cloud_url):
+                deleted_count += 1
+
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} clip thumbnail(s) from GCS")
+
+        return deleted_count
+
 
 class StateDeleter:
     """Handles deletion of Redis pipeline state."""
@@ -148,7 +229,7 @@ class StateDeleter:
         self.video_id = video_id
 
     async def delete_all(self) -> Dict[str, any]:
-        """Delete all Redis state for video_id. Returns deletion results."""
+        """Delete all Redis keys for video_id. Returns deletion results."""
         result = {"redis_keys": 0}
         redis_count = await self._delete_redis_keys()
         result["redis_keys"] = redis_count
@@ -192,161 +273,491 @@ class VideoDeleteService:
     async def delete_video(
         self,
         video_id: str,
-        # GCS options
-        skip_gcs_video: bool = False,
-        skip_gcs_audio: bool = False,
-        skip_gcs_clips: bool = False,
-        skip_gcs_thumbnails: bool = False,
-        # State options
-        skip_redis: bool = False,
-        # Database option
-        skip_database: bool = False,
-        force: bool = False
+        scope: str,
+        moment_ids: Optional[list[str]] = None,
+        force: bool = False,
     ) -> DeleteResult:
         """
-        Delete video and all associated resources.
+        Delete a video or a subset of its resources based on scope.
 
-        Deletion order:
-          1. GCS files (video, audio, clips, thumbnails)
-          2. Temp files (managed by temp_file_manager)
-          3. Redis state (pipeline keys)
-          4. Database record (CASCADE deletes transcripts, moments, clips, thumbnails, history)
+        scope=all           — Full deletion (GCS + temp + Redis + DB record)
+        scope=video_file    — Delete video/audio GCS files; nullify cloud_url in DB
+        scope=moments       — Delete specific or all moments with clips/thumbnails
+        scope=refined_moments — Delete only refined moments with their clips/thumbnails
 
-        Args:
-            video_id: Video identifier
-            skip_gcs_video: Keep GCS video file
-            skip_gcs_audio: Keep GCS audio files
-            skip_gcs_clips: Keep GCS clip files
-            skip_gcs_thumbnails: Keep GCS thumbnail files
-            skip_redis: Keep Redis state
-            skip_database: Keep database record (and cascaded data)
-            force: Skip active pipeline check
-
-        Returns:
-            DeleteResult with status and details
+        GCS errors are collected and result in status="partial".
+        DB errors abort the operation and are raised to the caller.
         """
         start_time = time.time()
-        logger.info(f"Starting deletion for video: {video_id}")
+        logger.info(f"Starting deletion for video: {video_id}, scope: {scope}")
 
         result = DeleteResult(
             status="completed",
             video_id=video_id,
-            deleted={
-                "gcs": {},
-                "temp": {},
-                "redis_keys": 0,
-                "database": False,
-            },
+            deleted={},
             errors=[],
         )
 
-        # Pre-deletion checks
+        if scope == "all":
+            await self._delete_all(video_id, force, result)
+        elif scope == "video_file":
+            await self._delete_video_file(video_id, result)
+        elif scope == "moments":
+            await self._delete_moments(video_id, moment_ids, force, result)
+        elif scope == "refined_moments":
+            await self._delete_refined_moments(video_id, result)
+
+        result.duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            f"Deletion {result.status} for {video_id} (scope={scope}), "
+            f"duration={result.duration_ms}ms, errors={len(result.errors)}"
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # scope=all
+    # ------------------------------------------------------------------
+
+    async def _delete_all(self, video_id: str, force: bool, result: DeleteResult) -> None:
+        """Full deletion: GCS files, temp files, Redis state, DB record."""
+
+        # 1. Pipeline check
         if not force:
             pipeline_status = await get_pipeline_status(video_id)
-            if pipeline_status and pipeline_status.get("status") in ["processing", "pending", "queued"]:
+            if pipeline_status and pipeline_status.get("status") in ("processing", "pending", "queued"):
                 result.status = "failed"
                 result.errors.append(
-                    f"Cannot delete video while pipeline is active (status: {pipeline_status.get('status')}). "
-                    f"Use force=true to delete anyway."
+                    f"Cannot delete video while pipeline is active "
+                    f"(status: {pipeline_status.get('status')}). Use force=true to delete anyway."
                 )
-                result.duration_ms = int((time.time() - start_time) * 1000)
-                return result
+                return
 
-        # Check if video exists in database
-        video_exists = await self._check_video_exists(video_id)
-        if not video_exists:
-            logger.warning(f"No database record found for video: {video_id}")
-            # Still proceed to clean up any orphaned state
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            # 2. Fetch video with audio eagerly loaded
+            video = await self._get_video(session, video_id)
+            if video is None:
+                result.status = "failed"
+                result.errors.append(f"Video '{video_id}' not found in database.")
+                return
 
-        # 1. Delete GCS files
-        try:
+            # 3. Collect clip IDs for thumbnail deletion
+            clips_stmt = select(Clip).where(Clip.video_id == video.id)
+            clips_result = await session.execute(clips_stmt)
+            clips = list(clips_result.scalars().all())
+            clip_ids = [c.id for c in clips]
+
             gcs_deleter = GCSDeleter(video_id)
-            gcs_result = gcs_deleter.delete_all(
-                skip_video=skip_gcs_video,
-                skip_audio=skip_gcs_audio,
-                skip_clips=skip_gcs_clips,
-                skip_thumbnails=skip_gcs_thumbnails,
+
+            # 4a. Delete video GCS file by explicit cloud_url
+            gcs_deleted: Dict[str, int] = {
+                "video_files": 0,
+                "audio_files": 0,
+                "clip_files": 0,
+                "thumbnail_files": 0,
+                "clip_thumbnail_files": 0,
+            }
+
+            if video.cloud_url:
+                if gcs_deleter.delete_video_file(video.cloud_url):
+                    gcs_deleted["video_files"] += 1
+                else:
+                    msg = f"Failed to delete video GCS file: {video.cloud_url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            # 4b. Delete audio GCS file
+            audio_url = self._resolve_audio_url(video, video_id)
+            if audio_url:
+                if gcs_deleter.delete_audio_file(audio_url):
+                    gcs_deleted["audio_files"] += 1
+                else:
+                    msg = f"Failed to delete audio GCS file: {audio_url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            # 4c. Delete remaining clips and video thumbnail by prefix
+            prefix_result = gcs_deleter.delete_all(
+                skip_video=True,   # already deleted individually above
+                skip_audio=True,   # already deleted individually above
+                skip_clips=False,
+                skip_thumbnails=False,
             )
-            result.deleted["gcs"] = gcs_result
-        except Exception as e:
-            error_msg = f"GCS deletion failed: {e}"
-            logger.error(error_msg)
-            result.errors.append(error_msg)
-            result.status = "partial"
+            gcs_deleted["clip_files"] = prefix_result.get("clip_files", 0)
+            gcs_deleted["thumbnail_files"] = prefix_result.get("thumbnail_files", 0)
 
-        # 2. Delete managed temp files
-        try:
-            from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
-            temp_result = await cleanup_temp_video(video_id)
-            result.deleted["temp"] = temp_result
-        except Exception as e:
-            error_msg = f"Temp file cleanup failed: {e}"
-            logger.error(error_msg)
-            result.errors.append(error_msg)
-            result.status = "partial"
+            # 4d. Delete clip thumbnails by DB cloud_url (fixes Issue 3.3)
+            clip_thumb_count = await gcs_deleter.delete_clip_thumbnails_for_clips(clip_ids, session)
+            gcs_deleted["clip_thumbnail_files"] = clip_thumb_count
 
-        # 3. Delete Redis state
-        if not skip_redis:
+            result.deleted["gcs"] = gcs_deleted
+
+            # 5. Delete temp files
+            try:
+                from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
+                temp_result = await cleanup_temp_video(video_id)
+                result.deleted["temp"] = temp_result
+            except Exception as e:
+                msg = f"Temp file cleanup failed: {e}"
+                logger.error(msg)
+                result.errors.append(msg)
+                result.status = "partial"
+
+            # 6. Delete Redis state
             try:
                 state_deleter = StateDeleter(video_id)
                 state_result = await state_deleter.delete_all()
                 result.deleted["redis_keys"] = state_result["redis_keys"]
             except Exception as e:
-                error_msg = f"Redis deletion failed: {e}"
-                logger.error(error_msg)
-                result.errors.append(error_msg)
+                msg = f"Redis deletion failed: {e}"
+                logger.error(msg)
+                result.errors.append(msg)
                 result.status = "partial"
-        else:
-            logger.info("Skipping Redis deletion (skip_redis=True)")
 
-        # 4. Delete from database (CASCADE handles all related records)
-        if not skip_database:
+            # 7. Delete video DB record (CASCADE removes transcript, moments, clips, thumbnails, history)
+            deleted = await video_db_repository.delete_by_id(session, video.id)
+            await session.commit()
+            result.deleted["database"] = deleted
+            logger.info(
+                f"Deleted video {video_id} from database "
+                f"(CASCADE removed all related records)"
+            )
+
+    # ------------------------------------------------------------------
+    # scope=video_file
+    # ------------------------------------------------------------------
+
+    async def _delete_video_file(self, video_id: str, result: DeleteResult) -> None:
+        """Delete video + audio GCS files; nullify cloud_url on video and audio records."""
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            # 1. Fetch video with audio eagerly loaded
+            video = await self._get_video(session, video_id)
+            if video is None:
+                result.status = "failed"
+                result.errors.append(f"Video '{video_id}' not found in database.")
+                return
+
+            gcs_deleter = GCSDeleter(video_id)
+            gcs_deleted = {"video_files": 0, "audio_files": 0}
+
+            # 2. Delete video GCS file
+            if video.cloud_url:
+                if gcs_deleter.delete_video_file(video.cloud_url):
+                    gcs_deleted["video_files"] += 1
+                else:
+                    msg = f"Failed to delete video GCS file: {video.cloud_url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            # 3. Delete audio GCS file
+            audio_url = self._resolve_audio_url(video, video_id)
+            if audio_url:
+                if gcs_deleter.delete_audio_file(audio_url):
+                    gcs_deleted["audio_files"] += 1
+                else:
+                    msg = f"Failed to delete audio GCS file: {audio_url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            result.deleted["gcs"] = gcs_deleted
+
+            # 4. Nullify video.cloud_url in DB
+            video.cloud_url = None
+
+            # 5. Nullify audio.cloud_url in DB if Audio record exists
+            if video.audio is not None:
+                video.audio.cloud_url = None
+
+            # 6. Delete temp video and audio files
             try:
-                from app.database.session import get_session_factory
-                from app.repositories import video_db_repository
-
-                session_factory = get_session_factory()
-                async with session_factory() as session:
-                    video = await video_db_repository.get_by_identifier(session, video_id)
-                    if video:
-                        await video_db_repository.delete_by_id(session, video.id)
-                        await session.commit()
-                        result.deleted["database"] = True
-                        logger.info(
-                            f"Deleted video {video_id} from database "
-                            f"(CASCADE removed transcripts, moments, clips, thumbnails, history)"
-                        )
-                    else:
-                        logger.warning(f"Video {video_id} not found in database during deletion")
+                from app.services.temp_file_manager import cleanup_video as cleanup_temp_video
+                temp_result = await cleanup_temp_video(video_id)
+                result.deleted["temp"] = temp_result
             except Exception as e:
-                error_msg = f"Database deletion failed: {e}"
-                logger.error(error_msg)
-                result.errors.append(error_msg)
+                msg = f"Temp file cleanup failed: {e}"
+                logger.error(msg)
+                result.errors.append(msg)
                 result.status = "partial"
-        else:
-            logger.info("Skipping database deletion (skip_database=True)")
 
-        result.duration_ms = int((time.time() - start_time) * 1000)
+            # 7. Commit DB changes
+            await session.commit()
+            result.deleted["database"] = {"cloud_url_nullified": True}
+            logger.info(f"Removed GCS video/audio files for {video_id}; cloud_url set to NULL in DB")
 
-        gcs_total = sum(result.deleted["gcs"].values()) if isinstance(result.deleted["gcs"], dict) else 0
-        logger.info(
-            f"Deletion completed for {video_id}: status={result.status}, "
-            f"gcs={gcs_total} files, database={result.deleted['database']}, "
-            f"redis={result.deleted['redis_keys']} keys, duration={result.duration_ms}ms"
+    # ------------------------------------------------------------------
+    # scope=moments
+    # ------------------------------------------------------------------
+
+    async def _delete_moments(
+        self,
+        video_id: str,
+        moment_ids: Optional[list[str]],
+        force: bool,
+        result: DeleteResult,
+    ) -> None:
+        """Delete specific or all moments with their clips and clip thumbnails."""
+
+        # 1. Pipeline check
+        if not force:
+            pipeline_status = await get_pipeline_status(video_id)
+            if pipeline_status and pipeline_status.get("status") in ("processing", "pending", "queued"):
+                result.status = "failed"
+                result.errors.append(
+                    f"Cannot delete moments while pipeline is active "
+                    f"(status: {pipeline_status.get('status')}). Use force=true to delete anyway."
+                )
+                return
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            # 2. Verify video exists
+            video = await self._get_video(session, video_id)
+            if video is None:
+                result.status = "failed"
+                result.errors.append(f"Video '{video_id}' not found in database.")
+                return
+
+            # 3. Resolve target moments
+            target_moments = await self._resolve_target_moments(session, video.id, moment_ids)
+
+            if not target_moments:
+                result.deleted["moments"] = 0
+                result.deleted["gcs"] = {"clip_files": 0, "clip_thumbnail_files": 0}
+                logger.info(f"No moments to delete for video {video_id}")
+                return
+
+            # 4. Collect GCS URLs before any DB deletion
+            clip_urls: list[str] = []
+            thumbnail_urls: list[str] = []
+            for moment in target_moments:
+                if moment.clip and moment.clip.cloud_url:
+                    clip_urls.append(moment.clip.cloud_url)
+                if moment.clip and moment.clip.thumbnails:
+                    for thumb in moment.clip.thumbnails:
+                        if thumb.cloud_url:
+                            thumbnail_urls.append(thumb.cloud_url)
+
+            gcs_deleter = GCSDeleter(video_id)
+            gcs_deleted = {"clip_files": 0, "clip_thumbnail_files": 0}
+
+            # 5. Delete clip GCS files
+            for url in clip_urls:
+                if gcs_deleter.delete_by_url(url):
+                    gcs_deleted["clip_files"] += 1
+                else:
+                    msg = f"Failed to delete clip GCS file: {url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            # 6. Delete clip thumbnail GCS files
+            for url in thumbnail_urls:
+                if gcs_deleter.delete_by_url(url):
+                    gcs_deleted["clip_thumbnail_files"] += 1
+                else:
+                    msg = f"Failed to delete clip thumbnail GCS file: {url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            result.deleted["gcs"] = gcs_deleted
+
+            # 7. Delete moment DB records (CASCADE handles clips, clip thumbnails, children)
+            target_ids = [m.id for m in target_moments]
+            del_stmt = delete(Moment).where(Moment.id.in_(target_ids))
+            del_result = await session.execute(del_stmt)
+            await session.commit()
+
+            result.deleted["moments"] = del_result.rowcount
+            logger.info(
+                f"Deleted {del_result.rowcount} moment(s) for video {video_id} "
+                f"(CASCADE removed clips and thumbnails)"
+            )
+
+    # ------------------------------------------------------------------
+    # scope=refined_moments
+    # ------------------------------------------------------------------
+
+    async def _delete_refined_moments(self, video_id: str, result: DeleteResult) -> None:
+        """Delete all refined moments with their clips and clip thumbnails."""
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            # 1. Verify video exists
+            video = await self._get_video(session, video_id)
+            if video is None:
+                result.status = "failed"
+                result.errors.append(f"Video '{video_id}' not found in database.")
+                return
+
+            # 2. Query all refined moments with clips and thumbnails eagerly loaded
+            stmt = (
+                select(Moment)
+                .where(
+                    Moment.video_id == video.id,
+                    Moment.is_refined == True,  # noqa: E712
+                )
+                .options(
+                    selectinload(Moment.clip).selectinload(Clip.thumbnails),
+                )
+            )
+            moments_result = await session.execute(stmt)
+            refined_moments = list(moments_result.scalars().all())
+
+            if not refined_moments:
+                result.deleted["moments"] = 0
+                result.deleted["gcs"] = {"clip_files": 0, "clip_thumbnail_files": 0}
+                logger.info(f"No refined moments found for video {video_id}")
+                return
+
+            # 3. Collect GCS URLs before any DB deletion
+            clip_urls: list[str] = []
+            thumbnail_urls: list[str] = []
+            for moment in refined_moments:
+                if moment.clip and moment.clip.cloud_url:
+                    clip_urls.append(moment.clip.cloud_url)
+                if moment.clip and moment.clip.thumbnails:
+                    for thumb in moment.clip.thumbnails:
+                        if thumb.cloud_url:
+                            thumbnail_urls.append(thumb.cloud_url)
+
+            gcs_deleter = GCSDeleter(video_id)
+            gcs_deleted = {"clip_files": 0, "clip_thumbnail_files": 0}
+
+            # 4. Delete clip GCS files
+            for url in clip_urls:
+                if gcs_deleter.delete_by_url(url):
+                    gcs_deleted["clip_files"] += 1
+                else:
+                    msg = f"Failed to delete refined moment clip GCS file: {url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            # 5. Delete clip thumbnail GCS files
+            for url in thumbnail_urls:
+                if gcs_deleter.delete_by_url(url):
+                    gcs_deleted["clip_thumbnail_files"] += 1
+                else:
+                    msg = f"Failed to delete refined moment clip thumbnail GCS file: {url}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
+                    result.status = "partial"
+
+            result.deleted["gcs"] = gcs_deleted
+
+            # 6. Delete refined moment DB records (CASCADE handles clips + thumbnails)
+            refined_ids = [m.id for m in refined_moments]
+            del_stmt = delete(Moment).where(Moment.id.in_(refined_ids))
+            del_result = await session.execute(del_stmt)
+            await session.commit()
+
+            result.deleted["moments"] = del_result.rowcount
+            logger.info(
+                f"Deleted {del_result.rowcount} refined moment(s) for video {video_id} "
+                f"(CASCADE removed their clips and thumbnails)"
+            )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    async def _get_video(self, session: AsyncSession, video_id: str) -> Optional[Video]:
+        """
+        Fetch the Video record by string identifier with the audio relationship
+        eagerly loaded (needed for audio cloud_url in all scopes).
+        """
+        stmt = (
+            select(Video)
+            .where(Video.identifier == video_id)
+            .options(selectinload(Video.audio))
         )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
 
-        return result
+    def _resolve_audio_url(self, video: Video, video_id: str) -> Optional[str]:
+        """
+        Return the audio GCS path from the Audio DB record if it exists,
+        otherwise fall back to the convention-based path for videos uploaded
+        before Phase 2 was deployed.
+        """
+        if video.audio and video.audio.cloud_url:
+            return video.audio.cloud_url
+        # Convention fallback: audio/{video_id}/{video_id}.wav
+        fallback = f"{self.settings.gcs_audio_prefix}{video_id}/{video_id}.wav"
+        logger.debug(f"No Audio DB record found for {video_id}; using convention path: {fallback}")
+        return fallback
 
-    async def _check_video_exists(self, video_id: str) -> bool:
-        """Check if video exists in the database."""
-        try:
-            from app.database.session import get_session_factory
-            from app.repositories import video_db_repository
+    async def _resolve_target_moments(
+        self,
+        session: AsyncSession,
+        video_db_id: int,
+        moment_ids: Optional[list[str]],
+    ) -> list[Moment]:
+        """
+        Resolve the list of Moment ORM objects to be deleted.
 
-            session_factory = get_session_factory()
-            async with session_factory() as session:
-                video = await video_db_repository.get_by_identifier(session, video_id)
-                return video is not None
-        except Exception as e:
-            logger.error(f"Failed to check video existence in database: {e}")
-            return False
+        If moment_ids is provided, fetches those specific moments by string identifier.
+        For each root moment (is_refined=False) in that set, also fetches its children
+        (is_refined=True, parent_id=root.id) and adds them.
+
+        If moment_ids is None, returns all moments for the video.
+
+        All returned moments have clip and clip.thumbnails eagerly loaded.
+        """
+        if moment_ids is None:
+            # All moments for the video
+            stmt = (
+                select(Moment)
+                .where(Moment.video_id == video_db_id)
+                .options(
+                    selectinload(Moment.clip).selectinload(Clip.thumbnails),
+                )
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+        # Specific moments by string identifier
+        stmt = (
+            select(Moment)
+            .where(
+                Moment.video_id == video_db_id,
+                Moment.identifier.in_(moment_ids),
+            )
+            .options(
+                selectinload(Moment.clip).selectinload(Clip.thumbnails),
+            )
+        )
+        result = await session.execute(stmt)
+        requested = list(result.scalars().all())
+
+        # For each root moment in the requested set, fetch its refined children
+        root_ids = [m.id for m in requested if not m.is_refined]
+        if root_ids:
+            children_stmt = (
+                select(Moment)
+                .where(
+                    Moment.parent_id.in_(root_ids),
+                    Moment.is_refined == True,  # noqa: E712
+                )
+                .options(
+                    selectinload(Moment.clip).selectinload(Clip.thumbnails),
+                )
+            )
+            children_result = await session.execute(children_stmt)
+            children = list(children_result.scalars().all())
+
+            # Merge, avoiding duplicates (a child may have been explicitly requested too)
+            existing_ids = {m.id for m in requested}
+            for child in children:
+                if child.id not in existing_ids:
+                    requested.append(child)
+                    existing_ids.add(child.id)
+
+        return requested

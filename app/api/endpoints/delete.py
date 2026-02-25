@@ -1,9 +1,11 @@
 """
 Video deletion API endpoint.
-Handles comprehensive deletion of videos and associated resources.
+Handles scoped deletion of videos and associated resources.
 """
 import logging
 import time
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.video_delete_service import VideoDeleteService
@@ -17,40 +19,43 @@ from app.core.logging import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_VALID_SCOPES = {"all", "video_file", "moments", "refined_moments"}
+
 
 @router.delete("/videos/{video_id}")
 async def delete_video(
     video_id: str,
+    scope: str = Query(..., description="What to delete: all, video_file, moments, refined_moments"),
+    moment_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated moment identifiers. Only used when scope=moments.",
+    ),
     force: bool = Query(False, description="Skip active pipeline check"),
-    # GCS options
-    skip_gcs_video: bool = Query(False, description="Keep GCS video file"),
-    skip_gcs_audio: bool = Query(False, description="Keep GCS audio file"),
-    skip_gcs_clips: bool = Query(False, description="Keep GCS video clips"),
-    skip_gcs_thumbnails: bool = Query(False, description="Keep GCS thumbnail file"),
-    # State options
-    skip_redis: bool = Query(False, description="Keep Redis state (pipeline status, locks)"),
-    # Database option
-    skip_database: bool = Query(False, description="Keep database record (and all cascaded data)"),
 ):
     """
-    Delete video and all associated resources.
+    Delete a video or a subset of its associated resources.
 
-    By default, deletes everything: GCS files, temp files, Redis state, and database records.
-    Database CASCADE automatically removes transcripts, moments, clips, thumbnails, and pipeline history.
-
-    Args:
-        video_id: Video identifier
-        force: Skip active pipeline check (delete anyway)
-        skip_gcs_video: Keep GCS video file
-        skip_gcs_audio: Keep GCS audio file
-        skip_gcs_clips: Keep GCS video clips
-        skip_gcs_thumbnails: Keep GCS thumbnail file
-        skip_redis: Keep Redis state (pipeline status, locks)
-        skip_database: Keep database record (and all cascaded data)
-
-    Returns:
-        Deletion result with status and details
+    scope=all          — Full deletion: GCS files, temp files, Redis state, DB record.
+    scope=video_file   — Delete video + audio from GCS; set cloud_url to NULL in DB.
+                         Moments, clips, transcript, and the video record are preserved.
+    scope=moments      — Delete specific or all moments with their clips and clip thumbnails.
+                         Provide moment_ids to target specific moments; omit for all.
+    scope=refined_moments — Delete only refined child moments with their clips and thumbnails.
+                            Root moments and the video record are preserved.
     """
+    if scope not in _VALID_SCOPES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": f"Invalid scope '{scope}'. Must be one of: {', '.join(sorted(_VALID_SCOPES))}.",
+                "video_id": video_id,
+            },
+        )
+
+    parsed_moment_ids: Optional[list[str]] = None
+    if scope == "moments" and moment_ids:
+        parsed_moment_ids = [m.strip() for m in moment_ids.split(",") if m.strip()]
+
     start_time = time.time()
     operation = "delete_video"
 
@@ -61,28 +66,20 @@ async def delete_video(
         message=f"Starting video deletion: {video_id}",
         context={
             "video_id": video_id,
+            "scope": scope,
+            "moment_ids": parsed_moment_ids,
             "force": force,
-            "skip_gcs_video": skip_gcs_video,
-            "skip_gcs_audio": skip_gcs_audio,
-            "skip_gcs_clips": skip_gcs_clips,
-            "skip_gcs_thumbnails": skip_gcs_thumbnails,
-            "skip_redis": skip_redis,
-            "skip_database": skip_database,
-            "request_id": get_request_id()
-        }
+            "request_id": get_request_id(),
+        },
     )
 
     try:
         service = VideoDeleteService()
         result = await service.delete_video(
             video_id=video_id,
-            skip_gcs_video=skip_gcs_video,
-            skip_gcs_audio=skip_gcs_audio,
-            skip_gcs_clips=skip_gcs_clips,
-            skip_gcs_thumbnails=skip_gcs_thumbnails,
-            skip_redis=skip_redis,
-            skip_database=skip_database,
-            force=force
+            scope=scope,
+            moment_ids=parsed_moment_ids,
+            force=force,
         )
 
         if result.status == "failed":
@@ -95,17 +92,18 @@ async def delete_video(
                 message="Video deletion failed",
                 context={
                     "video_id": video_id,
+                    "scope": scope,
                     "errors": result.errors,
-                    "duration_seconds": duration
-                }
+                    "duration_seconds": duration,
+                },
             )
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": result.errors[0] if result.errors else "Deletion failed",
                     "video_id": video_id,
-                    "all_errors": result.errors
-                }
+                    "all_errors": result.errors,
+                },
             )
 
         duration = time.time() - start_time
@@ -116,11 +114,12 @@ async def delete_video(
             message=f"Video deletion {result.status}",
             context={
                 "video_id": video_id,
+                "scope": scope,
                 "status": result.status,
                 "deleted": result.deleted,
                 "errors": result.errors,
-                "duration_seconds": duration
-            }
+                "duration_seconds": duration,
+            },
         )
 
         return {
@@ -128,7 +127,7 @@ async def delete_video(
             "video_id": result.video_id,
             "deleted": result.deleted,
             "errors": result.errors if result.errors else None,
-            "duration_ms": result.duration_ms
+            "duration_ms": result.duration_ms,
         }
 
     except HTTPException:
@@ -143,10 +142,11 @@ async def delete_video(
             message="Unexpected error during video deletion",
             context={
                 "video_id": video_id,
-                "duration_seconds": duration
-            }
+                "scope": scope,
+                "duration_seconds": duration,
+            },
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error during deletion: {str(e)}"
+            detail=f"Internal server error during deletion: {str(e)}",
         )
