@@ -4,6 +4,7 @@ Uploads files to Google Cloud Storage and generates signed URLs for remote acces
 """
 import asyncio
 import logging
+import os
 import time
 import hashlib
 from pathlib import Path
@@ -14,6 +15,8 @@ from google.cloud import storage
 from google.oauth2 import service_account
 from app.core.config import get_settings
 from app.utils.retry import retry_with_backoff
+from app.database.session import get_session_factory
+from app.repositories import audio_db_repository, video_db_repository
 
 logger = logging.getLogger(__name__)
 
@@ -465,6 +468,7 @@ class GCSUploader:
                     )
                     signed_url = self.generate_signed_url(gcs_path)
                     logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
+                    await self._save_audio_db_record(gcs_path, video_id, local_path)
                     return (gcs_path, signed_url)
                 else:
                     logger.warning(
@@ -490,8 +494,52 @@ class GCSUploader:
         signed_url = self.generate_signed_url(gcs_path)
         logger.info(f"Generated signed URL (expires in {self.expiry_hours} hour(s)): {signed_url}")
         
+        await self._save_audio_db_record(gcs_path, video_id, local_path)
         return (gcs_path, signed_url)
-    
+
+    async def _save_audio_db_record(
+        self, gcs_path: str, video_identifier: str, local_path: Path
+    ) -> None:
+        """
+        Best-effort write of an Audio DB record after a successful GCS upload.
+        Stores the GCS path (not the signed URL) as cloud_url — it does not expire.
+        Errors are logged but never raised so they cannot fail the pipeline.
+        """
+        try:
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                video = await video_db_repository.get_by_identifier(session, video_identifier)
+                if video is None:
+                    logger.warning(
+                        f"_save_audio_db_record: video not found for identifier '{video_identifier}'. "
+                        f"Skipping audio DB record write."
+                    )
+                    return
+
+                file_size_kb = os.path.getsize(local_path) // 1024
+
+                existing = await audio_db_repository.get_by_video_id(session, video.id)
+                if existing is not None:
+                    await audio_db_repository.update_cloud_url(session, existing.id, gcs_path)
+                else:
+                    await audio_db_repository.create(
+                        session,
+                        video_id=video.id,
+                        cloud_url=gcs_path,
+                        file_size_kb=file_size_kb,
+                        format="wav",
+                    )
+                await session.commit()
+                logger.info(
+                    f"Audio DB record saved for video '{video_identifier}': {gcs_path}"
+                )
+        except Exception:
+            logger.error(
+                f"Failed to save audio DB record for video '{video_identifier}' (gcs_path={gcs_path}). "
+                f"Upload succeeded — pipeline will continue.",
+                exc_info=True,
+            )
+
     async def upload_clip(
         self, 
         local_path: Path, 

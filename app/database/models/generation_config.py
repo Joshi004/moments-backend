@@ -51,7 +51,7 @@ class GenerationConfig(Base):
     moments: Mapped[list["Moment"]] = relationship(
         "Moment",
         back_populates="generation_config",
-        cascade="all, delete-orphan"
+        passive_deletes=True,
     )
     pipeline_runs: Mapped[list["PipelineHistory"]] = relationship(
         "PipelineHistory",
