@@ -85,6 +85,7 @@ async def get_by_identifier(session: AsyncSession, identifier: str) -> Optional[
         .options(
             selectinload(Moment.generation_config),
             selectinload(Moment.parent),
+            selectinload(Moment.clip),
         )
     )
     result = await session.execute(stmt)

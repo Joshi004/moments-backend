@@ -57,6 +57,7 @@ async def check_video_availability(
         if moment is None:
             raise HTTPException(status_code=404, detail="Moment not found")
 
+        supports_video = await model_supports_video("qwen3_vl_fp8")
         result = VideoAvailabilityResponse(
             available=False,
             clip_url=None,
@@ -64,7 +65,7 @@ async def check_video_availability(
             transcript_duration=None,
             duration_match=False,
             warning=None,
-            model_supports_video=model_supports_video("qwen3_vl_fp8"),
+            model_supports_video=supports_video,
         )
 
         # Check clip existence via database
