@@ -77,9 +77,6 @@ def extract_word_timestamps_for_range(
 # build_refinement_prompt and parse_refinement_response have been moved to RefinementTask class
 
 
-# Job management functions now handled by JobRepository
-
-
 async def process_moment_refinement(
     video_id: str,
     moment_id: str,
@@ -95,7 +92,6 @@ async def process_moment_refinement(
     
     This is the recommended async version that integrates with the pipeline orchestrator.
     Unlike the deprecated thread-based version, this function:
-    - Returns True/False directly (no JobRepository polling needed)
     - Raises exceptions on errors (native exception handling)
     - Can be used with asyncio.wait_for() for timeout handling
     

@@ -626,9 +626,6 @@ def extract_segment_data(transcript: Dict) -> List[Dict]:
 # build_prompt and parse_moments_response functions have been moved to GenerationTask class
 
 
-# Job management functions now handled by JobRepository
-
-
 async def process_moments_generation(
     video_id: str,
     video_filename: str,

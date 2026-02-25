@@ -1,9 +1,7 @@
 import subprocess
 import time
-import json
 import psutil
 import socket
-import warnings
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -21,47 +19,6 @@ from app.database.session import get_session_factory
 from app.repositories import transcript_db_repository, video_db_repository
 
 logger = logging.getLogger(__name__)
-
-
-def get_transcript_directory() -> Path:
-    """
-    Get the path to the transcripts directory.
-    
-    DEPRECATED: Transcripts are now stored in the database. This function is kept for backward
-    compatibility but will be removed in a future version.
-    """
-    warnings.warn(
-        "get_transcript_directory() is deprecated. Transcripts are now stored in the database.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    current_file = Path(__file__).resolve()
-    backend_dir = current_file.parent.parent.parent
-    transcript_dir = backend_dir / "static" / "transcripts"
-    transcript_dir = transcript_dir.resolve()
-    
-    # Create directory if it doesn't exist
-    transcript_dir.mkdir(parents=True, exist_ok=True)
-    
-    return transcript_dir
-
-
-def get_transcript_path(audio_filename: str) -> Path:
-    """
-    Get the path for a transcript file based on audio filename.
-    
-    DEPRECATED: Transcripts are now stored in the database. This function is kept for backward
-    compatibility but will be removed in a future version.
-    """
-    warnings.warn(
-        "get_transcript_path() is deprecated. Transcripts are now stored in the database.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    transcript_dir = get_transcript_directory()
-    # Replace audio extension with .json
-    transcript_filename = Path(audio_filename).stem + ".json"
-    return transcript_dir / transcript_filename
 
 
 async def check_transcript_exists(audio_filename: str) -> bool:
@@ -131,10 +88,7 @@ async def load_transcript(audio_filename: str) -> Optional[dict]:
 
 async def save_transcript(audio_filename: str, transcription_data: dict) -> bool:
     """
-    Save transcription data to the database (and also to JSON file as backup).
-    
-    This function performs a dual-write: saves to both database and JSON file
-    for safety during the transition period.
+    Save transcription data to the database.
     
     Args:
         audio_filename: Name of the audio file
@@ -150,7 +104,7 @@ async def save_transcript(audio_filename: str, transcription_data: dict) -> bool
         logger="app.services.transcript_service",
         function="save_transcript",
         operation=operation,
-        message="Saving transcript to database (with JSON backup)",
+        message="Saving transcript to database",
         context={
             "audio_filename": audio_filename,
             "has_segments": "segment_timestamps" in transcription_data if transcription_data else False,
@@ -208,27 +162,17 @@ async def save_transcript(audio_filename: str, transcription_data: dict) -> bool
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Database error saving transcript: {str(e)}")
-                # Continue to save JSON file as backup even if DB fails
+                return False
         
-        # Also save to JSON file (dual-write for safety)
-        transcript_path = get_transcript_path(audio_filename)
-        transcript_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(transcript_path, 'w', encoding='utf-8') as f:
-            json.dump(transcription_data, f, indent=2, ensure_ascii=False)
-        
-        file_size = transcript_path.stat().st_size
         duration = time.time() - start_time
         
         log_operation_complete(
             logger="app.services.transcript_service",
             function="save_transcript",
             operation=operation,
-            message="Successfully saved transcript to database and JSON file",
+            message="Successfully saved transcript to database",
             context={
                 "audio_filename": audio_filename,
-                "transcript_path": str(transcript_path),
-                "file_size_bytes": file_size,
                 "duration_seconds": duration
             }
         )
@@ -531,9 +475,6 @@ async def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, se
     except Exception as e:
         logger.error(f"Error closing SSH tunnel: {str(e)}")
         return False
-
-
-# Job management functions now handled by JobRepository
 
 
 async def call_transcription_service_async(audio_url: str) -> Optional[dict]:

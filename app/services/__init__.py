@@ -11,8 +11,6 @@ from app.services.audio_service import (
 )
 
 from app.services.transcript_service import (
-    get_transcript_directory,
-    get_transcript_path,
     check_transcript_exists,
     load_transcript,
     save_transcript
@@ -53,8 +51,6 @@ __all__ = [
     "extract_audio_from_video",
     
     # Transcript service
-    "get_transcript_directory",
-    "get_transcript_path",
     "check_transcript_exists",
     "load_transcript",
     "save_transcript",
