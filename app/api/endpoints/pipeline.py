@@ -404,6 +404,24 @@ async def start_pipeline(
             detail="Either video_id or video_url must be provided",
         )
 
+    # For URL-based pipelines, create a placeholder video row early so the
+    # pipeline monitor and pipeline_history FK constraint work immediately.
+    if download_required:
+        try:
+            placeholder_title = video_id.replace("-", " ").replace("_", " ").title()
+            await video_db_repository.create(
+                db,
+                identifier=video_id,
+                source_url=video_url,
+                cloud_url=None,
+                title=placeholder_title,
+            )
+            await db.commit()
+            logger.info(f"Created placeholder video record for {video_id}")
+        except Exception as e:
+            await db.rollback()
+            logger.warning(f"Could not create placeholder video for {video_id}: {e}")
+
     # Check if pipeline already running for this video
     locked, lock_info = await is_locked(video_id)
     if locked:
@@ -452,6 +470,67 @@ async def start_pipeline(
         source_url=video_url,
         is_cached=is_cached,
     )
+
+
+@router.get("/active")
+async def list_active_pipelines():
+    """
+    Return all currently active pipelines by scanning Redis.
+
+    Scans for all keys matching `pipeline:*:active` and returns those whose
+    status is pending, queued, or processing.  Uses SCAN (not KEYS) to avoid
+    blocking Redis.
+
+    Returns:
+        Dict with `active_pipelines` list and `count`.
+    """
+    try:
+        redis = await get_async_redis_client()
+        active_keys = []
+        cursor = 0
+        while True:
+            cursor, keys = await redis.scan(cursor, match="pipeline:*:active", count=100)
+            active_keys.extend(keys)
+            if cursor == 0:
+                break
+
+        active_pipelines = []
+        for key in active_keys:
+            status_data = await redis.hgetall(key)
+            if not status_data:
+                continue
+            status = status_data.get("status", "")
+            if status not in ("pending", "queued", "processing"):
+                continue
+
+            video_id = status_data.get("video_id", "")
+            started_at_str = status_data.get("started_at", "")
+            started_at = None
+            if started_at_str:
+                try:
+                    started_at = datetime.fromtimestamp(
+                        float(started_at_str), tz=timezone.utc
+                    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+                except (ValueError, OSError):
+                    pass
+
+            stages = {}
+            for stage in PipelineStage:
+                stages[stage.value] = _build_stage_status_response(status_data, stage)
+
+            active_pipelines.append({
+                "video_id": video_id,
+                "request_id": status_data.get("request_id", ""),
+                "status": status,
+                "current_stage": status_data.get("current_stage", ""),
+                "started_at": started_at,
+                "stages": stages,
+            })
+
+        return {"active_pipelines": active_pipelines, "count": len(active_pipelines)}
+    except Exception as e:
+        logger.error(f"Error listing active pipelines: {e}")
+        return {"active_pipelines": [], "count": 0}
 
 
 @router.get("/{video_id}/status", response_model=PipelineStatusResponse)

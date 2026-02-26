@@ -71,15 +71,17 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     # Get database session
     session_factory = get_session_factory()
     async with session_factory() as session:
-        # Check database first - if video already registered with this URL, skip
+        # Check database first - if video already registered with this URL and has
+        # a cloud_url, the download already completed; skip. A placeholder row
+        # (cloud_url=NULL) must NOT cause the download to be skipped.
         existing_video = await video_db_repository.get_by_source_url(session, video_url)
-        if existing_video:
+        if existing_video and existing_video.cloud_url:
             logger.info(f"Video already in database (identifier={existing_video.identifier}), skipping download")
             return
         
         # Also check by identifier
         existing_by_id = await video_db_repository.get_by_identifier(session, video_id)
-        if existing_by_id:
+        if existing_by_id and existing_by_id.cloud_url:
             logger.info(f"Video already in database with identifier {video_id}, skipping download")
             return
     
@@ -210,25 +212,40 @@ async def execute_video_download(video_id: str, config: dict) -> None:
         logger.error(f"Failed to upload to GCS: {e}")
         raise Exception(f"GCS upload failed: {e}")
     
-    # Insert into database
+    # Insert or update database record. A placeholder row may already exist
+    # (created by start_pipeline), in which case we update it with the real
+    # cloud_url and metadata rather than inserting a duplicate.
     logger.info(f"Registering video in database...")
     async with session_factory() as session:
         try:
             title = video_id.replace("-", " ").replace("_", " ").title()
-            video = await video_db_repository.create(
-                session,
-                identifier=video_id,
-                cloud_url=cloud_url,
-                source_url=video_url,
-                title=title,
-                **metadata
-            )
-            await session.commit()
-            logger.info(f"Video registered in database (id={video.id})")
+            existing_row = await video_db_repository.get_by_identifier(session, video_id)
+            if existing_row:
+                await video_db_repository.update_by_identifier(
+                    session,
+                    identifier=video_id,
+                    cloud_url=cloud_url,
+                    source_url=video_url,
+                    title=title,
+                    **metadata
+                )
+                await session.commit()
+                logger.info(f"Updated placeholder video record (identifier={video_id})")
+            else:
+                video = await video_db_repository.create(
+                    session,
+                    identifier=video_id,
+                    cloud_url=cloud_url,
+                    source_url=video_url,
+                    title=title,
+                    **metadata
+                )
+                await session.commit()
+                logger.info(f"Video registered in database (id={video.id})")
         except Exception as e:
             await session.rollback()
-            logger.error(f"Failed to insert into database: {e}")
-            raise Exception(f"Database insert failed: {e}")
+            logger.error(f"Failed to insert/update database: {e}")
+            raise Exception(f"Database insert/update failed: {e}")
     
 
 
@@ -276,7 +293,7 @@ async def should_skip_stage(stage: PipelineStage, video_id: str, config: dict) -
         session_factory = get_session_factory()
         async with session_factory() as session:
             existing = await video_db_repository.get_by_identifier(session, video_id)
-            if existing:
+            if existing and existing.cloud_url:
                 return True, "Video already exists in database"
 
         # Video not in database -- a download URL is required

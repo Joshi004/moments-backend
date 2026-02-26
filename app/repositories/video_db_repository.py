@@ -3,7 +3,7 @@ Video database repository - CRUD operations for the videos table.
 This is a database-backed repository (unlike the file-based repositories).
 """
 from typing import Optional
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models.video import Video
@@ -12,7 +12,7 @@ from app.database.models.video import Video
 async def create(
     session: AsyncSession,
     identifier: str,
-    cloud_url: str,
+    cloud_url: Optional[str] = None,
     source_url: Optional[str] = None,
     title: Optional[str] = None,
     duration_seconds: Optional[float] = None,
@@ -137,7 +137,7 @@ async def update(session: AsyncSession, id: int, **fields) -> Optional[Video]:
     Returns:
         Updated Video instance or None if not found
     """
-    stmt = update(Video).where(Video.id == id).values(**fields).returning(Video)
+    stmt = sa_update(Video).where(Video.id == id).values(**fields).returning(Video)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -172,3 +172,20 @@ async def delete_by_identifier(session: AsyncSession, identifier: str) -> bool:
     stmt = delete(Video).where(Video.identifier == identifier)
     result = await session.execute(stmt)
     return result.rowcount > 0
+
+
+async def update_by_identifier(session: AsyncSession, identifier: str, **fields) -> Optional[Video]:
+    """
+    Update a video record by its string identifier.
+
+    Args:
+        session: Async database session
+        identifier: Video identifier
+        **fields: Fields to update (e.g., cloud_url="gs://...", title="My Video")
+
+    Returns:
+        Updated Video instance or None if not found
+    """
+    stmt = sa_update(Video).where(Video.identifier == identifier).values(**fields).returning(Video)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
