@@ -4,6 +4,7 @@ Used primarily for GCS upload operations.
 """
 import asyncio
 import logging
+import ssl
 import time
 from typing import Callable, TypeVar
 from functools import wraps
@@ -23,6 +24,7 @@ def is_transient_error(error: Exception) -> bool:
     - Network timeouts
     - HTTP 5xx server errors
     - Connection errors
+    - SSL/TLS mid-stream errors
     - Google API transient errors
     """
     # Google Cloud transient errors
@@ -38,6 +40,7 @@ def is_transient_error(error: Exception) -> bool:
     if isinstance(error, (
         requests.exceptions.Timeout,
         requests.exceptions.ConnectionError,
+        ssl.SSLError,
         TimeoutError,
         ConnectionError,
     )):
