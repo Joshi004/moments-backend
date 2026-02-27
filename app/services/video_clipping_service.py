@@ -82,9 +82,6 @@ async def delete_all_clips_for_video(video_id: str) -> int:
     """
     Delete all clips for a video from GCS and the database.
 
-    The local static/moment_clips/ files are intentionally left untouched
-    (they serve as backup until Phase 12 cleanup).
-
     Args:
         video_id: Video identifier (stem, e.g., "motivation")
 
@@ -231,7 +228,7 @@ def get_clip_duration(moment_id: str, video_filename: str) -> Optional[float]:
     """
     Get the duration of a clip file in seconds.
 
-    Falls back to checking the legacy local path first, then temp path.
+    Checks the temp clip path for duration.
 
     Args:
         moment_id: Unique identifier for the moment
@@ -241,14 +238,6 @@ def get_clip_duration(moment_id: str, video_filename: str) -> Optional[float]:
         Duration in seconds if clip file is accessible, None otherwise
     """
     clip_path = get_clip_path(moment_id, video_filename)
-
-    if not clip_path.exists():
-        current_file = Path(__file__).resolve()
-        backend_dir = current_file.parent.parent.parent
-        video_stem = Path(video_filename).stem
-        legacy_path = backend_dir / "static" / "moment_clips" / f"{video_stem}_{moment_id}_clip.mp4"
-        if legacy_path.exists():
-            clip_path = legacy_path
 
     if not clip_path.exists() or not clip_path.is_file():
         logger.debug(f"Clip file not found: {clip_path}")
