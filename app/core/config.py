@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     
     # Paths (relative to backend root)
-    static_dir: Path = Path("static")
     temp_base_dir: Path = Path("temp")
     temp_cleanup_interval_hours: float = 6.0    # Run cleanup every 6 hours
     temp_max_age_hours: float = 24.0            # Delete files older than 24 hours
@@ -111,12 +110,6 @@ class Settings(BaseSettings):
     # Pipeline History Configuration (Redis-based)
     pipeline_history_ttl: int = 86400         # 24 hours for completed runs
     pipeline_history_max_runs: int = 50       # Max runs to keep per video
-    
-    # SCP Upload Configuration (DEPRECATED - using GCS now)
-    # scp_remote_host: str = "naresh@85.234.64.44"
-    # scp_audio_remote_path: str = "/home/naresh/datasets/audios/"
-    # scp_clips_remote_path: str = "/home/naresh/datasets/moment_clips/"
-    # scp_connect_timeout: int = 10
     
     # GCS Configuration
     gcs_bucket_name: str = "rumble-ai-bucket-1"

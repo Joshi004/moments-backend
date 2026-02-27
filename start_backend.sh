@@ -30,11 +30,6 @@ else
     echo -e "${RED}Warning: requirements.txt not found!${NC}"
 fi
 
-# Check if videos directory exists
-if [ ! -d "static/videos" ]; then
-    echo -e "${YELLOW}Warning: static/videos directory not found!${NC}"
-fi
-
 # Parse command line arguments
 MODE="all"  # Options: all, api, worker
 BACKEND_PORT=7005
