@@ -5,6 +5,7 @@ Use this when pipelines are stuck or you need a completely fresh start.
 """
 import sys
 import os
+import asyncio
 import time
 import signal
 import logging
@@ -15,7 +16,7 @@ from typing import List, Set
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.core.redis import get_redis_client
+from app.core.redis import get_async_redis_client
 from app.services.pipeline.lock import release_lock
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -40,10 +41,8 @@ class PipelineCleanup:
         self.kill_api = kill_api
         self.force_kill = force_kill
         self.reset_group = reset_group
-        self.redis = get_redis_client()
+        self.redis = None
         self.backend_dir = Path(__file__).parent
-        
-        # Stats for summary
         self.stats = {
             'workers_killed': 0,
             'api_killed': 0,
@@ -54,6 +53,10 @@ class PipelineCleanup:
             'pending_messages_acked': 0,
             'pid_files_removed': 0,
         }
+
+    async def connect(self) -> None:
+        """Establish async Redis connection."""
+        self.redis = await get_async_redis_client()
     
     def _find_processes_by_pattern(self, pattern: str) -> List[int]:
         """Find process PIDs by pattern using pgrep."""
@@ -186,74 +189,74 @@ class PipelineCleanup:
         else:
             logger.info("   ✓ No API server found")
     
-    def clear_redis_state(self) -> None:
+    async def clear_redis_state(self) -> None:
         """Clear all Redis pipeline state."""
         step = 2 if not self.kill_api else 3
         logger.info(f"\n{step}. Clearing Redis state...")
         
         # 1. Release all locks
         lock_pattern = "pipeline:*:lock"
-        locks = self.redis.keys(lock_pattern)
+        locks = await self.redis.keys(lock_pattern)
         
         if locks:
             logger.info(f"   - Releasing {len(locks)} pipeline lock(s)")
             for lock_key in locks:
                 video_id = lock_key.split(":")[1]
-                release_lock(video_id)
+                await release_lock(video_id)
                 self.stats['locks_released'] += 1
         
         # 2. Clear cancellation flags
         cancel_pattern = "pipeline:*:cancel"
-        cancel_flags = self.redis.keys(cancel_pattern)
+        cancel_flags = await self.redis.keys(cancel_pattern)
         
         if cancel_flags:
             logger.info(f"   - Clearing {len(cancel_flags)} cancellation flag(s)")
             for flag in cancel_flags:
-                self.redis.delete(flag)
+                await self.redis.delete(flag)
                 self.stats['cancel_flags_cleared'] += 1
         
         # 3. Clear active statuses
         active_pattern = "pipeline:*:active"
-        active_statuses = self.redis.keys(active_pattern)
+        active_statuses = await self.redis.keys(active_pattern)
         
         if active_statuses:
             logger.info(f"   - Clearing {len(active_statuses)} active status(es)")
             for status_key in active_statuses:
-                self.redis.delete(status_key)
+                await self.redis.delete(status_key)
                 self.stats['active_statuses_cleared'] += 1
         
         # 4. Delete all stream messages
         try:
-            stream_info = self.redis.xinfo_stream(self.STREAM_KEY)
+            stream_info = await self.redis.xinfo_stream(self.STREAM_KEY)
             pending_count = stream_info.get('length', 0)
             
             if pending_count > 0:
                 logger.info(f"   - Deleting {pending_count} pending request(s) from stream")
-                messages = self.redis.xrange(self.STREAM_KEY)
+                messages = await self.redis.xrange(self.STREAM_KEY)
                 
                 for message_id, _ in messages:
-                    self.redis.xdel(self.STREAM_KEY, message_id)
+                    await self.redis.xdel(self.STREAM_KEY, message_id)
                     self.stats['stream_messages_deleted'] += 1
         except Exception as e:
             logger.debug(f"Stream doesn't exist or error: {e}")
         
         logger.info(f"   ✓ Redis state cleared")
     
-    def reset_consumer_group(self) -> None:
+    async def reset_consumer_group(self) -> None:
         """Reset consumer group by acknowledging pending messages and optionally recreating."""
         step = 3 if not self.kill_api else 4
         logger.info(f"\n{step}. Resetting consumer group...")
         
         try:
             # Get pending messages from all consumers
-            pending_info = self.redis.xpending(self.STREAM_KEY, self.GROUP_NAME)
+            pending_info = await self.redis.xpending(self.STREAM_KEY, self.GROUP_NAME)
             
             if pending_info and pending_info[0] > 0:
                 pending_count = pending_info[0]
                 logger.info(f"   - Found {pending_count} pending message(s)")
                 
                 # Get detailed pending info
-                pending_details = self.redis.xpending_range(
+                pending_details = await self.redis.xpending_range(
                     self.STREAM_KEY,
                     self.GROUP_NAME,
                     min="-",
@@ -265,16 +268,16 @@ class PipelineCleanup:
                 message_ids = [msg['message_id'] for msg in pending_details]
                 if message_ids:
                     logger.info(f"   - Acknowledging {len(message_ids)} message(s)")
-                    self.redis.xack(self.STREAM_KEY, self.GROUP_NAME, *message_ids)
+                    await self.redis.xack(self.STREAM_KEY, self.GROUP_NAME, *message_ids)
                     self.stats['pending_messages_acked'] = len(message_ids)
             
             # Optionally destroy and recreate group for complete reset
             if self.reset_group:
                 logger.info(f"   - Destroying consumer group '{self.GROUP_NAME}'")
                 try:
-                    self.redis.xgroup_destroy(self.STREAM_KEY, self.GROUP_NAME)
+                    await self.redis.xgroup_destroy(self.STREAM_KEY, self.GROUP_NAME)
                     logger.info(f"   - Recreating consumer group '{self.GROUP_NAME}'")
-                    self.redis.xgroup_create(
+                    await self.redis.xgroup_create(
                         self.STREAM_KEY,
                         self.GROUP_NAME,
                         id="0",
@@ -335,11 +338,14 @@ class PipelineCleanup:
         logger.info("\n✓ You can now start fresh with ./start_backend.sh")
         logger.info("=" * 60)
     
-    def run(self) -> None:
+    async def run(self) -> None:
         """Execute full cleanup."""
         logger.info("=" * 60)
         logger.info("PIPELINE CLEANUP - FULL RESET")
         logger.info("=" * 60)
+        
+        # Establish Redis connection before any Redis operations
+        await self.connect()
         
         # Kill workers first
         self.kill_workers()
@@ -349,10 +355,10 @@ class PipelineCleanup:
             self.kill_api()
         
         # Clear Redis state
-        self.clear_redis_state()
+        await self.clear_redis_state()
         
         # Reset consumer group
-        self.reset_consumer_group()
+        await self.reset_consumer_group()
         
         # Clean up PID files
         self.cleanup_pid_files()
@@ -396,22 +402,23 @@ Examples:
     
     args = parser.parse_args()
     
-    try:
-        cleanup = PipelineCleanup(
-            kill_api=args.all,
-            force_kill=args.force,
-            reset_group=args.reset_group
-        )
-        cleanup.run()
-        return 0
-        
-    except KeyboardInterrupt:
-        logger.info("\n\nCleanup interrupted by user")
-        return 1
-        
-    except Exception as e:
-        logger.error(f"\n\nError during cleanup: {e}", exc_info=True)
-        return 1
+    async def _run_cleanup() -> int:
+        try:
+            cleanup = PipelineCleanup(
+                kill_api=args.all,
+                force_kill=args.force,
+                reset_group=args.reset_group
+            )
+            await cleanup.run()
+            return 0
+        except KeyboardInterrupt:
+            logger.info("\n\nCleanup interrupted by user")
+            return 1
+        except Exception as e:
+            logger.error(f"\n\nError during cleanup: {e}", exc_info=True)
+            return 1
+
+    return asyncio.run(_run_cleanup())
 
 
 if __name__ == "__main__":

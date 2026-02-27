@@ -1,27 +1,18 @@
 """
 Redis client singleton for distributed job tracking.
-Provides connection pooling and health checking.
-
-This module provides both synchronous and asynchronous Redis clients.
-The synchronous client is DEPRECATED - use the async client for new code.
+Provides async connection pooling and health checking.
 """
 import redis
 import redis.asyncio as aioredis
 from typing import Optional
 import logging
-import warnings
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Global Redis client instances
-_redis_client: Optional[redis.Redis] = None
+# Global async Redis client instance
 _async_redis_client: Optional[aioredis.Redis] = None
 
-
-# =============================================================================
-# ASYNC REDIS CLIENT (RECOMMENDED)
-# =============================================================================
 
 async def get_async_redis_client() -> aioredis.Redis:
     """
@@ -108,145 +99,4 @@ async def async_health_check() -> bool:
     except Exception as e:
         logger.error(f"Async Redis health check failed: {e}")
         return False
-
-
-# =============================================================================
-# SYNC REDIS CLIENT (DEPRECATED)
-# =============================================================================
-
-def get_redis_client() -> redis.Redis:
-    """
-    DEPRECATED: Use get_async_redis_client() instead.
-    
-    Get or create the synchronous Redis client singleton.
-    Uses connection pooling for better performance.
-    
-    WARNING: This function blocks the event loop and should not be used 
-    in async contexts. Use 'await get_async_redis_client()' instead.
-    
-    Returns:
-        Redis client instance
-        
-    Raises:
-        redis.ConnectionError: If unable to connect to Redis
-    """
-    warnings.warn(
-        "get_redis_client() is deprecated and blocks the event loop. "
-        "Use 'await get_async_redis_client()' instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    
-    global _redis_client
-    
-    if _redis_client is None:
-        settings = get_settings()
-        
-        try:
-            logger.info(
-                f"Initializing Redis connection to {settings.redis_host}:{settings.redis_port}"
-            )
-            
-            # Create connection pool
-            pool = redis.ConnectionPool(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db,
-                password=settings.redis_password,
-                decode_responses=True,  # Automatically decode bytes to strings
-                max_connections=10,
-                socket_connect_timeout=5,
-                socket_timeout=10,  # Must be > block timeout (5s) to prevent socket timeout during blocking reads
-            )
-            
-            # Create Redis client with connection pool
-            _redis_client = redis.Redis(connection_pool=pool)
-            
-            # Test connection
-            _redis_client.ping()
-            
-            logger.info("Redis connection established successfully")
-            
-        except redis.ConnectionError as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error initializing Redis: {e}")
-            raise
-    
-    return _redis_client
-
-
-def close_redis_client():
-    """
-    DEPRECATED: Use close_async_redis_client() instead.
-    
-    Close the synchronous Redis client connection and cleanup resources.
-    Should be called on application shutdown.
-    """
-    warnings.warn(
-        "close_redis_client() is deprecated. "
-        "Use 'await close_async_redis_client()' instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    
-    global _redis_client
-    
-    if _redis_client is not None:
-        try:
-            logger.info("Closing Redis connection")
-            _redis_client.close()
-            _redis_client = None
-            logger.info("Redis connection closed successfully")
-        except Exception as e:
-            logger.error(f"Error closing Redis connection: {e}")
-
-
-def health_check() -> bool:
-    """
-    DEPRECATED: Use async_health_check() instead.
-    
-    Check if synchronous Redis connection is healthy.
-    
-    WARNING: This function blocks the event loop. 
-    Use 'await async_health_check()' instead.
-    
-    Returns:
-        True if Redis is accessible, False otherwise
-    """
-    warnings.warn(
-        "health_check() is deprecated and blocks the event loop. "
-        "Use 'await async_health_check()' instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    
-    try:
-        # Use internal implementation to avoid double warning
-        global _redis_client
-        if _redis_client is None:
-            settings = get_settings()
-            pool = redis.ConnectionPool(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db,
-                password=settings.redis_password,
-                decode_responses=True,
-                max_connections=10,
-                socket_connect_timeout=5,
-                socket_timeout=10,
-            )
-            _redis_client = redis.Redis(connection_pool=pool)
-            _redis_client.ping()
-        else:
-            _redis_client.ping()
-        return True
-    except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        return False
-
-
-
-
 
