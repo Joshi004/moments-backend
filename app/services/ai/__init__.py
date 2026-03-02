@@ -16,7 +16,6 @@ from app.services.ai.prompt_tasks import (
 
 # AI orchestration services
 from app.services.ai.generation_service import (
-    ssh_tunnel,
     call_ai_model_async
 )
 
@@ -38,7 +37,6 @@ __all__ = [
     "strip_think_tags",
     
     # Generation service
-    "ssh_tunnel",
     "call_ai_model_async",
     
     # Refinement service

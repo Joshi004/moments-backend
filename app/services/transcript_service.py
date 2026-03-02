@@ -1,10 +1,6 @@
-import subprocess
 import time
-import psutil
-import socket
 from pathlib import Path
 from typing import Optional
-from contextlib import asynccontextmanager
 import logging
 from app.utils.logging_config import (
     log_event,
@@ -14,7 +10,7 @@ from app.utils.logging_config import (
     get_request_id
 )
 from app.utils.model_config import get_model_config
-from app.services.model_connector import connect, get_service_url
+from app.services.model_connector import get_service_url
 from app.database.session import get_session_factory
 from app.repositories import transcript_db_repository, video_db_repository
 
@@ -191,289 +187,6 @@ async def save_transcript(audio_filename: str, transcription_data: dict) -> bool
                 "duration_seconds": duration
             }
         )
-        return False
-
-
-@asynccontextmanager
-async def ssh_tunnel(service_key: str = "parakeet"):
-    """
-    Context manager for SSH tunnel lifecycle.
-    Creates tunnel on entry and closes it on exit.
-    
-    Args:
-        service_key: Service identifier ("parakeet")
-    """
-    tunnel_process = None
-    try:
-        # Create SSH tunnel
-        logger.info(f"Creating SSH tunnel for service: {service_key}...")
-        tunnel_process = await create_ssh_tunnel(service_key)
-        if tunnel_process is None:
-            raise Exception("Failed to create SSH tunnel - process exited immediately")
-        
-        # Tunnel is already verified in create_ssh_tunnel by checking port accessibility
-        logger.info("SSH tunnel established successfully")
-        yield tunnel_process
-        
-    except Exception as e:
-        logger.error(f"SSH tunnel error: {str(e)}")
-        raise
-    finally:
-        # Always close tunnel
-        if tunnel_process is not None:
-            logger.info("Closing SSH tunnel...")
-            await close_ssh_tunnel(tunnel_process, service_key)
-
-
-async def create_ssh_tunnel(service_key: str = "parakeet") -> Optional[subprocess.Popen]:
-    """
-    Create FRESH SSH tunnel to remote transcription service.
-    Always kills existing tunnels first to ensure clean state and correct config.
-    
-    Args:
-        service_key: Service identifier ("parakeet")
-    
-    Returns:
-        subprocess.Popen object if successful, None otherwise
-    """
-    operation = "ssh_tunnel_creation"
-    start_time = time.time()
-    
-    try:
-        config = await get_model_config(service_key)
-        ssh_host = config['ssh_host']
-        ssh_remote_host = config['ssh_remote_host']
-        ssh_local_port = config['ssh_local_port']
-        ssh_remote_port = config['ssh_remote_port']
-        
-        log_operation_start(
-            logger="app.services.transcript_service",
-            function="create_ssh_tunnel",
-            operation=operation,
-            message="Creating FRESH SSH tunnel (killing any existing tunnel first)",
-            context={
-                "ssh_host": ssh_host,
-                "local_port": ssh_local_port,
-                "remote_host": ssh_remote_host,
-                "remote_port": ssh_remote_port,
-                "service_key": service_key,
-                "request_id": get_request_id()
-            }
-        )
-        
-        # ALWAYS kill existing tunnel first to ensure fresh connection with correct config
-        logger.info(f"Killing any existing tunnel on port {ssh_local_port}...")
-        killed = await close_ssh_tunnel(None, service_key)  # Pass None to kill by port/config
-        if killed:
-            logger.info(f"Killed existing tunnel - will create fresh tunnel")
-            # Wait a moment for port to be released
-            time.sleep(0.5)
-        else:
-            logger.info(f"No existing tunnel found - will create fresh tunnel")
-        
-        # Create fresh tunnel
-        cmd = [
-            'ssh',
-            '-fN',  # Background, no command execution
-            '-o', 'ExitOnForwardFailure=yes',
-            '-o', 'StrictHostKeyChecking=no',  # Skip host key checking
-            '-o', 'ConnectTimeout=10',  # Connection timeout
-            '-L', f'{ssh_local_port}:{ssh_remote_host}:{ssh_remote_port}',
-            ssh_host
-        ]
-        
-        log_event(
-            level="DEBUG",
-            logger="app.services.transcript_service",
-            function="create_ssh_tunnel",
-            operation=operation,
-            event="external_call_start",
-            message="Executing SSH tunnel command",
-            context={"command": " ".join(cmd)}
-        )
-        
-        logger.info(f"Creating FRESH SSH tunnel: {' '.join(cmd)}")
-        logger.info(f"Tunnel config: localhost:{ssh_local_port} -> {ssh_remote_host}:{ssh_remote_port} via {ssh_host}")
-        
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # Wait for process to complete (with -fN, it forks and parent exits immediately)
-        stdout, stderr = process.communicate(timeout=5)
-        
-        exit_code = process.returncode
-        error_msg = stderr.decode().strip() if stderr else ''
-        
-        # With -fN, SSH forks into background and parent exits immediately
-        # Exit code 0 usually means success, non-zero means failure
-        if exit_code != 0:
-            # Non-zero exit code indicates failure
-            duration = time.time() - start_time
-            log_event(
-                level="ERROR",
-                logger="app.services.transcript_service",
-                function="create_ssh_tunnel",
-                operation=operation,
-                event="ssh_tunnel_error",
-                message="SSH tunnel creation failed",
-                context={
-                    "error": error_msg[:500],
-                    "exit_code": exit_code,
-                    "duration_seconds": duration
-                }
-            )
-            logger.error(f"SSH tunnel failed with exit code {exit_code}: {error_msg}")
-            return None
-        
-        logger.info(f"SSH tunnel command executed successfully (exit code: {exit_code})")
-        
-        # Wait a moment for tunnel to establish
-        time.sleep(2.0)
-        
-        # Find the actual SSH tunnel process that was created
-        tunnel_pid = None
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                cmdline = proc.info.get('cmdline', [])
-                if cmdline and 'ssh' in cmdline:
-                    cmd_str = ' '.join(cmdline)
-                    if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
-                        tunnel_pid = proc.info['pid']
-                        logger.info(f"Found SSH tunnel process (PID: {tunnel_pid})")
-                        break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        if not tunnel_pid:
-            logger.warning("SSH tunnel process not found after creation. Tunnel may have failed silently.")
-        
-        # Verify the tunnel is actually working by checking if port is listening
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            result = sock.connect_ex(('localhost', ssh_local_port))
-            sock.close()
-            
-            duration = time.time() - start_time
-            
-            if result == 0:
-                log_event(
-                    level="INFO",
-                    logger="app.services.transcript_service",
-                    function="create_ssh_tunnel",
-                    operation=operation,
-                    event="ssh_tunnel_complete",
-                    message="✅ Fresh SSH tunnel created and verified successfully",
-                    context={
-                        "tunnel_pid": tunnel_pid,
-                        "duration_seconds": duration
-                    }
-                )
-                logger.info(f"✅ Fresh SSH tunnel verified: port {ssh_local_port} is listening and accessible")
-                # Return the process object (will be used for tracking, actual cleanup uses PID)
-                return process
-            else:
-                log_event(
-                    level="ERROR",
-                    logger="app.services.transcript_service",
-                    function="create_ssh_tunnel",
-                    operation=operation,
-                    event="ssh_tunnel_error",
-                    message="SSH tunnel port not accessible after creation",
-                    context={
-                        "duration_seconds": duration
-                    }
-                )
-                logger.error(f"❌ SSH tunnel port {ssh_local_port} is not accessible (connection test failed with code {result})")
-                if not tunnel_pid:
-                    logger.error("SSH tunnel process is not running. Check SSH configuration and remote service status.")
-                else:
-                    logger.error("SSH tunnel process is running but port is not accessible. Check if remote service is running.")
-                return None
-        except Exception as e:
-            duration = time.time() - start_time
-            log_operation_error(
-                logger="app.services.transcript_service",
-                function="create_ssh_tunnel",
-                operation=operation,
-                error=e,
-                message="Could not verify tunnel port",
-                context={"duration_seconds": duration}
-            )
-            logger.error(f"Could not verify tunnel port: {str(e)}")
-            return None
-            
-    except Exception as e:
-        duration = time.time() - start_time
-        log_operation_error(
-            logger="app.services.transcript_service",
-            function="create_ssh_tunnel",
-            operation=operation,
-            error=e,
-            message="Error creating SSH tunnel",
-            context={"duration_seconds": duration}
-        )
-        logger.error(f"Error creating SSH tunnel: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return None
-
-
-async def close_ssh_tunnel(tunnel_process: Optional[subprocess.Popen] = None, service_key: str = "parakeet") -> bool:
-    """
-    Close SSH tunnel by killing the SSH process.
-    
-    Args:
-        tunnel_process: Optional subprocess.Popen object. If None, finds process by port.
-        service_key: Service identifier ("parakeet")
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        config = await get_model_config(service_key)
-        ssh_host = config['ssh_host']
-        ssh_remote_host = config['ssh_remote_host']
-        ssh_remote_port = config['ssh_remote_port']
-        
-        if tunnel_process is not None:
-            # Kill the specific process
-            try:
-                tunnel_process.terminate()
-                tunnel_process.wait(timeout=5)
-                logger.info(f"SSH tunnel closed (PID: {tunnel_process.pid})")
-                return True
-            except subprocess.TimeoutExpired:
-                tunnel_process.kill()
-                logger.info(f"SSH tunnel force-killed (PID: {tunnel_process.pid})")
-                return True
-        else:
-            # Find and kill SSH processes using the tunnel port
-            killed = False
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    cmdline = proc.info.get('cmdline', [])
-                    if cmdline and 'ssh' in cmdline:
-                        # Check if this is our tunnel command
-                        cmd_str = ' '.join(cmdline)
-                        if f':{ssh_remote_host}:{ssh_remote_port}' in cmd_str and ssh_host in cmd_str:
-                            proc.terminate()
-                            try:
-                                proc.wait(timeout=5)
-                            except psutil.TimeoutExpired:
-                                proc.kill()
-                            logger.info(f"SSH tunnel closed (PID: {proc.info['pid']})")
-                            killed = True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            
-            return killed
-            
-    except Exception as e:
-        logger.error(f"Error closing SSH tunnel: {str(e)}")
         return False
 
 
@@ -671,33 +384,31 @@ async def process_transcription(
             }
         )
         
-        # Create SSH tunnel
-        async with connect("parakeet"):
-            # Call transcription service asynchronously
-            transcription_result = await call_transcription_service_async(audio_signed_url)
-            
-            if transcription_result is None:
-                raise Exception("Transcription service returned no result")
-            
-            # Save transcript to database
-            success = await save_transcript(audio_filename, transcription_result)
-            
-            if not success:
-                raise Exception("Failed to save transcript")
-            
-            duration = time.time() - start_time
-            log_operation_complete(
-                logger="app.services.transcript_service",
-                function="process_transcription",
-                operation=operation,
-                message="Transcription processing completed successfully (async)",
-                context={
-                    "video_id": video_id,
-                    "duration_seconds": duration
-                }
-            )
-            
-            return transcription_result
+        # Call transcription service asynchronously
+        transcription_result = await call_transcription_service_async(audio_signed_url)
+        
+        if transcription_result is None:
+            raise Exception("Transcription service returned no result")
+        
+        # Save transcript to database
+        success = await save_transcript(audio_filename, transcription_result)
+        
+        if not success:
+            raise Exception("Failed to save transcript")
+        
+        duration = time.time() - start_time
+        log_operation_complete(
+            logger="app.services.transcript_service",
+            function="process_transcription",
+            operation=operation,
+            message="Transcription processing completed successfully (async)",
+            context={
+                "video_id": video_id,
+                "duration_seconds": duration
+            }
+        )
+        
+        return transcription_result
     
     except Exception as e:
         duration = time.time() - start_time

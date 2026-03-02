@@ -34,69 +34,46 @@ VIDEO_ENCODING_CONFIG = {
     "audio_bitrate": "128k",  # Audio bitrate
 }
 
-# Default model configurations - used ONLY for seeding Redis on first startup
-# To update configurations at runtime, use the Admin UI (/admin) or CLI tool
+# Default model configurations - used ONLY for seeding Redis on first startup.
+# host and port default to localhost values (for tunnel-based local dev).
+# Override via env vars (e.g. MINIMAX_HOST, MINIMAX_PORT) or Admin UI at runtime.
+# To update configurations at runtime, use the Admin UI (/admin) or CLI tool.
 DEFAULT_MODELS = {
     "minimax": {
         "name": "MiniMax",
-        "model_id": None,  # MiniMax doesn't require explicit model_id in the request
-        "ssh_host": "naresh@85.234.64.146",
-        "ssh_remote_host": "worker-7",
-        "ssh_local_port": 8007,
-        "ssh_remote_port": 7104,
+        "model_id": None,
+        "host": "localhost",
+        "port": 8007,
         "supports_video": False,
-        "connection_mode": "tunnel",
-        "direct_host": "100.80.5.15",
-        "direct_port": 9084,
     },
     "qwen": {
         "name": "Qwen3-VL",
         "model_id": "qwen3-vl-235b-thinking",
-        "ssh_host": "naresh@85.234.64.44",
-        "ssh_remote_host": "worker-9",
-        "ssh_local_port": 6101,
-        "ssh_remote_port": 7001,
+        "host": "localhost",
+        "port": 6101,
         "supports_video": False,
-        "connection_mode": "tunnel",
-        "direct_host": None,
-        "direct_port": None,
     },
     "qwen3_omni": {
         "name": "Qwen3-Omini",
-        "model_id": None,  # Qwen3-Omini doesn't require explicit model_id in the request
-        "ssh_host": "naresh@85.234.64.44",
-        "ssh_remote_host": "worker-9",
-        "ssh_local_port": 7101,
-        "ssh_remote_port": 8002,
+        "model_id": None,
+        "host": "localhost",
+        "port": 7101,
         "supports_video": False,
         "top_p": 0.95,
         "top_k": 20,
-        "connection_mode": "tunnel",
-        "direct_host": None,
-        "direct_port": None,
     },
     "qwen3_vl_fp8": {
         "name": "Qwen3-VL-FP8",
-        "model_id": None,  # Qwen3-VL-FP8 doesn't require explicit model_id in the request
-        "ssh_host": "naresh@85.234.64.146",
-        "ssh_remote_host": "worker-16",
-        "ssh_local_port": 6010,
-        "ssh_remote_port": 8010,
+        "model_id": None,
+        "host": "localhost",
+        "port": 6010,
         "supports_video": True,
-        "connection_mode": "tunnel",
-        "direct_host": "100.90.255.107",
-        "direct_port": 8010,
     },
     "parakeet": {
         "name": "Parakeet",
-        "ssh_host": "naresh@85.234.64.146",
-        "ssh_remote_host": "worker-7",
-        "ssh_local_port": 6106,
-        "ssh_remote_port": 8006,
+        "host": "localhost",
+        "port": 6106,
         "supports_video": False,
-        "connection_mode": "tunnel",
-        "direct_host": "100.80.5.15",
-        "direct_port": 8006,
     }
 }
 

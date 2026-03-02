@@ -22,30 +22,25 @@ class Settings(BaseSettings):
     temp_cleanup_interval_hours: float = 6.0    # Run cleanup every 6 hours
     temp_max_age_hours: float = 24.0            # Delete files older than 24 hours
     
-    # SSH Tunnel Configuration
-    ssh_user: str = "naresh"
-    ssh_host: str = "85.234.64.44"
-    ssh_remote_host: str = "worker-9"
-    
     # Model: MiniMax
     minimax_name: str = "MiniMax"
     minimax_model_id: Optional[str] = None
-    minimax_local_port: int = 8007
-    minimax_remote_port: int = 7104
+    minimax_host: str = "localhost"
+    minimax_port: int = 8007
     minimax_supports_video: bool = False
     
     # Model: Qwen3-VL
     qwen_name: str = "Qwen3-VL"
     qwen_model_id: str = "qwen3-vl-235b-thinking"
-    qwen_local_port: int = 6101
-    qwen_remote_port: int = 7001
+    qwen_host: str = "localhost"
+    qwen_port: int = 6101
     qwen_supports_video: bool = False
     
     # Model: Qwen3-Omni
     qwen3_omni_name: str = "Qwen3-Omini"
     qwen3_omni_model_id: Optional[str] = None
-    qwen3_omni_local_port: int = 7101
-    qwen3_omni_remote_port: int = 8002
+    qwen3_omni_host: str = "localhost"
+    qwen3_omni_port: int = 7101
     qwen3_omni_supports_video: bool = False
     qwen3_omni_top_p: float = 0.95
     qwen3_omni_top_k: int = 20
@@ -53,14 +48,14 @@ class Settings(BaseSettings):
     # Model: Qwen3-VL-FP8
     qwen3_vl_fp8_name: str = "Qwen3-VL-FP8"
     qwen3_vl_fp8_model_id: Optional[str] = None
-    qwen3_vl_fp8_local_port: int = 6010
-    qwen3_vl_fp8_remote_port: int = 8010
+    qwen3_vl_fp8_host: str = "localhost"
+    qwen3_vl_fp8_port: int = 6010
     qwen3_vl_fp8_supports_video: bool = True
     
     # Service: Parakeet (Transcription)
     parakeet_name: str = "Parakeet"
-    parakeet_local_port: int = 6106
-    parakeet_remote_port: int = 8006
+    parakeet_host: str = "localhost"
+    parakeet_port: int = 6106
     
     # Video Clipping Configuration
     clip_padding: float = 30.0  # Padding in seconds
@@ -88,6 +83,10 @@ class Settings(BaseSettings):
     job_lock_ttl: int = 900      # 15 minutes
     job_result_ttl: int = 30     # 30 seconds post-completion
     
+    # Tunnel mode (local dev without Tailscale VPN)
+    # When true, start_backend.sh creates SSH tunnels automatically.
+    use_tunnels: bool = False
+
     # Container identification
     container_id: str = os.getenv("HOSTNAME", f"backend-{os.getpid()}")
     
@@ -166,80 +165,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
-    
-    # Helper methods to maintain compatibility with old API
-    def get_model_config(self, model_key: str) -> dict:
-        """Get configuration for a specific model."""
-        models = {
-            "minimax": {
-                "name": self.minimax_name,
-                "model_id": self.minimax_model_id,
-                "ssh_host": f"{self.ssh_user}@{self.ssh_host}",
-                "ssh_remote_host": self.ssh_remote_host,
-                "ssh_local_port": self.minimax_local_port,
-                "ssh_remote_port": self.minimax_remote_port,
-                "supports_video": self.minimax_supports_video,
-            },
-            "qwen": {
-                "name": self.qwen_name,
-                "model_id": self.qwen_model_id,
-                "ssh_host": f"{self.ssh_user}@{self.ssh_host}",
-                "ssh_remote_host": self.ssh_remote_host,
-                "ssh_local_port": self.qwen_local_port,
-                "ssh_remote_port": self.qwen_remote_port,
-                "supports_video": self.qwen_supports_video,
-            },
-            "qwen3_omni": {
-                "name": self.qwen3_omni_name,
-                "model_id": self.qwen3_omni_model_id,
-                "ssh_host": f"{self.ssh_user}@{self.ssh_host}",
-                "ssh_remote_host": self.ssh_remote_host,
-                "ssh_local_port": self.qwen3_omni_local_port,
-                "ssh_remote_port": self.qwen3_omni_remote_port,
-                "supports_video": self.qwen3_omni_supports_video,
-                "top_p": self.qwen3_omni_top_p,
-                "top_k": self.qwen3_omni_top_k,
-            },
-            "qwen3_vl_fp8": {
-                "name": self.qwen3_vl_fp8_name,
-                "model_id": self.qwen3_vl_fp8_model_id,
-                "ssh_host": f"{self.ssh_user}@{self.ssh_host}",
-                "ssh_remote_host": self.ssh_remote_host,
-                "ssh_local_port": self.qwen3_vl_fp8_local_port,
-                "ssh_remote_port": self.qwen3_vl_fp8_remote_port,
-                "supports_video": self.qwen3_vl_fp8_supports_video,
-            },
-            "parakeet": {
-                "name": self.parakeet_name,
-                "ssh_host": f"{self.ssh_user}@{self.ssh_host}",
-                "ssh_remote_host": self.ssh_remote_host,
-                "ssh_local_port": self.parakeet_local_port,
-                "ssh_remote_port": self.parakeet_remote_port,
-            }
-        }
-        
-        if model_key not in models:
-            raise ValueError(f"Unknown model: {model_key}. Available models: {list(models.keys())}")
-        
-        return models[model_key]
-    
-    def get_model_url(self, model_key: str) -> str:
-        """Get the local URL for a model API endpoint."""
-        config = self.get_model_config(model_key)
-        return f"http://localhost:{config['ssh_local_port']}/v1/chat/completions"
-    
-    def get_transcription_service_url(self) -> str:
-        """Get the local URL for the transcription service endpoint."""
-        config = self.get_model_config("parakeet")
-        return f"http://localhost:{config['ssh_local_port']}/transcribe"
-    
-    def model_supports_video(self, model_key: str) -> bool:
-        """Check if a model supports video input."""
-        try:
-            config = self.get_model_config(model_key)
-            return config.get('supports_video', False)
-        except ValueError:
-            return False
     
 
 

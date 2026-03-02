@@ -2,81 +2,26 @@
 Pydantic schemas for admin API endpoints.
 Used for model configuration management.
 """
-from pydantic import BaseModel, Field, validator, model_validator
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
 
 
 class ModelConfigBase(BaseModel):
-    """Base schema shared by create, update, and response models.
-
-    All connection fields are Optional here so that response serialization
-    never fails even when Redis contains legacy or inconsistent data.
-    Strict mode-conditional validation lives only on ModelConfigCreate.
-    """
+    """Base schema shared by create, update, and response models."""
 
     name: str = Field(..., description="Display name for the model")
     model_id: Optional[str] = Field(None, description="Model identifier for API calls")
     supports_video: bool = Field(False, description="Whether model supports video input")
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Sampling top_p parameter")
     top_k: Optional[int] = Field(None, ge=1, description="Sampling top_k parameter")
-    connection_mode: Optional[str] = Field("tunnel", description="Connection mode: 'tunnel' or 'direct'")
-
-    # Tunnel fields
-    ssh_host: Optional[str] = Field(None, description="SSH jump host (user@host)")
-    ssh_remote_host: Optional[str] = Field(None, description="SLURM worker hostname")
-    ssh_local_port: Optional[int] = Field(None, ge=1024, le=65535, description="Local tunnel port")
-    ssh_remote_port: Optional[int] = Field(None, ge=1024, le=65535, description="Remote service port")
-
-    # Direct fields
-    direct_host: Optional[str] = Field(None, description="Direct server hostname or IP (for direct mode)")
-    direct_port: Optional[int] = Field(None, ge=1, le=65535, description="Direct server port (for direct mode)")
-
-    @validator('ssh_host')
-    def validate_ssh_host(cls, v):
-        if v is not None and '@' not in v:
-            raise ValueError("SSH host must be in format 'user@host'")
-        return v
-
-    @validator('ssh_remote_host')
-    def validate_remote_host(cls, v):
-        if v is not None:
-            if not v.strip():
-                raise ValueError("SSH remote host cannot be empty")
-            return v.strip()
-        return v
+    host: str = Field(..., description="Host the application calls (IP, hostname, or localhost)")
+    port: int = Field(..., ge=1, le=65535, description="Port the application calls")
 
 
 class ModelConfigCreate(ModelConfigBase):
-    """Schema for creating a new model configuration.
-
-    Enforces that all fields required by the active connection_mode are present.
-    """
-
-    @model_validator(mode='before')
-    @classmethod
-    def validate_mode_fields(cls, values):
-        """Enforce mode-specific required fields on write operations."""
-        mode = values.get('connection_mode', 'tunnel')
-
-        if mode == 'tunnel':
-            missing = [
-                f for f in ('ssh_host', 'ssh_remote_host', 'ssh_local_port', 'ssh_remote_port')
-                if not values.get(f)
-            ]
-            if missing:
-                raise ValueError(f"Tunnel mode requires: {', '.join(missing)}")
-        elif mode == 'direct':
-            missing = [
-                f for f in ('direct_host', 'direct_port')
-                if not values.get(f)
-            ]
-            if missing:
-                raise ValueError(f"Direct mode requires: {', '.join(missing)}")
-        else:
-            raise ValueError("connection_mode must be 'tunnel' or 'direct'")
-
-        return values
+    """Schema for creating a new model configuration."""
+    pass
 
 
 class ModelConfigUpdate(BaseModel):
@@ -87,36 +32,20 @@ class ModelConfigUpdate(BaseModel):
     supports_video: Optional[bool] = None
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
     top_k: Optional[int] = Field(None, ge=1)
-    connection_mode: Optional[str] = None
-    ssh_host: Optional[str] = None
-    ssh_remote_host: Optional[str] = None
-    ssh_local_port: Optional[int] = Field(None, ge=1024, le=65535)
-    ssh_remote_port: Optional[int] = Field(None, ge=1024, le=65535)
-    direct_host: Optional[str] = None
-    direct_port: Optional[int] = Field(None, ge=1, le=65535)
-
-    @validator('ssh_host')
-    def validate_ssh_host(cls, v):
-        if v is not None and '@' not in v:
-            raise ValueError("SSH host must be in format 'user@host'")
-        return v
-
-    @validator('ssh_remote_host')
-    def validate_remote_host(cls, v):
-        if v is not None and not v.strip():
-            raise ValueError("SSH remote host cannot be empty")
-        return v.strip() if v else None
+    host: Optional[str] = None
+    port: Optional[int] = Field(None, ge=1, le=65535)
 
 
 class ModelConfigResponse(ModelConfigBase):
-    """Schema for model configuration responses.
-
-    Intentionally permissive — displays whatever is stored in Redis
-    without enforcing mode-specific field requirements.
-    """
+    """Schema for model configuration responses."""
 
     model_key: str = Field(..., description="Model identifier key")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    # Override base required fields to be optional — Redis data seeded before
+    # these fields were introduced may legitimately not have them.
+    host: Optional[str] = Field(None, description="Host the application calls")
+    port: Optional[int] = Field(None, ge=1, le=65535, description="Port the application calls")
 
     class Config:
         from_attributes = True

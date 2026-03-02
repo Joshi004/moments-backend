@@ -193,6 +193,19 @@ echo -e "${GREEN}========================================${NC}"
 # Always cleanup before starting
 kill_existing_processes
 
+# Start SSH tunnels if USE_TUNNELS=true (for local dev without VPN)
+USE_TUNNELS="${USE_TUNNELS:-false}"
+if [[ "$USE_TUNNELS" == "true" ]]; then
+    TUNNELS_SCRIPT="$(cd "$SCRIPT_DIR/.." && pwd)/scripts/manage_tunnels.sh"
+    if [[ -x "$TUNNELS_SCRIPT" ]]; then
+        echo -e "${BLUE}[TUNNELS]${NC} USE_TUNNELS=true — starting SSH tunnels..."
+        "$TUNNELS_SCRIPT" start
+        echo -e "${GREEN}[TUNNELS]${NC} SSH tunnels started"
+    else
+        echo -e "${YELLOW}[TUNNELS]${NC} USE_TUNNELS=true but $TUNNELS_SCRIPT not found or not executable — skipping tunnels"
+    fi
+fi
+
 # Run based on mode
 case $MODE in
     all)
