@@ -1,0 +1,67 @@
+# ============================================================
+# moments-backend/.dockerignore
+# Prevents sensitive files and build artifacts from entering
+# the Docker build context.
+# ============================================================
+
+# Python virtual environment (dependencies installed inside image via pip)
+venv/
+.venv/
+
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Git
+.git/
+.gitignore
+
+# Environment / secrets — NEVER bake into the image
+.env
+.env.*
+
+# Logs — written at runtime, not needed at build time
+logs/
+*.log
+*.log.json
+
+# Backups
+backups/
+
+# Temp processing directory — created inside the image via mkdir
+temp/
+
+# PID files
+.pids/
+worker.pid
+
+# GCS credentials — mounted as a volume at runtime
+credentials/
+
+# Static files served from GCS, not from the container
+static/
+
+# Documentation
+docs/
+*.md
+
+# Scripts used for local dev (tunnel management, etc.) — not needed in image
+scripts/
+
+# IDE
+.cursor/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Large archive/backup files that must never enter the build context
+*.tar.gz
+*.tar.bz2
+*.zip
+
+# Ruff cache
+.ruff_cache/
