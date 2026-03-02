@@ -25,15 +25,15 @@ class Settings(BaseSettings):
     # Model: MiniMax
     minimax_name: str = "MiniMax"
     minimax_model_id: Optional[str] = None
-    minimax_host: str = "localhost"
-    minimax_port: int = 8007
+    minimax_host: str = "100.80.5.15"
+    minimax_port: int = 9084
     minimax_supports_video: bool = False
     
     # Model: Qwen3-VL
     qwen_name: str = "Qwen3-VL"
     qwen_model_id: str = "qwen3-vl-235b-thinking"
-    qwen_host: str = "localhost"
-    qwen_port: int = 6101
+    qwen_host: str = "100.90.255.107"
+    qwen_port: int = 8010
     qwen_supports_video: bool = False
     
     # Model: Qwen3-Omni
@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     
     # Service: Parakeet (Transcription)
     parakeet_name: str = "Parakeet"
-    parakeet_host: str = "localhost"
-    parakeet_port: int = 6106
+    parakeet_host: str = "100.80.5.15"
+    parakeet_port: int = 8006
     
     # Video Clipping Configuration
     clip_padding: float = 30.0  # Padding in seconds

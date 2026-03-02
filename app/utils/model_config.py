@@ -42,8 +42,8 @@ DEFAULT_MODELS = {
     "minimax": {
         "name": "MiniMax",
         "model_id": None,
-        "host": "localhost",
-        "port": 8007,
+        "host": "100.80.5.15",
+        "port": 9084,
         "supports_video": False,
     },
     "qwen": {
@@ -65,14 +65,14 @@ DEFAULT_MODELS = {
     "qwen3_vl_fp8": {
         "name": "Qwen3-VL-FP8",
         "model_id": None,
-        "host": "localhost",
-        "port": 6010,
+        "host": "100.90.255.107",
+        "port": 8010,
         "supports_video": True,
     },
     "parakeet": {
         "name": "Parakeet",
-        "host": "localhost",
-        "port": 6106,
+        "host": "100.80.5.15",
+        "port": 8006,
         "supports_video": False,
     }
 }
