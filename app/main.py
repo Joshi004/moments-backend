@@ -4,6 +4,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.redis import get_async_redis_client, close_async_redis_client, async_health_check
 from app.middleware.logging import RequestLoggingMiddleware
@@ -21,10 +22,13 @@ app = FastAPI(title="Video Moments API", version="1.0.0")
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(ErrorHandlingMiddleware)
 
-# Configure CORS
+# Configure CORS — origins read from CORS_ORIGINS env var (comma-separated)
+_settings = get_settings()
+_cors_origins = [o.strip() for o in _settings.cors_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

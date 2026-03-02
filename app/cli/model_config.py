@@ -12,9 +12,10 @@ Usage:
 """
 import sys
 import argparse
+from pathlib import Path
 
-# Ensure app is in path
-sys.path.insert(0, '/Users/nareshjoshi/Documents/TetherWorkspace/VideoMoments/moments-backend')
+# Ensure app is in path — resolves to moments-backend/ regardless of where the CLI is invoked from
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from app.services.config_registry import get_config_registry, ModelConfigNotFoundError
 from app.utils.model_config import seed_default_configs, DEFAULT_MODELS

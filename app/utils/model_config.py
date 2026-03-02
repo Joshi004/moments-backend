@@ -49,8 +49,8 @@ DEFAULT_MODELS = {
     "qwen": {
         "name": "Qwen3-VL",
         "model_id": "qwen3-vl-235b-thinking",
-        "host": "localhost",
-        "port": 6101,
+        "host": "100.90.255.107",
+        "port": 8010,
         "supports_video": False,
     },
     "qwen3_omni": {
@@ -173,18 +173,36 @@ def get_parallel_workers() -> int:
 async def seed_default_configs(force: bool = False) -> int:
     """
     Seed Redis with default model configurations.
-    
+
+    Merges env var overrides from Settings before seeding — e.g. MINIMAX_HOST
+    in .env takes precedence over the DEFAULT_MODELS hardcoded value.
+
+    Priority: env var (Settings) > DEFAULT_MODELS hardcoded value.
+
     Args:
         force: If True, overwrite existing configs
-        
+
     Returns:
         Number of configs seeded
     """
+    from app.core.config import get_settings
     from app.services.config_registry import get_config_registry
-    
+
+    settings = get_settings()
     registry = get_config_registry()
-    count = await registry.seed_from_defaults(DEFAULT_MODELS, force=force)
-    
+
+    models_with_overrides = {}
+    for key, config in DEFAULT_MODELS.items():
+        merged = config.copy()
+        host_attr = f"{key}_host"
+        port_attr = f"{key}_port"
+        if hasattr(settings, host_attr):
+            merged["host"] = getattr(settings, host_attr)
+        if hasattr(settings, port_attr):
+            merged["port"] = getattr(settings, port_attr)
+        models_with_overrides[key] = merged
+
+    count = await registry.seed_from_defaults(models_with_overrides, force=force)
     logger.info(f"Seeded {count} model configs to Redis (force={force})")
     return count
 

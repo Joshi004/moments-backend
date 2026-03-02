@@ -85,6 +85,12 @@ fi
 # Export BACKEND_PORT environment variable
 export BACKEND_PORT
 
+# ---- Local dev defaults ----
+# These provide user-specific values for settings that have generic defaults
+# in config.py. They are overridden by .env file, shell env, or Docker Compose.
+export DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://nareshjoshi@localhost:5432/vision_ai}"
+export DATABASE_SYNC_URL="${DATABASE_SYNC_URL:-postgresql+psycopg2://nareshjoshi@localhost:5432/vision_ai}"
+
 # Write backend port to config file for frontend to read
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$PROJECT_ROOT/.backend-port"

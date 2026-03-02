@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     # Model: Qwen3-VL-FP8
     qwen3_vl_fp8_name: str = "Qwen3-VL-FP8"
     qwen3_vl_fp8_model_id: Optional[str] = None
-    qwen3_vl_fp8_host: str = "localhost"
-    qwen3_vl_fp8_port: int = 6010
+    qwen3_vl_fp8_host: str = "100.90.255.107"
+    qwen3_vl_fp8_port: int = 8010
     qwen3_vl_fp8_supports_video: bool = True
     
     # Service: Parakeet (Transcription)
@@ -66,14 +66,14 @@ class Settings(BaseSettings):
     duration_tolerance: float = 0.5  # Tolerance for transcript-video duration matching
     
     # Redis Configuration
-    redis_host: str = "127.0.0.1"
+    redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
     redis_password: Optional[str] = None
     
     # Database Configuration (PostgreSQL)
-    database_url: str = "postgresql+asyncpg://nareshjoshi@localhost:5432/vision_ai"
-    database_sync_url: str = "postgresql+psycopg2://nareshjoshi@localhost:5432/vision_ai"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/vision_ai"
+    database_sync_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/vision_ai"
     database_pool_size: int = 5
     database_max_overflow: int = 10
     database_pool_timeout: int = 30
@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     # Tunnel mode (local dev without Tailscale VPN)
     # When true, start_backend.sh creates SSH tunnels automatically.
     use_tunnels: bool = False
+
+    # CORS Configuration
+    # Comma-separated list of allowed origins. Default "*" allows all origins.
+    # Example: "http://localhost:3005,https://staging.example.com"
+    cors_origins: str = "*"
 
     # Container identification
     container_id: str = os.getenv("HOSTNAME", f"backend-{os.getpid()}")
