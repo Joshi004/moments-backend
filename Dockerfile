@@ -42,6 +42,9 @@ COPY . .
 # and audio/clip extraction services (configurable via TEMP_BASE_DIR env var).
 RUN mkdir -p temp/videos temp/audio temp/clips temp/thumbnails
 
+# entrypoint.sh is copied in by the COPY . . above; make it executable.
+RUN chmod +x /app/entrypoint.sh
+
 # ---- API target: FastAPI via Uvicorn ----
 FROM base AS api
 
@@ -54,6 +57,7 @@ ENV RUN_PIPELINE_WORKER=false
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:7005/health || exit 1
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7005"]
 
 # ---- Worker target: Redis Streams pipeline consumer ----
@@ -62,4 +66,5 @@ FROM base AS worker
 # No EXPOSE — the worker has no HTTP server; it reads from Redis Streams.
 # Migrations are handled by the API container (set RUN_MIGRATIONS=false in compose).
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "run_worker.py"]

@@ -6,6 +6,7 @@ Provides helpers for consistent structured logging across the application.
 import json
 import logging
 import logging.handlers
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -141,9 +142,11 @@ class HumanReadableFormatter(logging.Formatter):
 
 def setup_logging(log_level: str = "INFO", log_dir: Optional[Path] = None) -> None:
     """
-    Initialize the logging system with dual file output:
-    - Structured JSON logs for LLM analysis
-    - Unstructured human-readable logs for developers
+    Initialize the logging system with dual file output and console output:
+    - Structured JSON logs for LLM analysis (file)
+    - Unstructured human-readable logs for developers (file)
+    - Human-readable logs to stdout so `docker logs` and container runtimes
+      capture application output without needing to read container-internal files
     
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -193,9 +196,16 @@ def setup_logging(log_level: str = "INFO", log_dir: Optional[Path] = None) -> No
     unstructured_file_handler.setLevel(getattr(logging, log_level.upper()))
     unstructured_file_handler.setFormatter(HumanReadableFormatter())
     
-    # Add handlers (no console handler - logs only go to files)
+    # Console (stdout) handler — required for `docker logs` / container runtimes
+    # to capture application output. Uses the human-readable formatter so logs
+    # are readable when tailing containers in development and staging.
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, log_level.upper()))
+    console_handler.setFormatter(HumanReadableFormatter())
+
     root_logger.addHandler(json_file_handler)
     root_logger.addHandler(unstructured_file_handler)
+    root_logger.addHandler(console_handler)
     
     _logger = root_logger
     
