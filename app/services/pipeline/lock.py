@@ -13,9 +13,6 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Lock TTL - 30 minutes
-LOCK_TTL = 1800
-
 
 def _get_lock_key(video_id: str) -> str:
     """Get Redis key for pipeline lock."""
@@ -27,41 +24,70 @@ def _get_cancel_key(video_id: str) -> str:
     return f"pipeline:{video_id}:cancel"
 
 
-async def acquire_lock(video_id: str, request_id: str) -> bool:
+async def acquire_lock(video_id: str, request_id: str, consumer_name: Optional[str] = None) -> bool:
     """
     Acquire exclusive lock for pipeline processing.
     Uses Redis SET NX (set if not exists) for atomic acquisition.
-    
+
     Args:
         video_id: Video identifier
         request_id: Unique request ID for this pipeline run
-    
+        consumer_name: Worker consumer name used to derive the heartbeat key.
+                       When provided, the lock stores a reference to the worker's
+                       heartbeat key so other workers can detect crashes.
+
     Returns:
         True if lock acquired, False if already locked
     """
     redis = await get_async_redis_client()
+    settings = get_settings()
     lock_key = _get_lock_key(video_id)
-    
-    lock_data = {
+
+    lock_data: Dict = {
         "request_id": request_id,
         "locked_at": time.time(),
-        "container_id": get_settings().container_id,
+        "container_id": settings.container_id,
     }
-    
+
+    if consumer_name:
+        lock_data["heartbeat_key"] = f"worker:{consumer_name}:heartbeat"
+
     # Try to set lock with NX (only if not exists) and TTL
     success = await redis.set(
         lock_key,
         json.dumps(lock_data),
-        nx=True,  # Only set if key doesn't exist
-        ex=LOCK_TTL  # TTL in seconds
+        nx=True,
+        ex=settings.pipeline_lock_ttl,
     )
-    
+
     if success:
         logger.info(f"Acquired pipeline lock for {video_id}: {request_id}")
         return True
     else:
         logger.warning(f"Failed to acquire lock for {video_id} (already locked)")
         return False
+
+
+async def get_lock_data(video_id: str) -> Optional[Dict]:
+    """
+    Return the parsed lock data for a video, or None if no lock exists.
+
+    Args:
+        video_id: Video identifier
+
+    Returns:
+        Lock data dict (with keys: request_id, locked_at, container_id,
+        heartbeat_key) or None
+    """
+    redis = await get_async_redis_client()
+    raw = await redis.get(_get_lock_key(video_id))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error(f"Failed to decode lock data for {video_id}")
+        return None
 
 
 async def release_lock(video_id: str) -> None:
@@ -75,6 +101,21 @@ async def release_lock(video_id: str) -> None:
     lock_key = _get_lock_key(video_id)
     await redis.delete(lock_key)
     logger.info(f"Released pipeline lock for {video_id}")
+
+
+async def force_release_lock(video_id: str) -> None:
+    """
+    Unconditionally delete the pipeline lock.
+
+    Used during crash recovery when the original lock owner's heartbeat has
+    expired. Unlike release_lock() this is explicitly named to signal intent.
+
+    Args:
+        video_id: Video identifier
+    """
+    redis = await get_async_redis_client()
+    await redis.delete(_get_lock_key(video_id))
+    logger.warning(f"Force-released orphaned pipeline lock for {video_id}")
 
 
 async def is_locked(video_id: str) -> Tuple[bool, Optional[Dict]]:
@@ -115,10 +156,10 @@ async def refresh_lock(video_id: str) -> bool:
     """
     redis = await get_async_redis_client()
     lock_key = _get_lock_key(video_id)
-    
-    # Check if lock exists
+    settings = get_settings()
+
     if await redis.exists(lock_key):
-        await redis.expire(lock_key, LOCK_TTL)
+        await redis.expire(lock_key, settings.pipeline_lock_ttl)
         logger.debug(f"Refreshed pipeline lock for {video_id}")
         return True
     

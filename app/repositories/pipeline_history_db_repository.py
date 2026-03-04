@@ -5,7 +5,7 @@ Follows the module-level function pattern of other db repositories.
 from datetime import datetime
 from typing import Optional, List
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models.pipeline_history import PipelineHistory
@@ -208,6 +208,38 @@ async def get_by_video_identifier(
     if status_filter:
         stmt = stmt.where(PipelineHistory.status == status_filter)
 
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_orphaned_running(
+    session: AsyncSession,
+    older_than: datetime,
+) -> List[PipelineHistory]:
+    """
+    Return pipeline_history records that are still in 'running' state and
+    were started before the given cutoff timestamp.
+
+    Used on worker startup to detect records that were never finalised because
+    the worker process was killed before it could update the DB.
+
+    Args:
+        session: Async database session
+        older_than: Cutoff datetime; only records started before this are returned
+
+    Returns:
+        List of orphaned PipelineHistory instances
+    """
+    stmt = (
+        select(PipelineHistory)
+        .where(
+            and_(
+                PipelineHistory.status == "running",
+                PipelineHistory.started_at < older_than,
+            )
+        )
+        .order_by(PipelineHistory.started_at.asc())
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

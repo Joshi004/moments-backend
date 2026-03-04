@@ -9,6 +9,7 @@ import time
 import logging
 from typing import Optional, Dict, Any
 from app.core.redis import get_async_redis_client
+from app.core.config import get_settings
 from app.models.pipeline_schemas import PipelineStage, StageStatus
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,8 @@ async def initialize_status(video_id: str, request_id: str, config: dict) -> Non
     status_data["clip_upload_percentage"] = "0"
     
     await redis.hset(status_key, mapping=status_data)
+    # Set TTL so Redis auto-cleans this hash if the worker crashes and never refreshes it.
+    await redis.expire(status_key, get_settings().status_ttl_seconds)
     logger.info(f"Initialized pipeline status for {video_id}: {request_id}")
 
 
@@ -425,3 +428,60 @@ async def set_stage_error(video_id: str, stage: PipelineStage, error: str) -> No
     
     await redis.hset(status_key, mapping=updates)
     logger.error(f"Set error on stage {stage.value} for {video_id}: {error}")
+
+
+async def refresh_status_ttl(video_id: str) -> bool:
+    """
+    Reset the TTL on the active status hash back to the configured value.
+
+    Called after each pipeline stage completes (alongside refresh_lock) so the
+    TTL countdown resets. If the worker crashes, the TTL keeps counting down and
+    Redis eventually auto-deletes the hash — the frontend then sees 'not_running'.
+
+    Args:
+        video_id: Video identifier
+
+    Returns:
+        True if TTL was refreshed (key exists), False otherwise
+    """
+    redis = await get_async_redis_client()
+    status_key = _get_status_key(video_id)
+    settings = get_settings()
+
+    if await redis.exists(status_key):
+        await redis.expire(status_key, settings.status_ttl_seconds)
+        logger.debug(f"Refreshed status TTL for {video_id} ({settings.status_ttl_seconds}s)")
+        return True
+
+    return False
+
+
+async def cleanup_orphaned_status(video_id: str) -> None:
+    """
+    Mark an orphaned active status hash as failed and delete it.
+
+    Called when a worker detects that the lock owner's heartbeat has expired,
+    meaning the original worker crashed mid-pipeline. This cleans up the stale
+    Redis hash so the frontend stops seeing 'processing'.
+
+    Args:
+        video_id: Video identifier
+    """
+    redis = await get_async_redis_client()
+    status_key = _get_status_key(video_id)
+
+    status_data = await redis.hgetall(status_key)
+    if not status_data:
+        logger.debug(f"No orphaned status to clean up for {video_id}")
+        return
+
+    updates = {
+        "status": "failed",
+        "completed_at": str(time.time()),
+        "error_stage": "worker_crashed",
+        "error_message": "Worker process died unexpectedly. Job will be re-processed.",
+    }
+    await redis.hset(status_key, mapping=updates)
+    # Remove TTL so this failed state remains visible briefly for history archival.
+    # The worker will archive and delete it before re-acquiring the lock.
+    logger.warning(f"Marked orphaned status as failed for {video_id}")

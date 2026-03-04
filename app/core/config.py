@@ -110,7 +110,27 @@ class Settings(BaseSettings):
     
     # Pipeline Configuration
     pipeline_lock_ttl: int = 1800  # 30 minutes
-    
+
+    # Orphaned Job Recovery Configuration
+    # How often (seconds) the worker writes its heartbeat key to Redis.
+    heartbeat_interval_seconds: int = 10
+    # TTL (seconds) on the heartbeat key. Must be > heartbeat_interval_seconds.
+    # Redis auto-expires this key if the worker dies, signalling a crash.
+    heartbeat_ttl_seconds: int = 30
+    # TTL (seconds) on the active pipeline status hash (pipeline:{video_id}:active).
+    # Refreshed after each stage. Falls back to Redis auto-expiry when the only
+    # worker dies so the frontend eventually stops polling.
+    status_ttl_seconds: int = 1200  # 20 minutes
+    # How many times a message can be delivered before being moved to the DLQ.
+    # Prevents a poison message from crashing workers in an infinite loop.
+    max_message_retries: int = 3
+    # Redis Stream key used as the Dead Letter Queue.
+    dead_letter_stream: str = "pipeline:dead_letters"
+    # TTL (seconds) for individual DLQ entries.
+    dead_letter_ttl_seconds: int = 604800  # 7 days
+    # Min idle time (ms) before XAUTOCLAIM picks up a stale message.
+    claim_min_idle_ms: int = 60000  # 1 minute
+
     # Pipeline History Configuration (Redis-based)
     pipeline_history_ttl: int = 86400         # 24 hours for completed runs
     pipeline_history_max_runs: int = 50       # Max runs to keep per video

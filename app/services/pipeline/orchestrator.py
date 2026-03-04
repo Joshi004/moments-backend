@@ -17,6 +17,7 @@ from app.services.pipeline.status import (
     update_pipeline_status,
     update_current_stage,
     update_refinement_progress,
+    refresh_status_ttl,
 )
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
@@ -1018,8 +1019,10 @@ async def execute_pipeline(
                     "total_clips_created": 0,
                 }
 
-            # Refresh lock after each stage
+            # Refresh lock and status TTL after each stage so neither expires
+            # during a legitimately long pipeline run.
             await refresh_lock(video_id)
+            await refresh_status_ttl(video_id)
 
     except Exception as e:
         logger.exception(f"Unexpected pipeline error for {video_id}: {e}")

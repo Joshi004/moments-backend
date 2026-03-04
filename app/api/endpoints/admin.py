@@ -1,9 +1,11 @@
 """
-Admin API endpoints for model configuration management and temp file operations.
+Admin API endpoints for model configuration management, temp file operations,
+and dead letter queue inspection.
 """
 import logging
+import time
 from fastapi import APIRouter, HTTPException, Query, status
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from app.models.admin_schemas import (
     ModelConfigCreate,
@@ -354,4 +356,188 @@ async def cleanup_temp_all():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Emergency temp cleanup failed: {str(e)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Dead Letter Queue (DLQ) endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dead-letters")
+async def list_dead_letters(
+    count: int = Query(
+        default=50,
+        ge=1,
+        le=500,
+        description="Maximum number of DLQ entries to return.",
+    ),
+    start_id: str = Query(
+        default="0-0",
+        description="Redis stream ID to start reading from (use last seen ID for pagination).",
+    ),
+) -> Dict:
+    """
+    List messages in the dead letter queue.
+
+    Messages end up here when a pipeline message has been delivered more than
+    MAX_MESSAGE_RETRIES times (typically because the video always crashes the
+    worker). Each entry includes the original stream ID, video_id, delivery
+    count, failure timestamp, and the reason.
+
+    Returns:
+        Dict with entries (list), count, and next_start_id for pagination.
+    """
+    try:
+        from app.core.redis import get_async_redis_client
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        redis = await get_async_redis_client()
+
+        raw_entries = await redis.xrange(
+            settings.dead_letter_stream, min=start_id, max="+", count=count
+        )
+
+        entries = []
+        last_id = None
+        for entry_id, fields in raw_entries:
+            entry = {
+                "id": entry_id,
+                "original_id": fields.get("original_id", ""),
+                "video_id": fields.get("video_id", ""),
+                "request_id": fields.get("request_id", ""),
+                "delivery_count": int(fields.get("delivery_count", 0)),
+                "reason": fields.get("reason", ""),
+                "failed_at": fields.get("failed_at", ""),
+            }
+            entries.append(entry)
+            last_id = entry_id
+
+        return {
+            "entries": entries,
+            "count": len(entries),
+            "next_start_id": last_id or start_id,
+        }
+    except Exception as e:
+        logger.error(f"Error listing dead letters: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list dead letters: {str(e)}",
+        )
+
+
+@router.post("/dead-letters/{dlq_message_id}/replay")
+async def replay_dead_letter(dlq_message_id: str) -> Dict:
+    """
+    Re-enqueue a dead letter message back into the main pipeline stream.
+
+    Use this after you have investigated and fixed the root cause of the failure
+    (e.g. a corrupt video has been replaced). The DLQ entry is removed and a new
+    message is added to pipeline:requests with a reset delivery count.
+
+    Args:
+        dlq_message_id: The Redis stream ID of the DLQ entry (from GET /dead-letters).
+
+    Returns:
+        Dict with status, video_id, and new stream message ID.
+    """
+    try:
+        from app.core.redis import get_async_redis_client
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        redis = await get_async_redis_client()
+
+        # Fetch the specific DLQ entry
+        entries = await redis.xrange(
+            settings.dead_letter_stream,
+            min=dlq_message_id,
+            max=dlq_message_id,
+            count=1,
+        )
+        if not entries:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"DLQ entry '{dlq_message_id}' not found",
+            )
+
+        _, fields = entries[0]
+        video_id = fields.get("video_id", "")
+        request_id = fields.get("request_id", "")
+        config_str = fields.get("config", "{}")
+
+        # Re-enqueue into main pipeline stream with a new request timestamp
+        new_id = await redis.xadd(
+            "pipeline:requests",
+            {
+                "video_id": video_id,
+                "request_id": request_id,
+                "config": config_str,
+                "requested_at": str(time.time()),
+                "replayed_from_dlq": dlq_message_id,
+            },
+        )
+
+        # Remove the entry from DLQ so it isn't replayed again accidentally
+        await redis.xdel(settings.dead_letter_stream, dlq_message_id)
+
+        logger.info(
+            f"Replayed DLQ entry {dlq_message_id} for video={video_id} "
+            f"as new stream message {new_id}"
+        )
+        return {
+            "status": "replayed",
+            "video_id": video_id,
+            "request_id": request_id,
+            "new_stream_id": new_id,
+            "dlq_entry_removed": dlq_message_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error replaying DLQ entry {dlq_message_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to replay DLQ entry: {str(e)}",
+        )
+
+
+@router.delete("/dead-letters/{dlq_message_id}")
+async def delete_dead_letter(dlq_message_id: str) -> Dict:
+    """
+    Permanently remove a message from the dead letter queue.
+
+    Use when the underlying issue (e.g. a corrupt video) has been resolved
+    and the job should not be retried, or when an entry was added by mistake.
+
+    Args:
+        dlq_message_id: The Redis stream ID of the DLQ entry.
+
+    Returns:
+        Dict with status and the removed entry ID.
+    """
+    try:
+        from app.core.redis import get_async_redis_client
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        redis = await get_async_redis_client()
+
+        deleted = await redis.xdel(settings.dead_letter_stream, dlq_message_id)
+        if deleted == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"DLQ entry '{dlq_message_id}' not found",
+            )
+
+        logger.info(f"Deleted DLQ entry {dlq_message_id}")
+        return {"status": "deleted", "id": dlq_message_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting DLQ entry {dlq_message_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete DLQ entry: {str(e)}",
         )
