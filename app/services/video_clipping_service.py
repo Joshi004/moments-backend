@@ -527,6 +527,7 @@ async def extract_clips_parallel(
     override_existing: bool = False,
     progress_callback: Optional[callable] = None,
     cloud_url: Optional[str] = None,
+    sub_stage_callback: Optional[callable] = None,
 ) -> bool:
     """
     Extract clips for all original moments in a video using async concurrency.
@@ -543,6 +544,9 @@ async def extract_clips_parallel(
         override_existing: Whether to re-extract clips that already exist in DB
         progress_callback: Optional callback(total, processed, failed) for progress
         cloud_url: Optional GCS URL for downloading video if local is missing
+        sub_stage_callback: Optional async callback invoked after video download
+                            completes (if a download was needed) so the caller
+                            can advance the sub_stage label in Redis.
 
     Returns:
         True if successful (at least one clip created or all skipped), False otherwise
@@ -568,6 +572,11 @@ async def extract_clips_parallel(
             from app.utils.video import ensure_local_video_async
             video_path = await ensure_local_video_async(video_id, cloud_url)
             logger.info(f"Downloaded video to {video_path}")
+
+        # Notify the orchestrator that we have moved past any download phase
+        # and are about to begin the actual clip extraction work.
+        if sub_stage_callback:
+            await sub_stage_callback()
 
         # --- Load clipping config ---
         from app.utils.model_config import get_clipping_config, get_parallel_workers

@@ -18,6 +18,7 @@ from app.services.pipeline.status import (
     update_current_stage,
     update_refinement_progress,
     refresh_status_ttl,
+    update_sub_stage,
 )
 from app.services.pipeline.lock import check_cancellation, clear_cancellation, refresh_lock
 from app.services.pipeline.upload_service import GCSUploader
@@ -90,6 +91,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     if dest_path.exists():
         logger.info(f"Video already exists at {dest_path}, will upload to GCS and register in DB")
     else:
+        await update_sub_stage(video_id, "downloading")
         logger.info(f"Starting video download: {video_url} -> {dest_path}")
         
         # Capture the running loop now (async context) so the sync callback can
@@ -149,6 +151,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
             raise Exception(f"Video download failed: {e}")
     
     # Extract metadata via ffprobe
+    await update_sub_stage(video_id, "extracting_metadata")
     logger.info(f"Extracting video metadata via ffprobe...")
     metadata = {}
     try:
@@ -203,6 +206,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
         logger.warning(f"Failed to extract metadata: {e}")
     
     # Upload to GCS
+    await update_sub_stage(video_id, "uploading_to_cloud")
     logger.info(f"Uploading video to GCS...")
     uploader = GCSUploader()
     try:
@@ -216,6 +220,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     # Insert or update database record. A placeholder row may already exist
     # (created by start_pipeline), in which case we update it with the real
     # cloud_url and metadata rather than inserting a duplicate.
+    await update_sub_stage(video_id, "saving")
     logger.info(f"Registering video in database...")
     async with session_factory() as session:
         try:
@@ -398,9 +403,35 @@ async def execute_audio_extraction(video_id: str) -> None:
         cloud_url = video.cloud_url
 
     logger.info(f"Ensuring local video for audio extraction: {video_id}")
-    video_path = await ensure_local_video_async(video_id, cloud_url)
+
+    # Report that we may be downloading the video and wire up a progress callback
+    # so the frontend can see byte-level progress if a hidden GCS download occurs.
+    await update_sub_stage(video_id, "downloading_video")
+    _audio_loop = asyncio.get_running_loop()
+
+    async def _update_sub_progress(fields: dict) -> None:
+        await update_sub_stage(video_id, "downloading_video", progress=fields)
+
+    def download_progress_cb(bytes_downloaded: int, total_bytes: int):
+        try:
+            percentage = int((bytes_downloaded / total_bytes) * 100) if total_bytes > 0 else 0
+            asyncio.run_coroutine_threadsafe(
+                _update_sub_progress({
+                    "bytes_downloaded": str(bytes_downloaded),
+                    "total_bytes": str(total_bytes),
+                    "percentage": str(percentage),
+                }),
+                _audio_loop,
+            )
+        except Exception as e:
+            logger.error(f"Failed to update sub-stage progress: {e}")
+
+    video_path = await ensure_local_video_async(
+        video_id, cloud_url, progress_callback=download_progress_cb
+    )
     logger.info(f"Video available at: {video_path}")
-    
+
+    await update_sub_stage(video_id, "extracting_audio")
     audio_path = get_audio_path(video_filename)
     
     # Acquire global semaphore for cross-pipeline coordination
@@ -596,7 +627,8 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
 
     # Use temp path as a placeholder -- extract_clips_parallel will download from cloud_url if needed
     from pathlib import Path
-    video_path = Path(f"temp/videos/{video_id}/{video_id}.mp4")
+    from app.services.temp_file_manager import get_temp_file_path
+    video_path = get_temp_file_path("videos", video_id, f"{video_id}.mp4")
 
     moments = await load_moments(video_filename)
     if not moments:
@@ -609,6 +641,13 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
         logger.info(f"Cleaning up existing clips for {video_id} (moments were regenerated)")
         deleted_db = await delete_all_clips_for_video(video_id)
         logger.info(f"Cleaned up {deleted_db} clip records for {video_id}")
+
+    # Set initial sub_stage: if the video is not cached locally a download will
+    # happen inside extract_clips_parallel before extraction begins.
+    if video_path.exists():
+        await update_sub_stage(video_id, "processing_clips")
+    else:
+        await update_sub_stage(video_id, "downloading_video")
 
     # Capture the running loop now (async context) so the sync callback can
     # schedule coroutines onto it from any thread via run_coroutine_threadsafe.
@@ -630,6 +669,10 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
             _clips_loop,
         )
 
+    async def _on_clips_download_complete():
+        """Transition sub_stage from downloading_video to processing_clips."""
+        await update_sub_stage(video_id, "processing_clips")
+
     # Each clip: FFmpeg extract → GCS upload → DB insert → delete temp file
     success = await extract_clips_parallel(
         video_path=video_path,
@@ -638,6 +681,7 @@ async def execute_clip_extraction(video_id: str, config: dict) -> None:
         override_existing=config.get("override_existing_clips", False),
         progress_callback=progress_callback,
         cloud_url=cloud_url,
+        sub_stage_callback=_on_clips_download_complete,
     )
 
     if not success:

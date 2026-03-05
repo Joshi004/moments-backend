@@ -51,6 +51,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
     completed_at_str = status_data.get(f"{prefix}_completed_at", "")
     skipped_str = status_data.get(f"{prefix}_skipped", "false")
     skip_reason = status_data.get(f"{prefix}_skip_reason", "")
+    sub_stage_value = status_data.get("sub_stage", "")
     
     started_at = None
     completed_at = None
@@ -213,6 +214,20 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
                 except (json.JSONDecodeError, TypeError):
                     progress["errors"] = [refinement_errors]
     
+    # Collect any sub_stage_* progress fields and merge into progress dict
+    sub_stage_progress = {}
+    for key, value in status_data.items():
+        if key.startswith("sub_stage_"):
+            clean_key = key[len("sub_stage_"):]
+            try:
+                sub_stage_progress[clean_key] = int(value)
+            except (ValueError, TypeError):
+                sub_stage_progress[clean_key] = value
+    if sub_stage_progress:
+        if progress is None:
+            progress = {}
+        progress.update(sub_stage_progress)
+
     # Determine stage-level error
     stage_error = None
     error_stage_value = status_data.get("error_stage", "")
@@ -230,6 +245,7 @@ def _build_stage_status_response(status_data: Dict[str, str], stage: PipelineSta
         skip_reason=skip_reason if skip_reason else None,
         error=stage_error,
         progress=progress,
+        sub_stage=sub_stage_value if sub_stage_value else None,
     )
 
 
