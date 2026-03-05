@@ -50,6 +50,7 @@ async def initialize_status(video_id: str, request_id: str, config: dict) -> Non
         "current_stage": "",
         "error_stage": "",
         "error_message": "",
+        "sub_stage": "",
     }
     
     # Initialize all stage statuses to pending
@@ -134,6 +135,7 @@ async def mark_stage_started(video_id: str, stage: PipelineStage) -> None:
     updates = {
         f"{prefix}_status": StageStatus.PROCESSING.value,
         f"{prefix}_started_at": str(time.time()),
+        "sub_stage": "",
     }
     
     await redis.hset(status_key, mapping=updates)
@@ -159,6 +161,7 @@ async def mark_stage_completed(video_id: str, stage: PipelineStage) -> None:
     updates = {
         f"{prefix}_status": StageStatus.COMPLETED.value,
         f"{prefix}_completed_at": str(current_time),
+        "sub_stage": "",
     }
     
     await redis.hset(status_key, mapping=updates)
@@ -221,6 +224,53 @@ async def mark_stage_failed(video_id: str, stage: PipelineStage, error: str) -> 
     
     await redis.hset(status_key, mapping=updates)
     logger.error(f"Failed stage {stage.value} for {video_id}: {error}")
+
+
+async def update_sub_stage(video_id: str, sub_stage: str, progress: dict = None) -> None:
+    """
+    Update the sub_stage field and optional per-field progress for the active stage.
+
+    Args:
+        video_id: Video identifier
+        sub_stage: Internal label for what the stage is currently doing
+                   (e.g. "downloading_video", "extracting_audio")
+        progress: Optional dict of progress data. Each key-value pair is written
+                  to the Redis hash prefixed with "sub_stage_" so it can be
+                  picked up by the status API without colliding with other fields.
+                  All values are coerced to strings (Redis requirement).
+    """
+    redis = await get_async_redis_client()
+    status_key = _get_status_key(video_id)
+
+    mapping: Dict[str, Any] = {"sub_stage": sub_stage}
+    if progress:
+        for key, value in progress.items():
+            mapping[f"sub_stage_{key}"] = str(value)
+
+    await redis.hset(status_key, mapping=mapping)
+    logger.debug(f"Set sub_stage='{sub_stage}' for {video_id}")
+
+
+async def clear_sub_stage(video_id: str) -> None:
+    """
+    Clear sub_stage and all associated sub_stage_* progress fields.
+
+    Args:
+        video_id: Video identifier
+    """
+    redis = await get_async_redis_client()
+    status_key = _get_status_key(video_id)
+
+    # Reset the sub_stage label
+    await redis.hset(status_key, "sub_stage", "")
+
+    # Remove any sub_stage_* progress keys that may have been written
+    all_fields = await redis.hkeys(status_key)
+    progress_keys = [f for f in all_fields if f.startswith("sub_stage_")]
+    if progress_keys:
+        await redis.hdel(status_key, *progress_keys)
+
+    logger.debug(f"Cleared sub_stage for {video_id}")
 
 
 async def update_pipeline_status(video_id: str, status: str) -> None:

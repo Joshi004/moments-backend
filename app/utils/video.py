@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 
 def get_temp_video_path(identifier: str) -> Path:
@@ -82,7 +83,11 @@ def ensure_local_video(identifier: str, cloud_url: str) -> Path:
         raise
 
 
-async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
+async def ensure_local_video_async(
+    identifier: str,
+    cloud_url: str,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+) -> Path:
     """
     Async version of ensure_local_video().
 
@@ -96,6 +101,8 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
     Args:
         identifier: Video identifier (e.g., 'motivation')
         cloud_url: GCS path stored in the videos table
+        progress_callback: Optional sync callback(bytes_downloaded, total_bytes)
+                           forwarded to the GCS downloader when a download occurs.
 
     Returns:
         Path to a local copy of the video
@@ -120,7 +127,7 @@ async def ensure_local_video_async(identifier: str, cloud_url: str) -> Path:
         url=cloud_url,
         dest_path=temp_path,
         video_id=identifier,
-        progress_callback=None,
+        progress_callback=progress_callback,
     )
 
     if not success:

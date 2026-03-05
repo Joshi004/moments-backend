@@ -108,6 +108,7 @@ class StageStatusResponse(BaseModel):
     skip_reason: Optional[str] = None
     error: Optional[str] = None
     progress: Optional[Dict[str, Any]] = None  # For download progress, refinement progress, etc.
+    sub_stage: Optional[str] = None
 
 
 class PipelineStatusResponse(BaseModel):

@@ -13,6 +13,8 @@ from app.services.pipeline.status import (
     update_pipeline_status,
     update_current_stage,
     get_current_stage,
+    update_sub_stage,
+    clear_sub_stage,
 )
 from app.services.pipeline.lock import (
     acquire_lock,
@@ -39,6 +41,8 @@ __all__ = [
     "update_pipeline_status",
     "update_current_stage",
     "get_current_stage",
+    "update_sub_stage",
+    "clear_sub_stage",
     # Lock
     "acquire_lock",
     "release_lock",
