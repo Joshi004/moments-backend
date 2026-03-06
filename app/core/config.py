@@ -141,7 +141,7 @@ class Settings(BaseSettings):
     gcs_clips_prefix: str = "clips/"
     gcs_videos_prefix: str = "videos/"
     gcs_thumbnails_prefix: str = "thumbnails/"
-    gcs_signed_url_expiry_hours: float = 4.0
+    gcs_signed_url_expiry_hours: float = 168.0
     gcs_upload_timeout_seconds: int = 1800  # 30 minutes
     gcs_max_retries: int = 3
     gcs_retry_base_delay: float = 1.0  # Exponential: 1s, 2s, 4s

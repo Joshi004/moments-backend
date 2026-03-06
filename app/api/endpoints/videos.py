@@ -57,8 +57,7 @@ async def list_videos(db: AsyncSession = Depends(get_db)):
         for video in videos_from_db:
             video_filename = f"{video.identifier}.mp4"
 
-            # Thumbnail URL points to the API endpoint (302 redirect to GCS signed URL on access)
-            thumbnail_url = await get_thumbnail_url_async(video.identifier, db)
+            thumb_data = await get_thumbnail_url_async(video.identifier, db)
 
             has_audio = check_audio_exists(video_filename)
             audio_filename = video.identifier + ".wav"
@@ -68,7 +67,9 @@ async def list_videos(db: AsyncSession = Depends(get_db)):
                 id=video.identifier,
                 filename=video_filename,
                 title=video.title or video.identifier.replace("-", " ").replace("_", " ").title(),
-                thumbnail_url=thumbnail_url,
+                thumbnail_url=thumb_data["thumbnail_url"] if thumb_data else None,
+                thumbnail_signed_url=thumb_data["thumbnail_signed_url"] if thumb_data else None,
+                thumbnail_url_expires_at=thumb_data["thumbnail_url_expires_at"] if thumb_data else None,
                 has_audio=has_audio,
                 has_transcript=has_transcript,
                 duration_seconds=video.duration_seconds,
@@ -135,7 +136,7 @@ async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Video not found")
 
         video_filename = f"{video.identifier}.mp4"
-        thumbnail_url = await get_thumbnail_url_async(video.identifier, db)
+        thumb_data = await get_thumbnail_url_async(video.identifier, db)
 
         has_audio = check_audio_exists(video_filename)
         audio_filename = video.identifier + ".wav"
@@ -160,7 +161,9 @@ async def get_video(video_id: str, db: AsyncSession = Depends(get_db)):
             id=video.identifier,
             filename=video_filename,
             title=video.title or video.identifier.replace("-", " ").replace("_", " ").title(),
-            thumbnail_url=thumbnail_url,
+            thumbnail_url=thumb_data["thumbnail_url"] if thumb_data else None,
+            thumbnail_signed_url=thumb_data["thumbnail_signed_url"] if thumb_data else None,
+            thumbnail_url_expires_at=thumb_data["thumbnail_url_expires_at"] if thumb_data else None,
             has_audio=has_audio,
             has_transcript=has_transcript,
             duration_seconds=video.duration_seconds,

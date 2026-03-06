@@ -13,6 +13,8 @@ class VideoResponse(BaseModel):
     filename: str
     title: str
     thumbnail_url: Optional[str] = None
+    thumbnail_signed_url: Optional[str] = None
+    thumbnail_url_expires_at: Optional[str] = None
     has_audio: Optional[bool] = None
     has_transcript: Optional[bool] = None
     # New fields from database

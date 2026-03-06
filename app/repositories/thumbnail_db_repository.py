@@ -3,8 +3,9 @@ Thumbnail database repository - CRUD operations for the thumbnails table.
 Follows the same module-level async function pattern as other db repositories.
 """
 import logging
+from datetime import datetime
 from typing import Optional
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models.thumbnail import Thumbnail
@@ -125,3 +126,19 @@ async def delete_by_clip_id(session: AsyncSession, clip_id: int) -> bool:
     if deleted:
         logger.info(f"Deleted thumbnail DB record for clip_id={clip_id}")
     return deleted
+
+
+async def update_signed_url(
+    session: AsyncSession,
+    thumbnail_id: int,
+    signed_url: str,
+    signed_url_expires_at: datetime,
+) -> None:
+    """Update the cached signed URL and its expiry for a thumbnail."""
+    stmt = (
+        update(Thumbnail)
+        .where(Thumbnail.id == thumbnail_id)
+        .values(signed_url=signed_url, signed_url_expires_at=signed_url_expires_at)
+    )
+    await session.execute(stmt)
+    logger.debug(f"Updated cached signed URL for thumbnail_id={thumbnail_id}, expires={signed_url_expires_at}")

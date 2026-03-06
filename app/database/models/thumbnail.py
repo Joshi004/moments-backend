@@ -31,6 +31,8 @@ class Thumbnail(Base):
     )
     cloud_url: Mapped[str] = mapped_column(Text, nullable=False)
     file_size_kb: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    signed_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signed_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

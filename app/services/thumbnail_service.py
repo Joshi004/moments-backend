@@ -7,6 +7,10 @@ After Phase 8, thumbnails are:
 - Tracked in the PostgreSQL thumbnails table
 - Served via GCS signed URL redirects through the API endpoint
 
+Phase 2 addition: signed URLs are cached in the DB (signed_url,
+signed_url_expires_at) and reused until 1 hour before expiry, eliminating
+repeated GCS signing calls on every thumbnail request.
+
 Local static/thumbnails/ files are kept as backup but are no longer written to
 or served by the application.
 """
@@ -14,6 +18,7 @@ import asyncio
 import os
 import cv2
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -124,22 +129,67 @@ def extract_frame_from_video(
 async def get_thumbnail_url_async(
     video_identifier: str,
     session: AsyncSession,
-) -> Optional[str]:
+) -> Optional[Dict[str, Any]]:
     """
-    Return the API endpoint URL for a video's thumbnail if one exists in the DB.
+    Return thumbnail URL data for a video, using the DB-cached signed URL when available.
 
-    The returned URL is the API endpoint (/api/videos/{identifier}/thumbnail),
-    not a direct GCS signed URL. The endpoint generates a fresh signed URL
-    and issues a 302 redirect on each access.
+    Checks whether the cached signed URL in the DB is still valid (with a 1-hour
+    buffer). If so, returns it directly without contacting GCS. If expired or
+    absent, generates a fresh signed URL, caches it in the DB, and returns it.
+
+    Returns a dict with:
+      - thumbnail_url: API endpoint path (fallback, always present)
+      - thumbnail_signed_url: Direct GCS signed URL (or None if GCS unavailable)
+      - thumbnail_url_expires_at: ISO 8601 string of expiry (or None)
 
     Returns None if no thumbnail record exists for the video.
     """
     from app.repositories import thumbnail_db_repository
 
     thumbnail = await thumbnail_db_repository.get_by_video_identifier(session, video_identifier)
-    if thumbnail:
-        return f"/api/videos/{video_identifier}/thumbnail"
-    return None
+    if not thumbnail:
+        return None
+
+    api_url = f"/api/videos/{video_identifier}/thumbnail"
+    buffer = timedelta(hours=1)
+    now = datetime.utcnow()
+
+    # Return cached signed URL if it is still valid (with buffer)
+    if (
+        thumbnail.signed_url
+        and thumbnail.signed_url_expires_at
+        and thumbnail.signed_url_expires_at > now + buffer
+    ):
+        return {
+            "thumbnail_url": api_url,
+            "thumbnail_signed_url": thumbnail.signed_url,
+            "thumbnail_url_expires_at": thumbnail.signed_url_expires_at.isoformat() + "Z",
+        }
+
+    # Cache miss or near-expiry — generate a fresh signed URL and store it
+    from app.services.pipeline.upload_service import GCSUploader
+    from app.core.config import get_settings
+
+    uploader = GCSUploader()
+    signed_url = uploader.get_thumbnail_signed_url(thumbnail.cloud_url)
+    if not signed_url:
+        return {
+            "thumbnail_url": api_url,
+            "thumbnail_signed_url": None,
+            "thumbnail_url_expires_at": None,
+        }
+
+    settings = get_settings()
+    expires_at = now + timedelta(hours=settings.gcs_signed_url_expiry_hours)
+
+    await thumbnail_db_repository.update_signed_url(session, thumbnail.id, signed_url, expires_at)
+    await session.commit()
+
+    return {
+        "thumbnail_url": api_url,
+        "thumbnail_signed_url": signed_url,
+        "thumbnail_url_expires_at": expires_at.isoformat() + "Z",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +233,12 @@ async def generate_thumbnail_async(
         logger.info(f"Thumbnail already exists in DB for video: {video_identifier}")
         uploader = GCSUploader()
         signed_url = uploader.get_thumbnail_signed_url(existing.cloud_url)
+        if signed_url:
+            from app.core.config import get_settings
+            settings = get_settings()
+            expires_at = datetime.utcnow() + timedelta(hours=settings.gcs_signed_url_expiry_hours)
+            await thumbnail_db_repository.update_signed_url(session, existing.id, signed_url, expires_at)
+            await session.commit()
         return {
             "cloud_url": existing.cloud_url,
             "signed_url": signed_url,
@@ -234,6 +290,13 @@ async def generate_thumbnail_async(
             cloud_url=gcs_path,
             file_size_kb=file_size_kb,
         )
+        await session.flush()
+
+        # Cache the signed URL on the new row immediately
+        from app.core.config import get_settings
+        settings = get_settings()
+        expires_at = datetime.utcnow() + timedelta(hours=settings.gcs_signed_url_expiry_hours)
+        await thumbnail_db_repository.update_signed_url(session, thumbnail.id, signed_url, expires_at)
         await session.commit()
 
         logger.info(
