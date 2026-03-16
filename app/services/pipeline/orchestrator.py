@@ -224,16 +224,21 @@ async def execute_video_download(video_id: str, config: dict) -> None:
     logger.info(f"Registering video in database...")
     async with session_factory() as session:
         try:
-            title = video_id.replace("-", " ").replace("_", " ").title()
+            auto_title = video_id.replace("-", " ").replace("_", " ").title()
             existing_row = await video_db_repository.get_by_identifier(session, video_id)
             if existing_row:
-                await video_db_repository.update_by_identifier(
-                    session,
+                update_kwargs = dict(
                     identifier=video_id,
                     cloud_url=cloud_url,
                     source_url=video_url,
-                    title=title,
-                    **metadata
+                    **metadata,
+                )
+                # Only overwrite if no title is set or it still matches the auto-generated value
+                if not existing_row.title or existing_row.title == auto_title:
+                    update_kwargs["title"] = auto_title
+                await video_db_repository.update_by_identifier(
+                    session,
+                    **update_kwargs
                 )
                 await session.commit()
                 logger.info(f"Updated placeholder video record (identifier={video_id})")
@@ -243,7 +248,7 @@ async def execute_video_download(video_id: str, config: dict) -> None:
                     identifier=video_id,
                     cloud_url=cloud_url,
                     source_url=video_url,
-                    title=title,
+                    title=auto_title,
                     **metadata
                 )
                 await session.commit()

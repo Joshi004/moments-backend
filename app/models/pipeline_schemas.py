@@ -46,6 +46,13 @@ class PipelineStartRequest(BaseModel):
         description="Force re-download even if URL was previously cached",
     )
 
+    # Optional custom display title for the video
+    title: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Custom video title. If omitted, auto-generated from URL.",
+    )
+
     # Pipeline configuration
     generation_model: str = Field(default="qwen3_vl_fp8", pattern="^(qwen3_vl_fp8|minimax)$")
     refinement_model: str = Field(default="qwen3_vl_fp8", pattern="^(qwen3_vl_fp8|minimax)$")

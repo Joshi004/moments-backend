@@ -424,7 +424,8 @@ async def start_pipeline(
     # pipeline monitor and pipeline_history FK constraint work immediately.
     if download_required:
         try:
-            placeholder_title = video_id.replace("-", " ").replace("_", " ").title()
+            auto_title = video_id.replace("-", " ").replace("_", " ").title()
+            placeholder_title = request.title.strip() if request.title and request.title.strip() else auto_title
             await video_db_repository.create(
                 db,
                 identifier=video_id,
